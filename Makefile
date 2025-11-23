@@ -21,10 +21,11 @@ OUTPUT = TwistedOS.img
 
 EFI = BOOTX64.EFI
 IMG = $(OUTPUT)
+DRIVE = TwistedDrive.img
 ESP_SIZE = 64
 SECTORS = $(shell echo $$(( $(ESP_SIZE) * 2048 )))
 
-all: bin build $(IMG)
+all: bin build $(IMG) $(DRIVE)
 
 clean:
 	rm -rf $(BIN) $(BUILD) $(OUTPUT)
@@ -55,8 +56,19 @@ $(IMG): $(EFI)
 	dd if=$$ESP of=$@ bs=512 seek=$$START conv=notrunc status=none; \
 	rm -f $$ESP
 
+$(DRIVE):
+	@if [ ! -f $@ ]; then \
+		echo "Creating 4GB TwistedDrive.img..."; \
+		dd if=/dev/zero of=$@ bs=1M count=$$((4*1024)) status=progress; \
+	else \
+		echo "$@ already exists, skipping."; \
+	fi
+
 qemu-uefi:
-	qemu-system-x86_64 -bios UEFI64.bin -drive file=TwistedOS.img,format=raw
+	qemu-system-x86_64 -bios UEFI64.bin -drive file=TwistedOS.img,format=raw -drive if=none,id=data,file=TwistedDrive.img,format=raw -device virtio-blk-pci,drive=data
+
+qemu-gl:
+	qemu-system-x86_64 -bios UEFI64.bin -drive file=TwistedOS.img,format=raw -drive if=none,id=data,file=TwistedDrive.img,format=raw -device virtio-blk-pci,drive=data -device virtio-gpu-gl-pci -display gtk,gl=on
 
 #qemu-system-x86_64 -bios UEFI64.bin -net none   -drive file=TwistedOS.img,format=raw -device virtio-gpu-pci -display gtk -full-screen
 #ATI Rage 128 Pro ati-vga
