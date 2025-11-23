@@ -6,3 +6,6 @@ Developed
 
 Currently developing
 - UEFI bootloader for x86_64 systems
+
+Dependencies:
+base-devel mingw-w64-gcc mingw-w64-crt mingw-w64-headers mtools dosfstools parted qemu-full clang llvm gnu-efi

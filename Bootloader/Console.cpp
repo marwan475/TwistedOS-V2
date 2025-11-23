@@ -19,23 +19,25 @@ void Console::ClearConsole()
     ConsoleOut->ClearScreen(ConsoleOut);
 }
 
-void Console::ChangeColor(int forground, int background){
-    ConsoleOut->SetAttribute(ConsoleOut,EFI_TEXT_ATTR(forground,background));
+void Console::ChangeColor(int forground, int background)
+{
+    ConsoleOut->SetAttribute(ConsoleOut, EFI_TEXT_ATTR(forground, background));
 }
 
-void Console::DisplayModeInfo(){
+void Console::DisplayModeInfo()
+{
     INT32 MaxMode = ConsoleOut->Mode->MaxMode;
     INT32 CurMode = ConsoleOut->Mode->Mode;
 
     UINTN Cols;
     UINTN Rows;
-    
-    ConsoleOut->QueryMode(ConsoleOut,(UINTN) CurMode, &Cols, &Rows);
 
-    printf_("Max Mode: %d\r\n",MaxMode);
-    printf_("Current Mode: %d\r\n",CurMode);
-    printf_("Columns: %d\r\n",Cols);
-    printf_("Rows: %d\r\n",Rows);
+    ConsoleOut->QueryMode(ConsoleOut, (UINTN) CurMode, &Cols, &Rows);
+
+    printf_("Max Mode: %d\r\n", MaxMode);
+    printf_("Current Mode: %d\r\n", CurMode);
+    printf_("Columns: %d\r\n", Cols);
+    printf_("Rows: %d\r\n", Rows);
 }
 
 void Console::putchar(char c)
