@@ -28,7 +28,7 @@ SECTORS = $(shell echo $$(( $(ESP_SIZE) * 2048 )))
 all: bin build $(IMG) $(DRIVE)
 
 clean:
-	rm -rf $(BIN) $(BUILD) $(OUTPUT)
+	rm -rf $(BIN) $(BUILD) $(OUTPUT) *.pcap
 
 build:
 	mkdir $(BUILD)
@@ -65,10 +65,10 @@ $(DRIVE):
 	fi
 
 qemu-uefi:
-	qemu-system-x86_64 -bios UEFI64.bin -drive file=TwistedOS.img,format=raw -drive if=none,id=data,file=TwistedDrive.img,format=raw -device virtio-blk-pci,drive=data
+	qemu-system-x86_64 -bios UEFI64.bin -drive file=TwistedOS.img,format=raw -drive if=none,id=data,file=TwistedDrive.img,format=raw -device virtio-blk-pci,drive=data -netdev user,id=net0,hostfwd=tcp::2222-:22,hostfwd=tcp::8080-:80 -object filter-dump,id=f1,netdev=net0,file=netdump.pcap -device virtio-net-pci,netdev=net0
 
 qemu-gl:
-	qemu-system-x86_64 -bios UEFI64.bin -drive file=TwistedOS.img,format=raw -drive if=none,id=data,file=TwistedDrive.img,format=raw -device virtio-blk-pci,drive=data -device virtio-gpu-gl-pci -display gtk,gl=on
+	qemu-system-x86_64 -bios UEFI64.bin -drive file=TwistedOS.img,format=raw -drive if=none,id=data,file=TwistedDrive.img,format=raw -device virtio-blk-pci,drive=data -device virtio-gpu-gl-pci -display gtk,gl=on -netdev user,id=net0,hostfwd=tcp::2222-:22,hostfwd=tcp::8080-:80 -object filter-dump,id=f1,netdev=net0,file=netdump.pcap -device virtio-net-pci,netdev=net0
 
 #qemu-system-x86_64 -bios UEFI64.bin -net none   -drive file=TwistedOS.img,format=raw -device virtio-gpu-pci -display gtk -full-screen
 #ATI Rage 128 Pro ati-vga

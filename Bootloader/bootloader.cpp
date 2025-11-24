@@ -17,7 +17,7 @@ extern "C"
 
         efiConsole.Reset();
         efiConsole.ClearConsole();
-        efiConsole.printf_("Welcome to ArxOS Bootloader\r\n");
+        efiConsole.printf_("Welcome to TwistedOS Bootloader\r\n");
         efiConsole.DisplayModeInfo();
 
         while (true)
