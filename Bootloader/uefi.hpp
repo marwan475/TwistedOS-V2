@@ -149,20 +149,79 @@ typedef struct
 
 typedef struct
 {
-} EFI_BOOT_SERVICES;
-
-typedef struct
-{
-} EFI_CONFIGURATION_TABLE;
-
-typedef struct
-{
     UINT64 Signature;
     UINT32 Revision;
     UINT32 HeaderSize;
     UINT32 CRC32;
     UINT32 REserved;
 } EFI_TABLE_HEADER;
+
+typedef EFI_STATUS(EFIAPI* EFI_WAIT_FOR_EVENT)(IN UINTN NumberOfEvents, IN EFI_EVENT* Event,
+                                               OUT UINTN* Index);
+
+typedef struct
+{
+    EFI_TABLE_HEADER Hdr;
+
+    void* RaiseTPL;
+    void* RestoreTPL;
+
+    void* AllocatePages;
+    void* FreePages;
+    void* GetMemoryMap;
+    void* AllocatePool;
+    void* FreePool;
+
+    void*              CreateEvent;
+    void*              SetTimer;
+    EFI_WAIT_FOR_EVENT WaitForEvent;
+    void*              SignalEvent;
+    void*              CloseEvent;
+    void*              CheckEvent;
+
+    void* InstallProtocolInterface;
+    void* ReinstallProtocolInterface;
+    void* UninstallProtocolInterface;
+    void* HandleProtocol;
+    VOID* Reserved;
+    void* RegisterProtocolNotify;
+    void* LocateHandle;
+    void* LocateDevicePath;
+    void* InstallConfigurationTable;
+
+    void* LoadImage;
+    void* StartImage;
+    void* Exit;
+    void* UnloadImage;
+    void* ExitBootServices;
+
+    void* GetNextMonotonicCount;
+    void* Stall;
+    void* SetWatchdogTimer;
+
+    void* ConnectController;
+    void* DisconnectController;
+
+    void* OpenProtocol;
+    void* CloseProtocol;
+    void* OpenProtocolInformation;
+
+    void* ProtocolsPerHandle;
+    void* LocateHandleBuffer;
+    void* LocateProtocol;
+    void* InstallMultipleProtocolInterfaces;
+    void* UninstallMultipleProtocolInterfaces;
+
+    void* CalculateCrc32;
+
+    void* CopyMem;
+    void* SetMem;
+    void* CreateEventEx;
+} EFI_BOOT_SERVICES;
+
+typedef struct
+{
+} EFI_CONFIGURATION_TABLE;
 
 // System Table
 typedef struct

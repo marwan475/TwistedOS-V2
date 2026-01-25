@@ -1,7 +1,8 @@
 #include <Console.hpp>
 #include <printf.hpp>
 
-Console::Console(EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL* ConOut) : ConsoleOut(ConOut)
+Console::Console(EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL* ConOut, EFI_SIMPLE_TEXT_INPUT_PROTOCOL* ConIn)
+    : ConsoleOut(ConOut), ConsoleIn(ConIn)
 {
 }
 
@@ -38,6 +39,32 @@ void Console::DisplayModeInfo()
     printf_("Current Mode: %d\r\n", CurMode);
     printf_("Columns: %d\r\n", Cols);
     printf_("Rows: %d\r\n", Rows);
+}
+
+void Console::DisplayAllModeInfo()
+{
+    INT32 MaxMode = ConsoleOut->Mode->MaxMode;
+
+    UINTN Cols;
+    UINTN Rows;
+
+    INT32 i;
+
+    for (i = 0; i < MaxMode; i++)
+    {
+        ConsoleOut->QueryMode(ConsoleOut, (UINTN) i, &Cols, &Rows);
+        printf_("\r\n");
+        printf_("Mode: %d\r\n", i);
+        printf_("Columns: %d\r\n", Cols);
+        printf_("Rows: %d\r\n", Rows);
+    }
+}
+
+EFI_STATUS Console::GetKeyFromUser(EFI_INPUT_KEY* key)
+{
+    EFI_STATUS ret = ConsoleIn->ReadKeyStroke(ConsoleIn, key);
+
+    return ret;
 }
 
 void Console::putchar(char c)
