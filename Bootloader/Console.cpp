@@ -1,8 +1,8 @@
 #include <Console.hpp>
 #include <printf.hpp>
 
-Console::Console(EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL* ConOut, EFI_SIMPLE_TEXT_INPUT_PROTOCOL* ConIn)
-    : ConsoleOut(ConOut), ConsoleIn(ConIn)
+Console::Console(EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL* ConOut, EFI_SIMPLE_TEXT_INPUT_PROTOCOL* ConIn, EFI_BOOT_SERVICES* BootServices)
+    : ConsoleOut(ConOut), ConsoleIn(ConIn), BootServices(BootServices)
 {
 }
 
@@ -60,11 +60,37 @@ void Console::DisplayAllModeInfo()
     }
 }
 
+void Console::SetTextMode(int mode)
+{
+    ConsoleOut->SetMode(ConsoleOut, mode);
+}
+
 EFI_STATUS Console::GetKeyFromUser(EFI_INPUT_KEY* key)
 {
     EFI_STATUS ret = ConsoleIn->ReadKeyStroke(ConsoleIn, key);
 
     return ret;
+}
+
+char Console::GetKeyOnEvent()
+{
+    EFI_EVENT events[1];
+
+    events[0] = ConsoleIn->WaitForKey;
+
+    UINTN index      = 0;
+    int   num_events = 1;
+
+    BootServices->WaitForEvent(num_events, events, &index);
+
+    EFI_INPUT_KEY key;
+
+    if (index == 0)
+    {
+        GetKeyFromUser(&key);
+    }
+
+    return key.UnicodeChar;
 }
 
 void Console::putchar(char c)

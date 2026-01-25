@@ -12,7 +12,7 @@ extern "C"
 {
     EFI_STATUS EFIAPI efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE* SystemTable)
     {
-        Console efiConsole = Console(SystemTable->ConOut, SystemTable->ConIn);
+        Console efiConsole = Console(SystemTable->ConOut, SystemTable->ConIn, SystemTable->BootServices);
         Con                = &efiConsole;
 
         efiConsole.Reset();
@@ -21,30 +21,17 @@ extern "C"
         efiConsole.DisplayModeInfo();
         efiConsole.DisplayAllModeInfo();
 
-        EFI_EVENT events[1];
+        efiConsole.printf_("Pick a display mode\r\n");
+        char key = efiConsole.GetKeyOnEvent();
 
-        events[0] = SystemTable->ConIn->WaitForKey;
+        int ikey = key - '0';
 
-        UINTN index      = 0;
-        int   num_events = 1;
+        //TODO: Error handling
 
-        while (true)
-        {
-            SystemTable->BootServices->WaitForEvent(num_events, events, &index);
-
-            EFI_INPUT_KEY key;
-
-            if (index == 0)
-            {
-                efiConsole.GetKeyFromUser(&key);
-            }
-
-            CHAR16 cbuf[2];
-            cbuf[0] = key.UnicodeChar;
-            cbuf[1] = '\0';
-
-            efiConsole.printf_("Scancode: %x, Unicode: %s\r\n", key.ScanCode, cbuf);
-        }
+        efiConsole.SetTextMode(ikey);
+        
+        efiConsole.ClearConsole();
+        efiConsole.DisplayModeInfo();
 
         while (true)
         {
