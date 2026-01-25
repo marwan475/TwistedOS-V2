@@ -50,7 +50,7 @@ void Console::DisplayAllModeInfo()
 
     INT32 i;
 
-    for (i = 0; i < MaxMode; i++)
+    for (i = 0; i <= MaxMode; i++)
     {
         ConsoleOut->QueryMode(ConsoleOut, (UINTN) i, &Cols, &Rows);
         printf_("\r\n");
