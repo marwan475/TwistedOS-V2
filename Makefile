@@ -65,16 +65,16 @@ $(DRIVE):
 	fi
 
 qemu-uefi:
-	qemu-system-x86_64 -bios UEFI64.bin -drive file=TwistedOS.img,format=raw -drive if=none,id=data,file=TwistedDrive.img,format=raw -device virtio-blk-pci,drive=data -device virtio-gpu-pci -netdev user,id=net0,hostfwd=tcp::2222-:22,hostfwd=tcp::8080-:80 -object filter-dump,id=f1,netdev=net0,file=netdump.pcap -device virtio-net-pci,netdev=net0 -device nec-usb-xhci,id=xhci -device usb-kbd,bus=xhci.0 -device usb-mouse,bus=xhci.0 -serial stdio
+	qemu-system-x86_64 -bios Firmware/UEFI64.bin -drive file=TwistedOS.img,format=raw -drive if=none,id=data,file=TwistedDrive.img,format=raw -device virtio-blk-pci,drive=data -device virtio-gpu-pci -netdev user,id=net0,hostfwd=tcp::2222-:22,hostfwd=tcp::8080-:80 -object filter-dump,id=f1,netdev=net0,file=netdump.pcap -device virtio-net-pci,netdev=net0 -device nec-usb-xhci,id=xhci -device usb-kbd,bus=xhci.0 -device usb-mouse,bus=xhci.0 -serial stdio
 
 qemu-gl:
-	qemu-system-x86_64 -bios UEFI64.bin -serial stdio -drive file=TwistedOS.img,format=raw -drive if=none,id=data,file=TwistedDrive.img,format=raw -device virtio-blk-pci,drive=data -device virtio-gpu-gl-pci -display gtk,gl=on -netdev user,id=net0,hostfwd=tcp::2222-:22,hostfwd=tcp::8080-:80 -object filter-dump,id=f1,netdev=net0,file=netdump.pcap -device virtio-net-pci,netdev=net0 -device nec-usb-xhci,id=xhci -device usb-kbd,bus=xhci.0 -device usb-mouse,bus=xhci.0
+	qemu-system-x86_64 -bios Firmware/UEFI64.bin -serial stdio -drive file=TwistedOS.img,format=raw -drive if=none,id=data,file=TwistedDrive.img,format=raw -device virtio-blk-pci,drive=data -device virtio-gpu-gl-pci -display gtk,gl=on -netdev user,id=net0,hostfwd=tcp::2222-:22,hostfwd=tcp::8080-:80 -object filter-dump,id=f1,netdev=net0,file=netdump.pcap -device virtio-net-pci,netdev=net0 -device nec-usb-xhci,id=xhci -device usb-kbd,bus=xhci.0 -device usb-mouse,bus=xhci.0
 
 qemu-new:
-	qemu-system-x86_64 -drive if=pflash,format=raw,readonly=on,file=code.fd -drive if=pflash,format=raw,file=TwistedOS_VARS.fd -drive file=TwistedOS.img,format=raw -drive if=none,id=data,file=TwistedDrive.img,format=raw -device virtio-blk-pci,drive=data -device virtio-gpu-gl-pci,xres=1920,yres=1080 -display gtk,gl=on -serial stdio -netdev user,id=net0,hostfwd=tcp::2222-:22,hostfwd=tcp::8080-:80 -device virtio-net-pci,netdev=net0 -device nec-usb-xhci,id=xhci -device usb-kbd,bus=xhci.0 -device usb-mouse,bus=xhci.0
+	qemu-system-x86_64 -drive if=pflash,format=raw,readonly=on,file=Firmware/code.fd -drive if=pflash,format=raw,file=Firmware/TwistedOS_VARS.fd -drive file=TwistedOS.img,format=raw -drive if=none,id=data,file=TwistedDrive.img,format=raw -device virtio-blk-pci,drive=data -device virtio-gpu-gl-pci,xres=1920,yres=1080 -display gtk,gl=on -serial stdio -netdev user,id=net0,hostfwd=tcp::2222-:22,hostfwd=tcp::8080-:80 -device virtio-net-pci,netdev=net0 -device nec-usb-xhci,id=xhci -device usb-kbd,bus=xhci.0 -device usb-mouse,bus=xhci.0
 
 qemu-basic:
-	qemu-system-x86_64 -bios UEFI64.bin -net none -drive file=TwistedOS.img,format=raw
+	qemu-system-x86_64 -bios Firmware/UEFI64.bin -net none -drive file=TwistedOS.img,format=raw
 
 #ATI Rage 128 Pro ati-vga
 
