@@ -108,9 +108,14 @@ void Console::DisplayAllGraphicsModeInfo()
     }
 }
 
-void Console::SetGraphicsMode()
+void Console::SetGraphicsMode(int mode)
 {
+    Gop->SetMode(Gop, mode);
+
+    ClearConsole();
+
     printf_("Graphics Mode Set \r\n");
+    DisplayGraphicsModeInfo();
 }
 
 EFI_STATUS Console::GetKeyFromUser(EFI_INPUT_KEY* key)

@@ -21,7 +21,7 @@ public:
     void       SetTextMode(int mode);
     void       DisplayGraphicsModeInfo();
     void       DisplayAllGraphicsModeInfo();
-    void       SetGraphicsMode();
+    void       SetGraphicsMode(int mode);
     EFI_STATUS GetKeyFromUser(EFI_INPUT_KEY* key);
     char       GetKeyOnEvent();
     void       putchar(char c);
