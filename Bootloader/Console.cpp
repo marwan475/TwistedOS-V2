@@ -1,9 +1,20 @@
 #include <Console.hpp>
 #include <printf.hpp>
 
-Console::Console(EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL* ConOut, EFI_SIMPLE_TEXT_INPUT_PROTOCOL* ConIn, EFI_BOOT_SERVICES* BootServices)
+Console::Console(EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL* ConOut, EFI_SIMPLE_TEXT_INPUT_PROTOCOL* ConIn,
+                 EFI_BOOT_SERVICES* BootServices)
     : ConsoleOut(ConOut), ConsoleIn(ConIn), BootServices(BootServices)
 {
+    Gop               = NULL;
+    EFI_GUID Gop_GUID = EFI_GRAPHICS_OUTPUT_PROTOCOL_GUID;
+
+    EFI_STATUS status = 0;
+    status            = BootServices->LocateProtocol(&Gop_GUID, NULL, (VOID**) &Gop);
+    if (EFI_ERROR(status))
+    {
+        printf_("Could not locate GOP\r\n");
+        return;
+    }
 }
 
 Console::~Console()
@@ -63,6 +74,43 @@ void Console::DisplayAllModeInfo()
 void Console::SetTextMode(int mode)
 {
     ConsoleOut->SetMode(ConsoleOut, mode);
+}
+
+void Console::DisplayGraphicsModeInfo()
+{
+    EFI_GRAPHICS_OUTPUT_MODE_INFORMATION* GopModeInfo = NULL;
+    UINTN ModeInfoSize = sizeof(EFI_GRAPHICS_OUTPUT_MODE_INFORMATION);
+
+    Gop->QueryMode(Gop, Gop->Mode->Mode, &ModeInfoSize, &GopModeInfo);
+
+    printf_("Max Mode %d\r\n", Gop->Mode->MaxMode);
+    printf_("Current Mode %d\r\n", Gop->Mode->Mode);
+    printf_("Width x Height %ux%u\r\n", GopModeInfo->HorizontalResolution,
+            GopModeInfo->VerticalResolution);
+    printf_("FrameBuffer Address 0x%x\r\n", Gop->Mode->FrameBufferBase);
+    printf_("FrameBuffer Size %u\r\n", Gop->Mode->FrameBufferSize);
+    printf_("Pixel Format %d\r\n", GopModeInfo->PixelFormat);
+    printf_("Pixels Per Scan line %u\r\n", GopModeInfo->PixelsPerScanLine);
+}
+
+void Console::DisplayAllGraphicsModeInfo()
+{
+    EFI_GRAPHICS_OUTPUT_MODE_INFORMATION* GopModeInfo = NULL;
+    UINTN ModeInfoSize = sizeof(EFI_GRAPHICS_OUTPUT_MODE_INFORMATION);
+
+    INT32 MaxMode = Gop->Mode->MaxMode;
+    INT32 i;
+    for (i = 0; i < MaxMode; i++)
+    {
+        Gop->QueryMode(Gop, (UINTN) i, &ModeInfoSize, &GopModeInfo);
+        printf_("Mode %d: Width x Height %ux%u\r\n", i, GopModeInfo->HorizontalResolution,
+                GopModeInfo->VerticalResolution);
+    }
+}
+
+void Console::SetGraphicsMode()
+{
+    printf_("Graphics Mode Set \r\n");
 }
 
 EFI_STATUS Console::GetKeyFromUser(EFI_INPUT_KEY* key)

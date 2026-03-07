@@ -12,8 +12,9 @@ extern "C"
 {
     EFI_STATUS EFIAPI efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE* SystemTable)
     {
-        Console efiConsole = Console(SystemTable->ConOut, SystemTable->ConIn, SystemTable->BootServices);
-        Con                = &efiConsole;
+        Console efiConsole
+                = Console(SystemTable->ConOut, SystemTable->ConIn, SystemTable->BootServices);
+        Con = &efiConsole;
 
         efiConsole.Reset();
         efiConsole.ClearConsole();
@@ -26,12 +27,23 @@ extern "C"
 
         int ikey = key - '0';
 
-        //TODO: Error handling
+        // TODO: Error handling
 
         efiConsole.SetTextMode(ikey);
-        
+
         efiConsole.ClearConsole();
         efiConsole.DisplayModeInfo();
+
+        efiConsole.DisplayGraphicsModeInfo();
+        efiConsole.DisplayAllGraphicsModeInfo();
+
+        efiConsole.printf_("Pick a Graphics mode\r\n");
+
+        key = efiConsole.GetKeyOnEvent();
+
+        ikey = key - '0';
+
+        efiConsole.SetGraphicsMode();
 
         while (true)
         {
