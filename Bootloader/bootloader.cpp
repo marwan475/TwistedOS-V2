@@ -34,11 +34,8 @@ extern "C"
         efiConsole.DisplayAllModeInfo();
 
         efiConsole.printf_("Pick a Text mode\r\n");
-        char key = efiConsole.GetKeyOnEvent();
-
-        int ikey = key - '0';
-
-        // TODO: Error handling
+        char key  = efiConsole.GetKeyOnEvent();
+        int  ikey = key - '0';
 
         efiConsole.SetTextMode(ikey);
 
@@ -51,17 +48,13 @@ extern "C"
         efiConsole.printf_("Pick a Graphics mode\r\n");
 
         efiConsole.printf_("Digit 1\r\n");
-        key = efiConsole.GetKeyOnEvent();
-
-        ikey = key - '0';
-
+        key       = efiConsole.GetKeyOnEvent();
+        ikey      = key - '0';
         int Gmode = ikey * 10;
 
         efiConsole.printf_("Digit 2\r\n");
-        key = efiConsole.GetKeyOnEvent();
-
+        key  = efiConsole.GetKeyOnEvent();
         ikey = key - '0';
-
         Gmode += ikey;
 
         efiConsole.SetGraphicsMode(Gmode);

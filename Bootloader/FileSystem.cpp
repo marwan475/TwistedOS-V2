@@ -40,7 +40,8 @@ void FileSystem::OutputDirectoryInfo(EFI_FILE_PROTOCOL* Dir)
     }
 }
 
-EFI_STATUS FileSystem::SetDirectoryPosition(EFI_FILE_PROTOCOL* Dir, EFI_FILE_PROTOCOL** NewDir, int index)
+EFI_STATUS FileSystem::SetDirectoryPosition(EFI_FILE_PROTOCOL* Dir, EFI_FILE_PROTOCOL** NewDir,
+                                            int index)
 {
     EFI_STATUS status;
 
