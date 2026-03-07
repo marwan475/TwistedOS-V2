@@ -13,7 +13,6 @@ Console::Console(EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL* ConOut, EFI_SIMPLE_TEXT_INPUT_
     if (EFI_ERROR(status))
     {
         printf_("Could not locate GOP\r\n");
-        return;
     }
 }
 
