@@ -18,6 +18,72 @@ char* strcpy(char* dest, const char* src)
     return dest;
 }
 
+void OutputDirectoryInfo(EFI_FILE_PROTOCOL* Dir, Console* efiConsole)
+{
+    EFI_FILE_INFO FileInfo;
+    UINTN         BuffSize = sizeof(FileInfo);
+    Dir->Read(Dir, &BuffSize, &FileInfo);
+
+    int NumEntries = 0;
+
+    while (BuffSize > 0)
+    {
+        efiConsole->printf_("\r\nFileIndex: %d\r\n", NumEntries);
+        efiConsole->printf_("Filename: ");
+        CHAR16* name = FileInfo.FileName;
+        while (*name)
+        {
+            efiConsole->printf_("%c", (char) *name);
+            name++;
+        }
+        efiConsole->printf_("\r\n");
+        efiConsole->printf_("Filesize: %d\r\n", FileInfo.FileSize);
+
+        efiConsole->printf_("Filetype: ");
+        (FileInfo.Attribute & EFI_FILE_DIRECTORY) ? efiConsole->printf_("Directory\r\n")
+                                                  : efiConsole->printf_("File\r\n");
+
+        BuffSize = sizeof(FileInfo);
+        Dir->Read(Dir, &BuffSize, &FileInfo);
+        NumEntries++;
+    }
+}
+
+EFI_STATUS SetDirectoryPosition(EFI_FILE_PROTOCOL* Dir, EFI_FILE_PROTOCOL** NewDir, int index,
+                                Console* efiConsole)
+{
+    EFI_STATUS status;
+
+    Dir->SetPosition(Dir, 0);
+    efiConsole->printf_("SETTING\r\n");
+    int           NumEntries = 0;
+    EFI_FILE_INFO FileInfo;
+    UINTN         BuffSize;
+    do
+    {
+        BuffSize = sizeof(FileInfo);
+        Dir->Read(Dir, &BuffSize, &FileInfo);
+        NumEntries++;
+    } while (NumEntries < index);
+    efiConsole->printf_("SETTING2\r\n");
+
+    if (FileInfo.Attribute & EFI_FILE_DIRECTORY)
+    {
+        status = Dir->Open(Dir, NewDir, FileInfo.FileName, EFI_FILE_MODE_READ, 0);
+        efiConsole->printf_("SETTING3\r\n");
+
+        if (EFI_ERROR(status))
+        {
+            efiConsole->printf_("Failed to Open Dir\r\n");
+            return status;
+        }
+
+        OutputDirectoryInfo(*NewDir, efiConsole);
+    }
+
+    return status;
+}
+
 EFI_STATUS ReadFiles(EFI_HANDLE ImageHandle, EFI_BOOT_SERVICES* BootServices, Console* efiConsole)
 {
     EFI_GUID                   LoadImageGUID = EFI_LOADED_IMAGE_PROTOCOL_GUID;
@@ -57,83 +123,20 @@ EFI_STATUS ReadFiles(EFI_HANDLE ImageHandle, EFI_BOOT_SERVICES* BootServices, Co
         return status;
     }
 
-    EFI_FILE_INFO FileInfo;
-    UINTN         BuffSize = sizeof(FileInfo);
-    Root->Read(Root, &BuffSize, &FileInfo);
-
-    int NumEntries = 0;
-
-    while (BuffSize > 0)
+    OutputDirectoryInfo(Root, efiConsole);
+    EFI_FILE_PROTOCOL* Dir = Root;
+    EFI_FILE_PROTOCOL* NewDir;
+    while (true)
     {
-        efiConsole->printf_("\r\nFileIndex: %d\r\n", NumEntries);
-        efiConsole->printf_("Filename: ");
-        CHAR16* name = FileInfo.FileName;
-        while (*name)
-        {
-            efiConsole->printf_("%c", (char) *name);
-            name++;
-        }
-        efiConsole->printf_("\r\n");
-        efiConsole->printf_("Filesize: %d\r\n", FileInfo.FileSize);
+        char key = efiConsole->GetKeyOnEvent();
 
-        efiConsole->printf_("Filetype: ");
-        (FileInfo.Attribute & EFI_FILE_DIRECTORY) ? efiConsole->printf_("Directory\r\n")
-                                                  : efiConsole->printf_("File\r\n");
+        int ikey = (key - '0') + 1; // offset for somereason
 
-        BuffSize = sizeof(FileInfo);
-        Root->Read(Root, &BuffSize, &FileInfo);
-        NumEntries++;
-    }
+        if (ikey == 10)
+            break;
 
-    char key = efiConsole->GetKeyOnEvent();
-
-    int ikey = key - '0';
-
-    Root->SetPosition(Root,0);
-    NumEntries = 0;
-    do {
-        BuffSize = sizeof(FileInfo);
-        Root->Read(Root, &BuffSize, &FileInfo);
-        NumEntries++;
-    }while (NumEntries < ikey);
-
-    if (FileInfo.Attribute & EFI_FILE_DIRECTORY) {
-        EFI_FILE_PROTOCOL * Dir;
-        status = Root->Open(Root, &Dir, FileInfo.FileName, EFI_FILE_MODE_READ, 0);
-
-        if (EFI_ERROR(status))
-        {
-            efiConsole->printf_("Failed to Open Dir\r\n");
-            return status;
-        }
-
-        EFI_FILE_INFO FileInfo;
-        BuffSize = sizeof(FileInfo);
-        Dir->Read(Dir, &BuffSize, &FileInfo);
-
-        int NumEntries = 0;
-
-        while (BuffSize > 0)
-        {
-            efiConsole->printf_("\r\nFileIndex: %d\r\n", NumEntries);
-            efiConsole->printf_("Filename: ");
-            CHAR16* name = FileInfo.FileName;
-            while (*name)
-            {
-                efiConsole->printf_("%c", (char) *name);
-                name++;
-            }
-            efiConsole->printf_("\r\n");
-            efiConsole->printf_("Filesize: %d\r\n", FileInfo.FileSize);
-
-            efiConsole->printf_("Filetype: ");
-            (FileInfo.Attribute & EFI_FILE_DIRECTORY) ? efiConsole->printf_("Directory\r\n")
-                                                    : efiConsole->printf_("File\r\n");
-
-            BuffSize = sizeof(FileInfo);
-            Dir->Read(Dir, &BuffSize, &FileInfo);
-            NumEntries++;
-        }
+        SetDirectoryPosition(Dir, &NewDir, ikey, efiConsole);
+        Dir = NewDir;
     }
 
     return status;
