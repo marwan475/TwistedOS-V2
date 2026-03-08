@@ -23,9 +23,8 @@ extern "C"
 {
     EFI_STATUS EFIAPI efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE* SystemTable)
     {
-        Console efiConsole
-                = Console(SystemTable->ConOut, SystemTable->ConIn, SystemTable->BootServices);
-        Con = &efiConsole;
+        Console efiConsole = Console(SystemTable->ConOut, SystemTable->ConIn, SystemTable->BootServices);
+        Con                = &efiConsole;
 
         efiConsole.Reset();
         efiConsole.ClearConsole();

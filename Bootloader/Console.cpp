@@ -77,15 +77,14 @@ void Console::SetTextMode(int mode)
 
 void Console::DisplayGraphicsModeInfo()
 {
-    EFI_GRAPHICS_OUTPUT_MODE_INFORMATION* GopModeInfo = NULL;
-    UINTN ModeInfoSize = sizeof(EFI_GRAPHICS_OUTPUT_MODE_INFORMATION);
+    EFI_GRAPHICS_OUTPUT_MODE_INFORMATION* GopModeInfo  = NULL;
+    UINTN                                 ModeInfoSize = sizeof(EFI_GRAPHICS_OUTPUT_MODE_INFORMATION);
 
     Gop->QueryMode(Gop, Gop->Mode->Mode, &ModeInfoSize, &GopModeInfo);
 
     printf_("Max Mode %d\r\n", Gop->Mode->MaxMode);
     printf_("Current Mode %d\r\n", Gop->Mode->Mode);
-    printf_("Width x Height %ux%u\r\n", GopModeInfo->HorizontalResolution,
-            GopModeInfo->VerticalResolution);
+    printf_("Width x Height %ux%u\r\n", GopModeInfo->HorizontalResolution, GopModeInfo->VerticalResolution);
     printf_("FrameBuffer Address 0x%x\r\n", Gop->Mode->FrameBufferBase);
     printf_("FrameBuffer Size %u\r\n", Gop->Mode->FrameBufferSize);
     printf_("Pixel Format %d\r\n", GopModeInfo->PixelFormat);
@@ -94,8 +93,8 @@ void Console::DisplayGraphicsModeInfo()
 
 void Console::DisplayAllGraphicsModeInfo()
 {
-    EFI_GRAPHICS_OUTPUT_MODE_INFORMATION* GopModeInfo = NULL;
-    UINTN ModeInfoSize = sizeof(EFI_GRAPHICS_OUTPUT_MODE_INFORMATION);
+    EFI_GRAPHICS_OUTPUT_MODE_INFORMATION* GopModeInfo  = NULL;
+    UINTN                                 ModeInfoSize = sizeof(EFI_GRAPHICS_OUTPUT_MODE_INFORMATION);
 
     INT32 MaxMode = Gop->Mode->MaxMode;
     INT32 i;

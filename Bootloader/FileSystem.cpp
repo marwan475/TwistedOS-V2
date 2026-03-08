@@ -44,53 +44,47 @@ EFI_STATUS GetMemoryMapFromEfi(MemoryMapInfo* MemoryMap, EFI_BOOT_SERVICES* Boot
 {
     EFI_STATUS status;
 
-    status = BootServices->GetMemoryMap(&MemoryMap->MemoryMapSize, MemoryMap->MemoryMap,
-                                        &MemoryMap->MapKey, &MemoryMap->DescriptorSize,
-                                        &MemoryMap->DescriptorVersion);
+    status = BootServices->GetMemoryMap(&MemoryMap->MemoryMapSize, MemoryMap->MemoryMap, &MemoryMap->MapKey,
+                                        &MemoryMap->DescriptorSize, &MemoryMap->DescriptorVersion);
 
     MemoryMap->MemoryMapSize += MemoryMap->DescriptorSize * 2;
-    BootServices->AllocatePool(EfiLoaderData, MemoryMap->MemoryMapSize,
-                               (VOID**) &MemoryMap->MemoryMap);
+    BootServices->AllocatePool(EfiLoaderData, MemoryMap->MemoryMapSize, (VOID**) &MemoryMap->MemoryMap);
 
-    status = BootServices->GetMemoryMap(&MemoryMap->MemoryMapSize, MemoryMap->MemoryMap,
-                                        &MemoryMap->MapKey, &MemoryMap->DescriptorSize,
-                                        &MemoryMap->DescriptorVersion);
+    status = BootServices->GetMemoryMap(&MemoryMap->MemoryMapSize, MemoryMap->MemoryMap, &MemoryMap->MapKey,
+                                        &MemoryMap->DescriptorSize, &MemoryMap->DescriptorVersion);
 
     return status;
 }
 
 void PrintMemoryMap(MemoryMapInfo MemoryMap, Console* efiConsole)
 {
-    efiConsole->printf_(
-            "Memory map: Size %u, Descriptor size: %u, # of descriptors: %u, key: %x\r\n",
-            MemoryMap.MemoryMapSize, MemoryMap.DescriptorSize,
-            MemoryMap.MemoryMapSize / MemoryMap.DescriptorSize, MemoryMap.MapKey);
+    efiConsole->printf_("Memory map: Size %u, Descriptor size: %u, # of descriptors: %u, key: %x\r\n",
+                        MemoryMap.MemoryMapSize, MemoryMap.DescriptorSize,
+                        MemoryMap.MemoryMapSize / MemoryMap.DescriptorSize, MemoryMap.MapKey);
 
     UINTN usable_bytes = 0; // "Usable" memory for an OS or similar, not firmware/device reserved
     for (UINTN i = 0; i < MemoryMap.MemoryMapSize / MemoryMap.DescriptorSize; i++)
     {
-        EFI_MEMORY_DESCRIPTOR* desc = (EFI_MEMORY_DESCRIPTOR*) ((UINT8*) MemoryMap.MemoryMap
-                                                                + (i * MemoryMap.DescriptorSize));
+        EFI_MEMORY_DESCRIPTOR* desc
+                = (EFI_MEMORY_DESCRIPTOR*) ((UINT8*) MemoryMap.MemoryMap + (i * MemoryMap.DescriptorSize));
 
-        efiConsole->printf_("%u: Typ: %u, Phy: %x, Vrt: %x, Pgs: %u, Att: %x\r\n", i, desc->Type,
-                            desc->PhysicalStart, desc->VirtualStart, desc->NumberOfPages,
-                            desc->Attribute);
+        efiConsole->printf_("%u: Typ: %u, Phy: %x, Vrt: %x, Pgs: %u, Att: %x\r\n", i, desc->Type, desc->PhysicalStart,
+                            desc->VirtualStart, desc->NumberOfPages, desc->Attribute);
 
         // Add to usable memory count depending on type
-        if (desc->Type == EfiLoaderCode || desc->Type == EfiLoaderData
-            || desc->Type == EfiBootServicesCode || desc->Type == EfiBootServicesData
-            || desc->Type == EfiConventionalMemory || desc->Type == EfiPersistentMemory)
+        if (desc->Type == EfiLoaderCode || desc->Type == EfiLoaderData || desc->Type == EfiBootServicesCode
+            || desc->Type == EfiBootServicesData || desc->Type == EfiConventionalMemory
+            || desc->Type == EfiPersistentMemory)
         {
             usable_bytes += desc->NumberOfPages * 4096;
         }
     }
 
-    efiConsole->printf_("\r\nUsable memory: %u / %u MiB / %u GiB\r\n", usable_bytes,
-                        usable_bytes / (1024 * 1024), usable_bytes / (1024 * 1024 * 1024));
+    efiConsole->printf_("\r\nUsable memory: %u / %u MiB / %u GiB\r\n", usable_bytes, usable_bytes / (1024 * 1024),
+                        usable_bytes / (1024 * 1024 * 1024));
 }
 
-EFI_STATUS FileSystem::SetDirectoryPosition(EFI_FILE_PROTOCOL* Dir, EFI_FILE_PROTOCOL** NewDir,
-                                            int index)
+EFI_STATUS FileSystem::SetDirectoryPosition(EFI_FILE_PROTOCOL* Dir, EFI_FILE_PROTOCOL** NewDir, int index)
 {
     EFI_STATUS status;
 
@@ -172,8 +166,7 @@ EFI_STATUS FileSystem::SetDirectoryPosition(EFI_FILE_PROTOCOL* Dir, EFI_FILE_PRO
             return status;
         }
 
-        void EFIAPI (*EntryPoint)(KernelParameters)
-                = (void EFIAPI (*)(KernelParameters)) KernelBuffer;
+        void EFIAPI (*EntryPoint)(KernelParameters) = (void EFIAPI (*)(KernelParameters)) KernelBuffer;
 
         EntryPoint(KernelArgs);
     }
@@ -188,8 +181,8 @@ EFI_STATUS FileSystem::LoadKernel()
 
     EFI_STATUS status;
 
-    status = BootServices->OpenProtocol(ImageHandle, &LoadImageGUID, (VOID**) &LoadImageProtocol,
-                                        ImageHandle, NULL, EFI_OPEN_PROTOCOL_BY_HANDLE_PROTOCOL);
+    status = BootServices->OpenProtocol(ImageHandle, &LoadImageGUID, (VOID**) &LoadImageProtocol, ImageHandle, NULL,
+                                        EFI_OPEN_PROTOCOL_BY_HANDLE_PROTOCOL);
 
     if (EFI_ERROR(status))
     {
@@ -200,9 +193,8 @@ EFI_STATUS FileSystem::LoadKernel()
     EFI_GUID                         SimpleFileGUID = EFI_SIMPLE_FILE_SYSTEM_PROTOCOL_GUID;
     EFI_SIMPLE_FILE_SYSTEM_PROTOCOL* SimpleFileProtocol;
 
-    status = BootServices->OpenProtocol(LoadImageProtocol->DeviceHandle, &SimpleFileGUID,
-                                        (VOID**) &SimpleFileProtocol, ImageHandle, NULL,
-                                        EFI_OPEN_PROTOCOL_BY_HANDLE_PROTOCOL);
+    status = BootServices->OpenProtocol(LoadImageProtocol->DeviceHandle, &SimpleFileGUID, (VOID**) &SimpleFileProtocol,
+                                        ImageHandle, NULL, EFI_OPEN_PROTOCOL_BY_HANDLE_PROTOCOL);
 
     if (EFI_ERROR(status))
     {
@@ -225,8 +217,8 @@ EFI_STATUS FileSystem::LoadKernel()
     EFI_FILE_PROTOCOL* NewDir;
 
     // char key = efiConsole->GetKeyOnEvent();
-    char key = '1';
-    int ikey = (key - '0') + 1; // offset for somereason
+    char key  = '1';
+    int  ikey = (key - '0') + 1; // offset for somereason
 
     SetDirectoryPosition(Dir, &NewDir, ikey);
 

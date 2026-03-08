@@ -61,9 +61,10 @@ $(EFI): Bootloader/bootloader.cpp utils/printf.cpp Bootloader/Console.cpp Bootlo
 	$(CC) $(CFLAGS) -I. -I./Bootloader -I./utils -o $(BIN)$@ $^ \
 		-L /usr/lib -l:libefi.a -l:libgnuefi.a
 
-$(KERNEL): Kernel/kernel.cpp Kernel/linker.ld
-	$(KERNEL_CC) $(KERNEL_CFLAGS) -I. -I./Bootloader -I./utils -c $< -o $(BUILD)kernel.o
-	$(KERNEL_LD) $(KERNEL_LDFLAGS) $(BUILD)kernel.o -o $(BUILD)kernel.elf
+$(KERNEL): Kernel/kernel.cpp utils/printf.cpp Kernel/linker.ld
+	$(KERNEL_CC) $(KERNEL_CFLAGS) -I./Kernel -I./Bootloader -I./utils -c Kernel/kernel.cpp -o $(BUILD)kernel.o
+	$(KERNEL_CC) $(KERNEL_CFLAGS) -I./Kernel -I./Bootloader -I./utils -c utils/printf.cpp -o $(BUILD)printf.o
+	$(KERNEL_LD) $(KERNEL_LDFLAGS) $(BUILD)kernel.o $(BUILD)printf.o -o $(BUILD)kernel.elf
 	objcopy -O binary $(BUILD)kernel.elf $(BIN)$@
 
 $(IMG): $(EFI) $(KERNEL)
@@ -153,7 +154,7 @@ format:
 			IndentWidth: 4, \
 			TabWidth: 4, \
 			UseTab: Never, \
-			ColumnLimit: 100, \
+			ColumnLimit: 120, \
 			BreakBeforeBraces: Allman, \
 			AllowShortIfStatementsOnASingleLine: false, \
 			AllowShortLoopsOnASingleLine: false, \

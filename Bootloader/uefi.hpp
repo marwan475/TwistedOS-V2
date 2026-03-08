@@ -66,20 +66,16 @@ typedef enum
     EfiMaxMemoryType
 } EFI_MEMORY_TYPE;
 
-#define EFI_GRAPHICS_OUTPUT_PROTOCOL_GUID                                                          \
-    {0x9042a9de, 0x23dc, 0x4a38, 0x96, 0xfb, {0x7a, 0xde, 0xd0, 0x80, 0x51, 0x6a}}
+#define EFI_GRAPHICS_OUTPUT_PROTOCOL_GUID {0x9042a9de, 0x23dc, 0x4a38, 0x96, 0xfb, {0x7a, 0xde, 0xd0, 0x80, 0x51, 0x6a}}
 
-#define EFI_SIMPLE_FILE_SYSTEM_PROTOCOL_GUID                                                       \
+#define EFI_SIMPLE_FILE_SYSTEM_PROTOCOL_GUID                                                                           \
     {0x0964e5b22, 0x6459, 0x11d2, 0x8e, 0x39, {0x00, 0xa0, 0xc9, 0x69, 0x72, 0x3b}}
 
-#define EFI_LOADED_IMAGE_PROTOCOL_GUID                                                             \
-    {0x5B1B31A1, 0x9562, 0x11d2, 0x8E, 0x3F, {0x00, 0xA0, 0xC9, 0x69, 0x72, 0x3B}}
+#define EFI_LOADED_IMAGE_PROTOCOL_GUID {0x5B1B31A1, 0x9562, 0x11d2, 0x8E, 0x3F, {0x00, 0xA0, 0xC9, 0x69, 0x72, 0x3B}}
 
-#define EFI_FILE_INFO_ID                                                                           \
-    {0x09576e92, 0x6d3f, 0x11d2, 0x8e, 0x39, {0x00, 0xa0, 0xc9, 0x69, 0x72, 0x3b}}
+#define EFI_FILE_INFO_ID {0x09576e92, 0x6d3f, 0x11d2, 0x8e, 0x39, {0x00, 0xa0, 0xc9, 0x69, 0x72, 0x3b}}
 
-#define EFI_FILE_SYSTEM_INFO_ID                                                                    \
-    {0x09576e93, 0x6d3f, 0x11d2, 0x8e, 0x39, {0x00, 0xa0, 0xc9, 0x69, 0x72, 0x3b}}
+#define EFI_FILE_SYSTEM_INFO_ID {0x09576e93, 0x6d3f, 0x11d2, 0x8e, 0x39, {0x00, 0xa0, 0xc9, 0x69, 0x72, 0x3b}}
 
 // Status Codes
 #define EFI_SUCCESS 0ULL
@@ -128,13 +124,13 @@ typedef struct
 } EFI_GRAPHICS_OUTPUT_MODE_INFORMATION;
 
 // EFI_GRAPHICS_OUTPUT_PROTOCOL_QUERY_MODE: UEFI spec 2.10 section 12.9.2.1
-typedef EFI_STATUS(EFIAPI* EFI_GRAPHICS_OUTPUT_PROTOCOL_QUERY_MODE)(
-        IN EFI_GRAPHICS_OUTPUT_PROTOCOL* This, IN UINT32 ModeNumber, OUT UINTN* SizeOfInfo,
-        OUT EFI_GRAPHICS_OUTPUT_MODE_INFORMATION** Info);
+typedef EFI_STATUS(EFIAPI* EFI_GRAPHICS_OUTPUT_PROTOCOL_QUERY_MODE)(IN EFI_GRAPHICS_OUTPUT_PROTOCOL* This,
+                                                                    IN UINT32 ModeNumber, OUT UINTN* SizeOfInfo,
+                                                                    OUT EFI_GRAPHICS_OUTPUT_MODE_INFORMATION** Info);
 
 // EFI_GRAPHICS_OUTPUT_PROTOCOL_SET_MODE: UEFI spec 2.10 section 12.9.2.2
-typedef EFI_STATUS(EFIAPI* EFI_GRAPHICS_OUTPUT_PROTOCOL_SET_MODE)(
-        IN EFI_GRAPHICS_OUTPUT_PROTOCOL* This, IN UINT32 ModeNumber);
+typedef EFI_STATUS(EFIAPI* EFI_GRAPHICS_OUTPUT_PROTOCOL_SET_MODE)(IN EFI_GRAPHICS_OUTPUT_PROTOCOL* This,
+                                                                  IN UINT32                        ModeNumber);
 
 // EFI_GRAPHICS_OUTPUT_BLT_PIXEL
 typedef struct
@@ -156,12 +152,12 @@ typedef enum
 } EFI_GRAPHICS_OUTPUT_BLT_OPERATION;
 
 // EFI_GRAPHICS_OUTPUT_PROTOCOL_BLT: UEFI spec 2.10 section 12.9.2.3
-typedef EFI_STATUS(EFIAPI* EFI_GRAPHICS_OUTPUT_PROTOCOL_BLT)(
-        IN EFI_GRAPHICS_OUTPUT_PROTOCOL*                This,
-        IN OUT EFI_GRAPHICS_OUTPUT_BLT_PIXEL* BltBuffer OPTIONAL,
-        IN EFI_GRAPHICS_OUTPUT_BLT_OPERATION BltOperation, IN UINTN SourceX, IN UINTN SourceY,
-        IN UINTN DestinationX, IN UINTN DestinationY, IN UINTN Width, IN UINTN Height,
-        IN UINTN Delta OPTIONAL);
+typedef EFI_STATUS(EFIAPI* EFI_GRAPHICS_OUTPUT_PROTOCOL_BLT)(IN EFI_GRAPHICS_OUTPUT_PROTOCOL*                This,
+                                                             IN OUT EFI_GRAPHICS_OUTPUT_BLT_PIXEL* BltBuffer OPTIONAL,
+                                                             IN EFI_GRAPHICS_OUTPUT_BLT_OPERATION BltOperation,
+                                                             IN UINTN SourceX, IN UINTN SourceY, IN UINTN DestinationX,
+                                                             IN UINTN DestinationY, IN UINTN Width, IN UINTN Height,
+                                                             IN UINTN Delta OPTIONAL);
 
 // EFI_GRAPHICS_OUTPUT_PROTOCOL_MODE
 typedef struct
@@ -184,18 +180,15 @@ typedef struct EFI_GRAPHICS_OUTPUT_PROTOCOL
 } EFI_GRAPHICS_OUTPUT_PROTOCOL;
 
 // EFI_LOCATE_PROTOCOL: UEFI spec 2.10 section 7.3.16
-typedef EFI_STATUS(EFIAPI* EFI_LOCATE_PROTOCOL)(IN EFI_GUID*          Protocol,
-                                                IN VOID* Registration OPTIONAL,
-                                                OUT VOID**            Interface);
+typedef EFI_STATUS(EFIAPI* EFI_LOCATE_PROTOCOL)(IN EFI_GUID* Protocol, IN VOID* Registration OPTIONAL,
+                                                OUT VOID** Interface);
 
 typedef EFI_STATUS(EFIAPI* EFI_OPEN_PROTOCOL)(IN EFI_HANDLE Handle, IN EFI_GUID* Protocol,
-                                              OUT VOID** Interface OPTIONAL,
-                                              IN EFI_HANDLE        AgentHandle,
+                                              OUT VOID** Interface OPTIONAL, IN EFI_HANDLE AgentHandle,
                                               IN EFI_HANDLE ControllerHandle, IN UINT32 Attributes);
 
 // EFI_CLOSE_PROTOCOL: UEFI Spec 2.10 section 7.3.10
-typedef EFI_STATUS(EFIAPI* EFI_CLOSE_PROTOCOL)(IN EFI_HANDLE Handle, IN EFI_GUID* Protocol,
-                                               IN EFI_HANDLE AgentHandle,
+typedef EFI_STATUS(EFIAPI* EFI_CLOSE_PROTOCOL)(IN EFI_HANDLE Handle, IN EFI_GUID* Protocol, IN EFI_HANDLE AgentHandle,
                                                IN EFI_HANDLE ControllerHandle);
 
 #define EFI_OPEN_PROTOCOL_BY_HANDLE_PROTOCOL 0x00000001
@@ -208,8 +201,7 @@ typedef EFI_STATUS(EFIAPI* EFI_CLOSE_PROTOCOL)(IN EFI_HANDLE Handle, IN EFI_GUID
 // Text Input
 typedef struct EFI_SIMPLE_TEXT_INPUT_PROTOCOL EFI_SIMPLE_TEXT_INPUT_PROTOCOL;
 
-typedef EFI_STATUS(EFIAPI* EFI_INPUT_RESET)(IN EFI_SIMPLE_TEXT_INPUT_PROTOCOL* This,
-                                            IN BOOLEAN ExtendedVerification);
+typedef EFI_STATUS(EFIAPI* EFI_INPUT_RESET)(IN EFI_SIMPLE_TEXT_INPUT_PROTOCOL* This, IN BOOLEAN ExtendedVerification);
 
 typedef struct
 {
@@ -217,8 +209,7 @@ typedef struct
     CHAR16 UnicodeChar;
 } EFI_INPUT_KEY;
 
-typedef EFI_STATUS(EFIAPI* EFI_INPUT_READ_KEY)(IN EFI_SIMPLE_TEXT_INPUT_PROTOCOL* This,
-                                               OUT EFI_INPUT_KEY*                 Key);
+typedef EFI_STATUS(EFIAPI* EFI_INPUT_READ_KEY)(IN EFI_SIMPLE_TEXT_INPUT_PROTOCOL* This, OUT EFI_INPUT_KEY* Key);
 
 typedef struct EFI_SIMPLE_TEXT_INPUT_PROTOCOL
 {
@@ -230,26 +221,21 @@ typedef struct EFI_SIMPLE_TEXT_INPUT_PROTOCOL
 // Text Output
 typedef struct EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL;
 
-typedef EFI_STATUS(EFIAPI* EFI_TEXT_RESET)(IN EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL* This,
-                                           IN BOOLEAN ExtendedVerification);
+typedef EFI_STATUS(EFIAPI* EFI_TEXT_RESET)(IN EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL* This, IN BOOLEAN ExtendedVerification);
 
-typedef EFI_STATUS(EFIAPI* EFI_TEXT_STRING)(IN EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL* This,
-                                            IN CHAR16*                          String);
+typedef EFI_STATUS(EFIAPI* EFI_TEXT_STRING)(IN EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL* This, IN CHAR16* String);
 
-typedef EFI_STATUS(EFIAPI* EFI_TEXT_QUERY_MODE)(IN EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL* This,
-                                                IN UINTN ModeNumber, OUT UINTN* Columns,
-                                                OUT UINTN* Rows);
+typedef EFI_STATUS(EFIAPI* EFI_TEXT_QUERY_MODE)(IN EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL* This, IN UINTN ModeNumber,
+                                                OUT UINTN* Columns, OUT UINTN* Rows);
 
-typedef EFI_STATUS(EFIAPI* EFI_TEXT_SET_MODE)(IN EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL* This,
-                                              IN UINTN                            ModeNumber);
+typedef EFI_STATUS(EFIAPI* EFI_TEXT_SET_MODE)(IN EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL* This, IN UINTN ModeNumber);
 
-typedef EFI_STATUS(EFIAPI* EFI_TEXT_SET_ATTRIBUTE)(IN EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL* This,
-                                                   IN UINTN                            Attribute);
+typedef EFI_STATUS(EFIAPI* EFI_TEXT_SET_ATTRIBUTE)(IN EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL* This, IN UINTN Attribute);
 
 typedef EFI_STATUS(EFIAPI* EFI_TEXT_CLEAR_SCREEN)(IN EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL* This);
 
-typedef EFI_STATUS(EFIAPI* EFI_TEXT_SET_CURSOR_POSITION)(IN EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL* This,
-                                                         IN UINTN Column, IN UINTN Row);
+typedef EFI_STATUS(EFIAPI* EFI_TEXT_SET_CURSOR_POSITION)(IN EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL* This, IN UINTN Column,
+                                                         IN UINTN Row);
 
 #define EFI_BLACK 0x00
 #define EFI_BLUE 0x01
@@ -330,16 +316,14 @@ typedef enum
 } EFI_ALLOCATE_TYPE;
 
 // EFI_ALLOCATE_PAGES: UEFI Spec 2.10 section 7.2.1
-typedef EFI_STATUS(EFIAPI* EFI_ALLOCATE_PAGES)(IN EFI_ALLOCATE_TYPE Type,
-                                               IN EFI_MEMORY_TYPE MemoryType, IN UINTN Pages,
+typedef EFI_STATUS(EFIAPI* EFI_ALLOCATE_PAGES)(IN EFI_ALLOCATE_TYPE Type, IN EFI_MEMORY_TYPE MemoryType, IN UINTN Pages,
                                                IN OUT EFI_PHYSICAL_ADDRESS* Memory);
 
 // EFI_FREE_PAGES: UEFI Spec 2.10 section 7.2.2
 typedef EFI_STATUS(EFIAPI* EFI_FREE_PAGES)(IN EFI_PHYSICAL_ADDRESS Memory, IN UINTN Pages);
 
 // EFI_ALLOCATE_POOL: UEFI Spec 2.10 section 7.2.4
-typedef EFI_STATUS(EFIAPI* EFI_ALLOCATE_POOL)(IN EFI_MEMORY_TYPE PoolType, IN UINTN Size,
-                                              OUT VOID** Buffer);
+typedef EFI_STATUS(EFIAPI* EFI_ALLOCATE_POOL)(IN EFI_MEMORY_TYPE PoolType, IN UINTN Size, OUT VOID** Buffer);
 
 // EFI_FREE_POOL: UEFI Spec 2.10 section 7.2.5
 typedef EFI_STATUS(EFIAPI* EFI_FREE_POOL)(IN VOID* Buffer);
@@ -354,17 +338,15 @@ typedef struct
 } EFI_MEMORY_DESCRIPTOR;
 
 // EFI_GET_MEMORY_MAP: UEFI Spec 2.10 section 7.2.3
-typedef EFI_STATUS(EFIAPI* EFI_GET_MEMORY_MAP)(IN OUT UINTN*              MemoryMapSize,
-                                               OUT EFI_MEMORY_DESCRIPTOR* MemoryMap,
+typedef EFI_STATUS(EFIAPI* EFI_GET_MEMORY_MAP)(IN OUT UINTN* MemoryMapSize, OUT EFI_MEMORY_DESCRIPTOR* MemoryMap,
                                                OUT UINTN* MapKey, OUT UINTN* DescriptorSize,
                                                OUT UINT32* DescriptorVersion);
 
 typedef struct EFI_FILE_PROTOCOL EFI_FILE_PROTOCOL;
 
 // EFI_FILE_OPEN: UEFI Spec 2.10 section 13.5.2
-typedef EFI_STATUS(EFIAPI* EFI_FILE_OPEN)(IN EFI_FILE_PROTOCOL*   This,
-                                          OUT EFI_FILE_PROTOCOL** NewHandle, IN CHAR16* FileName,
-                                          IN UINT64 OpenMode, IN UINT64 Attributes);
+typedef EFI_STATUS(EFIAPI* EFI_FILE_OPEN)(IN EFI_FILE_PROTOCOL* This, OUT EFI_FILE_PROTOCOL** NewHandle,
+                                          IN CHAR16* FileName, IN UINT64 OpenMode, IN UINT64 Attributes);
 
 // Open Modes
 #define EFI_FILE_MODE_READ 0x0000000000000001
@@ -387,12 +369,10 @@ typedef EFI_STATUS(EFIAPI* EFI_FILE_CLOSE)(IN EFI_FILE_PROTOCOL* This);
 typedef EFI_STATUS(EFIAPI* EFI_FILE_DELETE)(IN EFI_FILE_PROTOCOL* This);
 
 // EFI_FILE_READ: UEFI Spec 2.10 section 13.5.5
-typedef EFI_STATUS(EFIAPI* EFI_FILE_READ)(IN EFI_FILE_PROTOCOL* This, IN OUT UINTN* BufferSize,
-                                          OUT VOID* Buffer);
+typedef EFI_STATUS(EFIAPI* EFI_FILE_READ)(IN EFI_FILE_PROTOCOL* This, IN OUT UINTN* BufferSize, OUT VOID* Buffer);
 
 // EFI_FILE_WRITE: UEFI Spec 2.10 section 13.5.6
-typedef EFI_STATUS(EFIAPI* EFI_FILE_WRITE)(IN EFI_FILE_PROTOCOL* This, IN OUT UINTN* BufferSize,
-                                           IN VOID* Buffer);
+typedef EFI_STATUS(EFIAPI* EFI_FILE_WRITE)(IN EFI_FILE_PROTOCOL* This, IN OUT UINTN* BufferSize, IN VOID* Buffer);
 
 // EFI_FILE_SET_POSITION: UEFI Spec 2.10 section 13.5.11
 typedef EFI_STATUS(EFIAPI* EFI_FILE_SET_POSITION)(IN EFI_FILE_PROTOCOL* This, IN UINT64 Position);
@@ -401,14 +381,12 @@ typedef EFI_STATUS(EFIAPI* EFI_FILE_SET_POSITION)(IN EFI_FILE_PROTOCOL* This, IN
 typedef EFI_STATUS(EFIAPI* EFI_FILE_GET_POSITION)(IN EFI_FILE_PROTOCOL* This, OUT UINT64* Position);
 
 // EFI_FILE_GET_INFO: UEFI Spec 2.10 section 13.5.13
-typedef EFI_STATUS(EFIAPI* EFI_FILE_GET_INFO)(IN EFI_FILE_PROTOCOL* This,
-                                              IN EFI_GUID*          InformationType,
+typedef EFI_STATUS(EFIAPI* EFI_FILE_GET_INFO)(IN EFI_FILE_PROTOCOL* This, IN EFI_GUID* InformationType,
                                               IN OUT UINTN* BufferSize, OUT VOID* Buffer);
 
 // EFI_FILE_SET_INFO: UEFI Spec 2.10 section 13.5.14
-typedef EFI_STATUS(EFIAPI* EFI_FILE_SET_INFO)(IN EFI_FILE_PROTOCOL* This,
-                                              IN EFI_GUID* InformationType, IN UINTN BufferSize,
-                                              IN VOID* Buffer);
+typedef EFI_STATUS(EFIAPI* EFI_FILE_SET_INFO)(IN EFI_FILE_PROTOCOL* This, IN EFI_GUID* InformationType,
+                                              IN UINTN BufferSize, IN VOID* Buffer);
 
 // EFI_FILE_FLUSH: UEFI Spec 2.10 section 13.5.15
 typedef EFI_STATUS(EFIAPI* EFI_FILE_FLUSH)(IN EFI_FILE_PROTOCOL* This);
@@ -468,8 +446,8 @@ typedef struct EFI_SIMPLE_FILE_SYSTEM_PROTOCOL EFI_SIMPLE_FILE_SYSTEM_PROTOCOL;
 
 #define EFI_SIMPLE_FILE_SYSTEM_PROTOCOL_REVISION 0x00010000
 
-typedef EFI_STATUS(EFIAPI* EFI_SIMPLE_FILE_SYSTEM_PROTOCOL_OPEN_VOLUME)(
-        IN EFI_SIMPLE_FILE_SYSTEM_PROTOCOL* This, OUT EFI_FILE_PROTOCOL** Root);
+typedef EFI_STATUS(EFIAPI* EFI_SIMPLE_FILE_SYSTEM_PROTOCOL_OPEN_VOLUME)(IN EFI_SIMPLE_FILE_SYSTEM_PROTOCOL* This,
+                                                                        OUT EFI_FILE_PROTOCOL**             Root);
 
 typedef struct EFI_SIMPLE_FILE_SYSTEM_PROTOCOL
 {
@@ -490,8 +468,7 @@ typedef struct
     UINT32 REserved;
 } EFI_TABLE_HEADER;
 
-typedef EFI_STATUS(EFIAPI* EFI_WAIT_FOR_EVENT)(IN UINTN NumberOfEvents, IN EFI_EVENT* Event,
-                                               OUT UINTN* Index);
+typedef EFI_STATUS(EFIAPI* EFI_WAIT_FOR_EVENT)(IN UINTN NumberOfEvents, IN EFI_EVENT* Event, OUT UINTN* Index);
 
 typedef EFI_STATUS(EFIAPI* EFI_EXIT_BOOT_SERVICES)(IN EFI_HANDLE ImageHandle, IN UINTN MapKey);
 
@@ -604,5 +581,4 @@ typedef struct
     void* Unload;
 } EFI_LOADED_IMAGE_PROTOCOL;
 
-typedef EFI_STATUS(EFIAPI* EFI_IMAGE_ENTRY_POINT)(IN EFI_HANDLE        ImageHandle,
-                                                  IN EFI_SYSTEM_TABLE* SystemTable);
+typedef EFI_STATUS(EFIAPI* EFI_IMAGE_ENTRY_POINT)(IN EFI_HANDLE ImageHandle, IN EFI_SYSTEM_TABLE* SystemTable);
