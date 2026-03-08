@@ -1,4 +1,3 @@
-
 CC = x86_64-w64-mingw32-g++ \
 		-Wl,--subsystem,10 \
 		-e efi_main
@@ -15,17 +14,38 @@ CFLAGS = \
 	-fno-exceptions \
 	-fno-rtti
 
+KERNEL_CC = g++
+KERNEL_LD = ld
+KERNEL_CFLAGS = \
+    -ffreestanding \
+    -fPIC \
+    -mno-red-zone \
+    -nostdlib \
+    -fno-exceptions \
+    -fno-rtti \
+    -fno-stack-protector \
+    -O0 \
+    -Wall \
+    -Wextra
+
+KERNEL_LDFLAGS = \
+    -nostdlib \
+    -pie \
+    -e kernel_main \
+    -T Kernel/linker.ld
+
 BIN = bin/
 BUILD = build/
 OUTPUT = TwistedOS.img
 
 EFI = BOOTX64.EFI
+KERNEL = kernel.bin
 IMG = $(OUTPUT)
 DRIVE = TwistedDrive.img
 ESP_SIZE = 64
 SECTORS = $(shell echo $$(( $(ESP_SIZE) * 2048 )))
 
-all: bin build $(IMG) $(DRIVE)
+all: bin build $(EFI) $(KERNEL) $(IMG) $(DRIVE)
 
 clean:
 	rm -rf $(BIN) $(BUILD) $(OUTPUT) *.pcap
@@ -40,7 +60,12 @@ $(EFI): Bootloader/bootloader.cpp utils/printf.cpp Bootloader/Console.cpp Bootlo
 	$(CC) $(CFLAGS) -I. -I./Bootloader -I./utils -o $(BIN)$@ $^ \
 		-L /usr/lib -l:libefi.a -l:libgnuefi.a
 
-$(IMG): $(EFI)
+$(KERNEL): Kernel/kernel.cpp Kernel/linker.ld
+	$(KERNEL_CC) $(KERNEL_CFLAGS) -I. -I./Bootloader -I./utils -c $< -o $(BUILD)kernel.o
+	$(KERNEL_LD) $(KERNEL_LDFLAGS) $(BUILD)kernel.o -o $(BUILD)kernel.elf
+	objcopy -O binary $(BUILD)kernel.elf $(BIN)$@
+
+$(IMG): $(EFI) $(KERNEL)
 	rm -f $@
 	dd if=/dev/zero of=$@ bs=512 count=$(SECTORS) status=none
 	parted $@ --script mklabel gpt
@@ -53,6 +78,7 @@ $(IMG): $(EFI)
 	export MTOOLS_SKIP_CHECK=1; \
 	mmd -i $$ESP ::/EFI; mmd -i $$ESP ::/EFI/BOOT; \
 	mcopy -i $$ESP $(BIN)$(EFI) ::/EFI/BOOT/BOOTX64.EFI; \
+	mcopy -i $$ESP $(BIN)$(KERNEL) ::/kernel.bin; \
 	dd if=$$ESP of=$@ bs=512 seek=$$START conv=notrunc status=none; \
 	rm -f $$ESP
 
@@ -65,20 +91,53 @@ $(DRIVE):
 	fi
 
 qemu-uefi:
-	qemu-system-x86_64 -bios Firmware/UEFI64.bin -drive file=TwistedOS.img,format=raw -drive if=none,id=data,file=TwistedDrive.img,format=raw -device virtio-blk-pci,drive=data -device virtio-gpu-pci -netdev user,id=net0,hostfwd=tcp::2222-:22,hostfwd=tcp::8080-:80 -object filter-dump,id=f1,netdev=net0,file=netdump.pcap -device virtio-net-pci,netdev=net0 -device nec-usb-xhci,id=xhci -device usb-kbd,bus=xhci.0 -device usb-mouse,bus=xhci.0 -serial stdio
+	qemu-system-x86_64 -bios Firmware/UEFI64.bin \
+	-drive file=TwistedOS.img,format=raw \
+	-drive if=none,id=data,file=TwistedDrive.img,format=raw \
+	-device virtio-blk-pci,drive=data \
+	-device virtio-gpu-pci \
+	-netdev user,id=net0,hostfwd=tcp::2222-:22,hostfwd=tcp::8080-:80 \
+	-object filter-dump,id=f1,netdev=net0,file=netdump.pcap \
+	-device virtio-net-pci,netdev=net0 \
+	-device nec-usb-xhci,id=xhci \
+	-device usb-kbd,bus=xhci.0 \
+	-device usb-mouse,bus=xhci.0 \
+	-serial stdio
 
 qemu-gl:
-	qemu-system-x86_64 -bios Firmware/UEFI64.bin -serial stdio -drive file=TwistedOS.img,format=raw -drive if=none,id=data,file=TwistedDrive.img,format=raw -device virtio-blk-pci,drive=data -device virtio-gpu-gl-pci -display gtk,gl=on -netdev user,id=net0,hostfwd=tcp::2222-:22,hostfwd=tcp::8080-:80 -object filter-dump,id=f1,netdev=net0,file=netdump.pcap -device virtio-net-pci,netdev=net0 -device nec-usb-xhci,id=xhci -device usb-kbd,bus=xhci.0 -device usb-mouse,bus=xhci.0
+	qemu-system-x86_64 -bios Firmware/UEFI64.bin \
+	-serial stdio \
+	-drive file=TwistedOS.img,format=raw \
+	-drive if=none,id=data,file=TwistedDrive.img,format=raw \
+	-device virtio-blk-pci,drive=data \
+	-device virtio-gpu-gl-pci \
+	-display gtk,gl=on \
+	-netdev user,id=net0,hostfwd=tcp::2222-:22,hostfwd=tcp::8080-:80 \
+	-object filter-dump,id=f1,netdev=net0,file=netdump.pcap \
+	-device virtio-net-pci,netdev=net0 \
+	-device nec-usb-xhci,id=xhci \
+	-device usb-kbd,bus=xhci.0 \
+	-device usb-mouse,bus=xhci.0
 
 qemu-new:
-	qemu-system-x86_64 -drive if=pflash,format=raw,readonly=on,file=Firmware/code.fd -drive if=pflash,format=raw,file=Firmware/TwistedOS_VARS.fd -drive file=TwistedOS.img,format=raw -drive if=none,id=data,file=TwistedDrive.img,format=raw -device virtio-blk-pci,drive=data -device virtio-gpu-gl-pci -display gtk,gl=on -serial stdio -netdev user,id=net0,hostfwd=tcp::2222-:22,hostfwd=tcp::8080-:80 -device virtio-net-pci,netdev=net0 -device nec-usb-xhci,id=xhci -device usb-kbd,bus=xhci.0 -device usb-mouse,bus=xhci.0
+	qemu-system-x86_64 \
+	-drive if=pflash,format=raw,readonly=on,file=Firmware/code.fd \
+	-drive if=pflash,format=raw,file=Firmware/TwistedOS_VARS.fd \
+	-drive file=TwistedOS.img,format=raw \
+	-drive if=none,id=data,file=TwistedDrive.img,format=raw \
+	-device virtio-blk-pci,drive=data \
+	-device virtio-gpu-gl-pci \
+	-display gtk,gl=on \
+	-serial stdio \
+	-netdev user,id=net0,hostfwd=tcp::2222-:22,hostfwd=tcp::8080-:80 \
+	-device virtio-net-pci,netdev=net0 \
+	-device nec-usb-xhci,id=xhci \
+	-device usb-kbd,bus=xhci.0 \
+	-device usb-mouse,bus=xhci.0
 
 qemu-basic:
 	qemu-system-x86_64 -bios Firmware/UEFI64.bin -net none -drive file=TwistedOS.img,format=raw
 
-#ATI Rage 128 Pro ati-vga
-
-# Find all C/C++ source and header files in the repo
 ALL_SOURCE_FILES := $(shell find . -type f \( -name '*.c' -o -name '*.cpp' -o -name '*.h' -o -name '*.hpp' \))
 
 .PHONY: format
@@ -86,45 +145,5 @@ format:
 	@echo "Formatting all C/C++ files in repository..."
 	@for file in $(ALL_SOURCE_FILES); do \
 		echo "→ Formatting $$file"; \
-		clang-format -i --style="{ \
-			BasedOnStyle: llvm, \
-			IndentWidth: 4, \
-			TabWidth: 4, \
-			UseTab: Never, \
-			ColumnLimit: 100, \
-			BreakBeforeBraces: Allman, \
-			AllowShortIfStatementsOnASingleLine: false, \
-			AllowShortLoopsOnASingleLine: false, \
-			AllowShortFunctionsOnASingleLine: None, \
-			AllowShortBlocksOnASingleLine: Never, \
-			PointerAlignment: Left, \
-			ReferenceAlignment: Left, \
-			AlignOperands: true, \
-			AlignConsecutiveAssignments: true, \
-			AlignConsecutiveDeclarations: true, \
-			AlignTrailingComments: true, \
-			AlignAfterOpenBracket: Align, \
-			BreakBeforeBinaryOperators: All, \
-			SpaceBeforeParens: ControlStatements, \
-			SpacesInParentheses: false, \
-			SpacesInSquareBrackets: false, \
-			SpacesInAngles: false, \
-			SpaceAfterCStyleCast: true, \
-			SpaceBeforeAssignmentOperators: true, \
-			KeepEmptyLinesAtTheStartOfBlocks: false, \
-			SortIncludes: true, \
-			IncludeBlocks: Regroup, \
-			NamespaceIndentation: None, \
-			AccessModifierOffset: -4, \
-			IndentCaseLabels: true, \
-			BreakConstructorInitializersBeforeComma: false, \
-			BreakInheritanceList: BeforeColon, \
-			ConstructorInitializerIndentWidth: 4, \
-			ContinuationIndentWidth: 8, \
-			ReflowComments: true, \
-			SpacesBeforeTrailingComments: 1, \
-			Cpp11BracedListStyle: true \
-		}" $$file; \
+		clang-format -i $$file; \
 	done
-
-
