@@ -57,7 +57,7 @@ build:
 bin:
 	mkdir $(BIN)
 
-$(EFI): Bootloader/bootloader.cpp utils/printf.cpp Bootloader/Console.cpp Bootloader/FileSystem.cpp
+$(EFI): Bootloader/bootloader.cpp utils/printf.cpp Bootloader/Console.cpp Bootloader/FileSystem.cpp Bootloader/MemoryManager.cpp
 	$(CC) $(CFLAGS) -I. -I./Bootloader -I./utils -o $(BIN)$@ $^ \
 		-L /usr/lib -l:libefi.a -l:libgnuefi.a
 

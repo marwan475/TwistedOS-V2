@@ -1,16 +1,8 @@
 #pragma once
 
 #include <Console.hpp>
+#include <MemoryManager.hpp>
 #include <uefi.hpp>
-
-typedef struct
-{
-    UINTN                  MemoryMapSize;
-    EFI_MEMORY_DESCRIPTOR* MemoryMap;
-    UINTN                  MapKey;
-    UINTN                  DescriptorSize;
-    UINT32                 DescriptorVersion;
-} MemoryMapInfo;
 
 typedef struct
 {

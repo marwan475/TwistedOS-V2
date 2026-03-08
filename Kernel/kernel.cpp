@@ -1,8 +1,8 @@
 
 #include <font.hpp>
+#include <printf.hpp>
 #include <stdint.h>
 #include <uefi.hpp>
-#include <printf.hpp>
 
 typedef struct
 {
@@ -92,7 +92,7 @@ void fb_putchar(char c)
 
 extern "C" void _putchar(char character)
 {
-   fb_putchar(character);
+    fb_putchar(character);
 }
 
 int kprintf(const char* format, ...)
@@ -104,53 +104,6 @@ int kprintf(const char* format, ...)
 
     va_end(args);
     return ret;
-}
-
-#define PAGE_SIZE 4096
-
-void* AllocateAvailablePagesFromMemoryMap(MemoryMapInfo MemoryMap, UINTN Pages)
-{
-    static void* NextPageAddress            = NULL;
-    static UINTN CurrentDescriptor          = 0;
-    static UINTN RemainingPagesInDescriptor = 0;
-
-    //kprintf("TEST: RP %d | P %d\n", 10, 10);
-
-    if (RemainingPagesInDescriptor < Pages)
-    {
-        kprintf("OK\n");
-        //kprintf("TEST2: RP %d | P %d\n", RemainingPagesInDescriptor, Pages);
-
-        for (UINTN i = CurrentDescriptor + 1; i < MemoryMap.MemoryMapSize / MemoryMap.DescriptorSize; i++)
-        {
-            EFI_MEMORY_DESCRIPTOR* desc
-                    = (EFI_MEMORY_DESCRIPTOR*) ((UINT8*) MemoryMap.MemoryMap + (i * MemoryMap.DescriptorSize));
-
-            // Useable memory
-            if (desc->Type == EfiLoaderCode || desc->Type == EfiLoaderData || desc->Type == EfiBootServicesCode
-                || desc->Type == EfiBootServicesData || desc->Type == EfiConventionalMemory
-                || desc->Type == EfiPersistentMemory)
-            {
-                CurrentDescriptor          = i;
-                RemainingPagesInDescriptor = desc->NumberOfPages - Pages;
-                NextPageAddress            = (void*) (desc->PhysicalStart + (Pages * PAGE_SIZE));
-
-                kprintf("TEST: %x\n", (uint64_t) desc->PhysicalStart);
-                return (void*) desc->PhysicalStart;
-            }
-
-            if (i >= MemoryMap.MemoryMapSize / MemoryMap.DescriptorSize)
-            {
-                kprintf("MemoryMap Allocation failed\n");
-                return NULL;
-            }
-        }
-    }
-
-    RemainingPagesInDescriptor -= Pages;
-    void* Page      = NextPageAddress;
-    NextPageAddress = (void*) ((UINT8*) Page + (Pages * PAGE_SIZE));
-    return Page;
 }
 
 // Uefi sets us up in 64bit long mode with identity mapped pages
@@ -171,14 +124,16 @@ extern "C"
             }
         }
 
-        void* test = AllocateAvailablePagesFromMemoryMap(KernelArgs.MemoryMap, 2);
-
         fb_init((uint32_t*) KernelArgs.GopMode.FrameBufferBase, KernelArgs.GopMode.Info->HorizontalResolution,
                 KernelArgs.GopMode.Info->VerticalResolution, KernelArgs.GopMode.Info->PixelsPerScanLine);
 
         kprintf(" Hello kernel\n");
         kprintf("Framebuffer console working\n");
-        kprintf("Allocation Test: %d\n",(uint64_t)test);
+        kprintf("Testing integers: %d, %u, %ld, %lu\n", -42, 42U, 123456789L, 987654321UL);
+        kprintf("Testing hex: 0x%x, 0x%lx\n", 0xDEADBEAF, 0xCAFEBABECAFEBABEUL);
+        kprintf("Testing pointer: %p\n", (void*) 0x12345678ABCDEF00);
+        kprintf("Testing characters: %c %c %c\n", 'A', 'B', 'C');
+        kprintf("Testing string: %s\n", "Framebuffer printf works!");
 
         while (1)
             __asm__ __volatile__("hlt");
