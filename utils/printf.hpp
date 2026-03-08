@@ -37,16 +37,17 @@
 #include <stddef.h>
 
 #ifdef __cplusplus
-extern "C" {
+extern "C"
+{
 #endif
 
-/**
- * Output a character to a custom device like UART, used by the printf()
- * function This function is declared here only. You have to write your custom
- * implementation somewhere
- * \param character Character to output
- */
-void _putchar(char character);
+    /**
+     * Output a character to a custom device like UART, used by the printf()
+     * function This function is declared here only. You have to write your custom
+     * implementation somewhere
+     * \param character Character to output
+     */
+    void _putchar(char character);
 
 /**
  * Tiny printf implementation
@@ -58,8 +59,8 @@ void _putchar(char character);
  * counting the terminating null character
  */
 #define printf printf_
-int printf_(const char *format, ...);
-int vprintf_proxy(const char *format, va_list args);
+    int printf_(const char* format, ...);
+    int vprintf_proxy(const char* format, va_list args);
 
 /**
  * Tiny sprintf implementation
@@ -71,7 +72,7 @@ int vprintf_proxy(const char *format, va_list args);
  * into the buffer, not counting the terminating null character
  */
 #define sprintf sprintf_
-int sprintf_(char *buffer, const char *format, ...);
+    int sprintf_(char* buffer, const char* format, ...);
 
 /**
  * Tiny snprintf/vsnprintf implementation
@@ -86,8 +87,8 @@ int sprintf_(char *buffer, const char *format, ...);
  */
 #define snprintf snprintf_
 #define vsnprintf vsnprintf_
-int snprintf_(char *buffer, size_t count, const char *format, ...);
-int vsnprintf_(char *buffer, size_t count, const char *format, va_list va);
+    int snprintf_(char* buffer, size_t count, const char* format, ...);
+    int vsnprintf_(char* buffer, size_t count, const char* format, va_list va);
 
 /**
  * Tiny vprintf implementation
@@ -97,21 +98,20 @@ int vsnprintf_(char *buffer, size_t count, const char *format, va_list va);
  * counting the terminating null character
  */
 #define vprintf vprintf_
-int vprintf_(const char *format, va_list va);
+    int vprintf_(const char* format, va_list va);
 
-/**
- * printf with output function
- * You may use this as dynamic alternative to printf() with its fixed _putchar()
- * output
- * \param out An output function which takes one character and an argument
- * pointer
- * \param arg An argument pointer for user data passed to output function
- * \param format A string that specifies the format of the output
- * \return The number of characters that are sent to the output function, not
- * counting the terminating null character
- */
-int fctprintf(void (*out)(char character, void *arg), void *arg,
-              const char *format, ...);
+    /**
+     * printf with output function
+     * You may use this as dynamic alternative to printf() with its fixed _putchar()
+     * output
+     * \param out An output function which takes one character and an argument
+     * pointer
+     * \param arg An argument pointer for user data passed to output function
+     * \param format A string that specifies the format of the output
+     * \return The number of characters that are sent to the output function, not
+     * counting the terminating null character
+     */
+    int fctprintf(void (*out)(char character, void* arg), void* arg, const char* format, ...);
 
 #ifdef __cplusplus
 }

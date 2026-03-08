@@ -12,7 +12,8 @@ CFLAGS = \
 	-ffreestanding \
 	-nostdlib \
 	-fno-exceptions \
-	-fno-rtti
+	-fno-rtti \
+	-Wno-missing-field-initializers
 
 KERNEL_CC = g++
 KERNEL_LD = ld
@@ -141,9 +142,49 @@ qemu-basic:
 ALL_SOURCE_FILES := $(shell find . -type f \( -name '*.c' -o -name '*.cpp' -o -name '*.h' -o -name '*.hpp' \))
 
 .PHONY: format
+
 format:
 	@echo "Formatting all C/C++ files in repository..."
+
 	@for file in $(ALL_SOURCE_FILES); do \
 		echo "→ Formatting $$file"; \
-		clang-format -i $$file; \
+		clang-format -i --style="{ \
+			BasedOnStyle: llvm, \
+			IndentWidth: 4, \
+			TabWidth: 4, \
+			UseTab: Never, \
+			ColumnLimit: 100, \
+			BreakBeforeBraces: Allman, \
+			AllowShortIfStatementsOnASingleLine: false, \
+			AllowShortLoopsOnASingleLine: false, \
+			AllowShortFunctionsOnASingleLine: None, \
+			AllowShortBlocksOnASingleLine: Never, \
+			PointerAlignment: Left, \
+			ReferenceAlignment: Left, \
+			AlignOperands: true, \
+			AlignConsecutiveAssignments: true, \
+			AlignConsecutiveDeclarations: true, \
+			AlignTrailingComments: true, \
+			AlignAfterOpenBracket: Align, \
+			BreakBeforeBinaryOperators: All, \
+			SpaceBeforeParens: ControlStatements, \
+			SpacesInParentheses: false, \
+			SpacesInSquareBrackets: false, \
+			SpacesInAngles: false, \
+			SpaceAfterCStyleCast: true, \
+			SpaceBeforeAssignmentOperators: true, \
+			KeepEmptyLinesAtTheStartOfBlocks: false, \
+			SortIncludes: true, \
+			IncludeBlocks: Regroup, \
+			NamespaceIndentation: None, \
+			AccessModifierOffset: -4, \
+			IndentCaseLabels: true, \
+			BreakConstructorInitializersBeforeComma: false, \
+			BreakInheritanceList: BeforeColon, \
+			ConstructorInitializerIndentWidth: 4, \
+			ContinuationIndentWidth: 8, \
+			ReflowComments: true, \
+			SpacesBeforeTrailingComments: 1, \
+			Cpp11BracedListStyle: true \
+		}" $$file; \
 	done
