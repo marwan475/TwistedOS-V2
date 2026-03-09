@@ -1,9 +1,10 @@
 #pragma once
 
-#include <uefi.hpp>
 #include <Console.hpp>
+#include <uefi.hpp>
 
 #define PAGE_SIZE 4096
+#define PHYS_PAGE_ADDR_MASK 0x000FFFFFFFFFF000
 
 typedef union
 {
@@ -53,11 +54,14 @@ typedef struct
 class MemoryManager
 {
 private:
-    MemoryMapInfo MemoryMap;
-    Console* efiConsole;
+    MemoryMapInfo   MemoryMap;
+    Console*        efiConsole;
+    PageTableEntry* PageMapL4Table;
 
 public:
-    MemoryManager(MemoryMapInfo MemoryMap, Console *efiConsole);
+    MemoryManager(MemoryMapInfo MemoryMap, Console* efiConsole);
     ~MemoryManager();
     void* AllocateAvailablePagesFromMemoryMap(UINTN Pages);
+    bool MapPage(UINTN PysicalAddr, UINTN VirtualAddr);
+    bool UnmapPage(UINTN VirtualAddr);
 };
