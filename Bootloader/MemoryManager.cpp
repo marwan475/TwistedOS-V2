@@ -13,8 +13,15 @@ void kmemset(void* dest, int value, size_t count)
 MemoryManager::MemoryManager(MemoryMapInfo MemoryMap, Console* efiConsole)
     : MemoryMap(MemoryMap), efiConsole(efiConsole)
 {
+
+    NextPageAddress            = NULL;
+    CurrentDescriptor          = 0;
+    RemainingPagesInDescriptor = 0;
+
     PageMapL4Table = (PageTableEntry*) AllocateAvailablePagesFromMemoryMap(1);
     kmemset((void*) PageMapL4Table, 0, PAGE_SIZE * 1);
+
+
 
 }
 
@@ -24,10 +31,6 @@ MemoryManager::~MemoryManager()
 
 void* MemoryManager::AllocateAvailablePagesFromMemoryMap(UINTN Pages)
 {
-    static void* NextPageAddress            = NULL;
-    static UINTN CurrentDescriptor          = 0;
-    static UINTN RemainingPagesInDescriptor = 0;
-
     if (RemainingPagesInDescriptor < Pages)
     {
         for (UINTN i = CurrentDescriptor + 1; i < MemoryMap.MemoryMapSize / MemoryMap.DescriptorSize; i++)
@@ -80,7 +83,7 @@ bool MemoryManager::MapPage(UINTN PhysicalAddr, UINTN VirtualAddr)
 
         PageDirectoryPointerTable.fields.present = 1;
         PageDirectoryPointerTable.fields.writeable = 1;
-        PageDirectoryPointerTable.fields.user_access = 1;
+        PageDirectoryPointerTable.fields.user_access = 0;
 
         PageMapL4Table[PageMapL4TableIndex] = PageDirectoryPointerTable;
     }
@@ -98,7 +101,7 @@ bool MemoryManager::MapPage(UINTN PhysicalAddr, UINTN VirtualAddr)
 
         PageDirectoryTable.fields.present = 1;
         PageDirectoryTable.fields.writeable = 1;
-        PageDirectoryTable.fields.user_access = 1;
+        PageDirectoryTable.fields.user_access = 0;
 
         PageDirectoryPointerTable[PageDirectoryPointerTableIndex] = PageDirectoryTable;
     }
@@ -116,7 +119,7 @@ bool MemoryManager::MapPage(UINTN PhysicalAddr, UINTN VirtualAddr)
 
         PageTable.fields.present = 1;
         PageTable.fields.writeable = 1;
-        PageTable.fields.user_access = 1;
+        PageTable.fields.user_access = 0;
 
         PageDirectoryTable[PageDirectoryTableIndex] = PageTable;
     }
@@ -131,7 +134,7 @@ bool MemoryManager::MapPage(UINTN PhysicalAddr, UINTN VirtualAddr)
 
         NewPTEntry.fields.present = 1;
         NewPTEntry.fields.writeable = 1;
-        NewPTEntry.fields.user_access = 1;
+        NewPTEntry.fields.user_access = 0;
 
         PageTable[PageTableIndex] = NewPTEntry;
     }

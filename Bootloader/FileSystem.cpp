@@ -166,6 +166,8 @@ EFI_STATUS FileSystem::SetDirectoryPosition(EFI_FILE_PROTOCOL* Dir, EFI_FILE_PRO
             return status;
         }
 
+        MemoryManager MemoryMgr = MemoryManager(MemoryMap, efiConsole);
+
         void EFIAPI (*EntryPoint)(KernelParameters) = (void EFIAPI (*)(KernelParameters)) KernelBuffer;
 
         EntryPoint(KernelArgs);

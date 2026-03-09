@@ -57,6 +57,9 @@ private:
     MemoryMapInfo   MemoryMap;
     Console*        efiConsole;
     PageTableEntry* PageMapL4Table;
+    void* NextPageAddress;
+    UINTN CurrentDescriptor;
+    UINTN RemainingPagesInDescriptor;
 
 public:
     MemoryManager(MemoryMapInfo MemoryMap, Console* efiConsole);
