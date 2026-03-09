@@ -84,6 +84,82 @@ void PrintMemoryMap(MemoryMapInfo MemoryMap, Console* efiConsole)
                         usable_bytes / (1024 * 1024 * 1024));
 }
 
+EFI_STATUS FileSystem::SetupForKernel(EFI_FILE_PROTOCOL* Dir, EFI_FILE_INFO FileInfo)
+{
+    EFI_STATUS status;
+
+    EFI_FILE_PROTOCOL* KernelFile;
+    status = Dir->Open(Dir, &KernelFile, FileInfo.FileName, EFI_FILE_MODE_READ, 0);
+
+    if (EFI_ERROR(status))
+    {
+        efiConsole->printf_("Failed to open kernel file\r\n");
+        return status;
+    }
+
+    UINTN KernelSize   = FileInfo.FileSize;
+    void* KernelBuffer = NULL;
+
+    // Allocate buffer for kernel
+    status = BootServices->AllocatePool(EfiLoaderData, KernelSize, &KernelBuffer);
+
+    if (EFI_ERROR(status))
+    {
+        efiConsole->printf_("Failed to allocate kernel buffer\r\n");
+        return status;
+    }
+
+    // Read kernel into buffer
+    UINTN ReadSize = KernelSize;
+
+    status = KernelFile->Read(KernelFile, &ReadSize, KernelBuffer);
+
+    if (EFI_ERROR(status))
+    {
+        efiConsole->printf_("Failed to read kernel\r\n");
+        return status;
+    }
+
+    efiConsole->printf_("Kernel loaded at %p\r\n", KernelBuffer);
+
+    // Get memory map
+    MemoryMapInfo MemoryMap = {0};
+    GetMemoryMapFromEfi(&MemoryMap, BootServices);
+    PrintMemoryMap(MemoryMap, efiConsole);
+
+    KernelParameters KernelArgs = {0};
+    KernelArgs.GopMode          = efiConsole->GetGopMode();
+    KernelArgs.MemoryMap        = MemoryMap;
+
+    status = BootServices->ExitBootServices(ImageHandle, MemoryMap.MapKey);
+
+    if (EFI_ERROR(status))
+    {
+        efiConsole->printf_("Failed to Exit Bootservices\r\n");
+        return status;
+    }
+
+    MemoryManager MemoryMgr = MemoryManager(MemoryMap);
+
+    MemoryMgr.IdentityMapMemoryMap();
+
+    // Identity Map FrameBuffer
+    UINTN fb_pages = (KernelArgs.GopMode.FrameBufferSize + PAGE_SIZE - 1) / PAGE_SIZE;
+
+    for (UINTN i = 0; i < fb_pages; i++)
+    {
+        MemoryMgr.IdentityMapPage(KernelArgs.GopMode.FrameBufferBase + (i * PAGE_SIZE));
+    }
+
+    MemoryMgr.InitPaging();
+
+    void EFIAPI (*EntryPoint)(KernelParameters) = (void EFIAPI (*)(KernelParameters)) KernelBuffer;
+
+    EntryPoint(KernelArgs);
+
+    return status;
+}
+
 EFI_STATUS FileSystem::SetDirectoryPosition(EFI_FILE_PROTOCOL* Dir, EFI_FILE_PROTOCOL** NewDir, int index)
 {
     EFI_STATUS status;
@@ -113,75 +189,10 @@ EFI_STATUS FileSystem::SetDirectoryPosition(EFI_FILE_PROTOCOL* Dir, EFI_FILE_PRO
     }
     else
     {
-        efiConsole->printf_("Loading Kernel...\r\n");
-
-        EFI_FILE_PROTOCOL* KernelFile;
-        status = Dir->Open(Dir, &KernelFile, FileInfo.FileName, EFI_FILE_MODE_READ, 0);
-
-        if (EFI_ERROR(status))
-        {
-            efiConsole->printf_("Failed to open kernel file\r\n");
-            return status;
-        }
-
-        UINTN KernelSize   = FileInfo.FileSize;
-        void* KernelBuffer = NULL;
-
-        // Allocate buffer for kernel
-        status = BootServices->AllocatePool(EfiLoaderData, KernelSize, &KernelBuffer);
-
-        if (EFI_ERROR(status))
-        {
-            efiConsole->printf_("Failed to allocate kernel buffer\r\n");
-            return status;
-        }
-
-        // Read kernel into buffer
-        UINTN ReadSize = KernelSize;
-
-        status = KernelFile->Read(KernelFile, &ReadSize, KernelBuffer);
-
-        if (EFI_ERROR(status))
-        {
-            efiConsole->printf_("Failed to read kernel\r\n");
-            return status;
-        }
-
-        efiConsole->printf_("Kernel loaded at %p\r\n", KernelBuffer);
-
-        // Get memory map
-        MemoryMapInfo MemoryMap = {0};
-        GetMemoryMapFromEfi(&MemoryMap, BootServices);
-        PrintMemoryMap(MemoryMap, efiConsole);
-
-        KernelParameters KernelArgs = {0};
-        KernelArgs.GopMode          = efiConsole->GetGopMode();
-        KernelArgs.MemoryMap        = MemoryMap;
-
-        status = BootServices->ExitBootServices(ImageHandle, MemoryMap.MapKey);
-
-        if (EFI_ERROR(status))
-        {
-            efiConsole->printf_("Failed to Exit Bootservices\r\n");
-            return status;
-        }
-
-        MemoryManager MemoryMgr = MemoryManager(MemoryMap, efiConsole);
-
-        MemoryMgr.IdentityMapMemoryMap();
-
-        UINTN fb_pages = (KernelArgs.GopMode.FrameBufferSize + PAGE_SIZE - 1) / PAGE_SIZE;
-
-        for (UINTN i = 0; i < fb_pages; i++)
-        {
-            MemoryMgr.IdentityMapPage(KernelArgs.GopMode.FrameBufferBase + (i * PAGE_SIZE));
-        }
-
-        MemoryMgr.InitPaging();
-
-        void EFIAPI (*EntryPoint)(KernelParameters) = (void EFIAPI (*)(KernelParameters)) KernelBuffer;
-
-        EntryPoint(KernelArgs);
+        // Dirty Method Cause we know where the Kernel is in the filesystem
+        // Better way would be to dynamical search for it
+        // Basicly if not Dir then treat it as the kernel
+        status = SetupForKernel(Dir, FileInfo);
     }
 
     return status;
@@ -229,6 +240,8 @@ EFI_STATUS FileSystem::LoadKernel()
     EFI_FILE_PROTOCOL* Dir = Root;
     EFI_FILE_PROTOCOL* NewDir;
 
+    // Dirty Method Cause we know where the index of the Kernel in the filesystem
+    // Better way would be to dynamical search for it
     // char key = efiConsole->GetKeyOnEvent();
     char key  = '1';
     int  ikey = (key - '0') + 1; // offset for somereason

@@ -1,5 +1,7 @@
 #include <MemoryManager.hpp>
 
+// Should only be created after ExitBootServices
+
 void kmemset(void* dest, int value, size_t count)
 {
     uint8_t* ptr  = (uint8_t*) dest;
@@ -9,8 +11,7 @@ void kmemset(void* dest, int value, size_t count)
         ptr[i] = byte;
 }
 
-MemoryManager::MemoryManager(MemoryMapInfo MemoryMap, Console* efiConsole)
-    : MemoryMap(MemoryMap), efiConsole(efiConsole)
+MemoryManager::MemoryManager(MemoryMapInfo MemoryMap) : MemoryMap(MemoryMap)
 {
     NextPageAddress            = NULL;
     CurrentDescriptor          = 0;

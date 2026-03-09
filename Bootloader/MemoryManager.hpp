@@ -55,14 +55,13 @@ class MemoryManager
 {
 private:
     MemoryMapInfo   MemoryMap;
-    Console*        efiConsole;
     PageTableEntry* PageMapL4Table;
     void*           NextPageAddress;
     UINTN           CurrentDescriptor;
     UINTN           RemainingPagesInDescriptor;
 
 public:
-    MemoryManager(MemoryMapInfo MemoryMap, Console* efiConsole);
+    MemoryManager(MemoryMapInfo MemoryMap);
     ~MemoryManager();
     void* AllocateAvailablePagesFromMemoryMap(UINTN Pages);
     bool  MapPage(UINTN PysicalAddr, UINTN VirtualAddr);
