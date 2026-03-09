@@ -67,4 +67,6 @@ public:
     void* AllocateAvailablePagesFromMemoryMap(UINTN Pages);
     bool MapPage(UINTN PysicalAddr, UINTN VirtualAddr);
     bool UnmapPage(UINTN VirtualAddr);
+    bool IdentityMapPage(UINTN VirtualAddr);
+    void IdentityMapMemoryMap();
 };

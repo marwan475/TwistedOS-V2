@@ -154,11 +154,17 @@ bool MemoryManager::UnmapPage(UINTN VirtualAddr){
 
     PageTableEntry PmL4Entry = PageMapL4Table[PageMapL4TableIndex];
 
+    if (!PmL4Entry.fields.present) return false;
+
     PageTableEntry* PageDirectoryPointerTable = (PageTableEntry*) (PmL4Entry.value & PHYS_PAGE_ADDR_MASK);
     PageTableEntry PDPTEntry = PageDirectoryPointerTable[PageDirectoryPointerTableIndex];
 
+    if (!PDPTEntry.fields.present) return false;
+
     PageTableEntry* PageDirectoryTable = (PageTableEntry*) (PDPTEntry.value & PHYS_PAGE_ADDR_MASK);
     PageTableEntry PDTEntry = PageDirectoryTable[PageDirectoryTableIndex];
+    
+    if (!PDTEntry.fields.present) return false;
 
     PageTableEntry* PageTable = (PageTableEntry*) (PDTEntry.value & PHYS_PAGE_ADDR_MASK);
     
@@ -169,3 +175,21 @@ bool MemoryManager::UnmapPage(UINTN VirtualAddr){
 
     return true;
 }
+
+bool MemoryManager::IdentityMapPage(UINTN Addr){
+    return MapPage(Addr,Addr);
+}
+
+void MemoryManager::IdentityMapMemoryMap(){
+
+    for(UINTN i = 0; i < MemoryMap.MemoryMapSize / MemoryMap.DescriptorSize; i++){
+        EFI_MEMORY_DESCRIPTOR* desc
+                    = (EFI_MEMORY_DESCRIPTOR*) ((UINT8*) MemoryMap.MemoryMap + (i * MemoryMap.DescriptorSize));
+
+        for (UINTN j = 0; j < desc->NumberOfPages; j++){
+            IdentityMapPage(desc->PhysicalStart + (j*PAGE_SIZE));
+        }
+    }
+
+}
+
