@@ -2,27 +2,22 @@
 
 void kmemset(void* dest, int value, size_t count)
 {
-    uint8_t* ptr = (uint8_t*)dest;
-    uint8_t byte = (uint8_t)value;
+    uint8_t* ptr  = (uint8_t*) dest;
+    uint8_t  byte = (uint8_t) value;
 
     for (size_t i = 0; i < count; i++)
         ptr[i] = byte;
-
-}   
+}
 
 MemoryManager::MemoryManager(MemoryMapInfo MemoryMap, Console* efiConsole)
     : MemoryMap(MemoryMap), efiConsole(efiConsole)
 {
-
     NextPageAddress            = NULL;
     CurrentDescriptor          = 0;
     RemainingPagesInDescriptor = 0;
 
     PageMapL4Table = (PageTableEntry*) AllocateAvailablePagesFromMemoryMap(1);
     kmemset((void*) PageMapL4Table, 0, PAGE_SIZE * 1);
-
-
-
 }
 
 MemoryManager::~MemoryManager()
@@ -61,135 +56,151 @@ void* MemoryManager::AllocateAvailablePagesFromMemoryMap(UINTN Pages)
 
 bool MemoryManager::MapPage(UINTN PhysicalAddr, UINTN VirtualAddr)
 {
-
     VirtualAddress Vaddr;
     Vaddr.value = VirtualAddr;
 
-    UINTN PageMapL4TableIndex = Vaddr.fields.pml4_index;
+    UINTN PageMapL4TableIndex            = Vaddr.fields.pml4_index;
     UINTN PageDirectoryPointerTableIndex = Vaddr.fields.pdpt_index;
-    UINTN PageDirectoryTableIndex = Vaddr.fields.pd_index;
-    UINTN PageTableIndex = Vaddr.fields.pt_index;
+    UINTN PageDirectoryTableIndex        = Vaddr.fields.pd_index;
+    UINTN PageTableIndex                 = Vaddr.fields.pt_index;
 
     PageTableEntry PmL4Entry = PageMapL4Table[PageMapL4TableIndex];
 
     // If No PageDirectoryPointerTable
-    if (!PmL4Entry.fields.present){
-
-        void* PageDirectoryPointerTableAddr = AllocateAvailablePagesFromMemoryMap(1);
-        PageTableEntry PageDirectoryPointerTable = {0};
-        PageDirectoryPointerTable.value = (UINTN) PageDirectoryPointerTableAddr;
+    if (!PmL4Entry.fields.present)
+    {
+        void*          PageDirectoryPointerTableAddr = AllocateAvailablePagesFromMemoryMap(1);
+        PageTableEntry PageDirectoryPointerTable     = {0};
+        PageDirectoryPointerTable.value              = (UINTN) PageDirectoryPointerTableAddr;
 
         kmemset(PageDirectoryPointerTableAddr, 0, PAGE_SIZE);
 
-        PageDirectoryPointerTable.fields.present = 1;
-        PageDirectoryPointerTable.fields.writeable = 1;
+        PageDirectoryPointerTable.fields.present     = 1;
+        PageDirectoryPointerTable.fields.writeable   = 1;
         PageDirectoryPointerTable.fields.user_access = 0;
 
         PageMapL4Table[PageMapL4TableIndex] = PageDirectoryPointerTable;
+        PmL4Entry                           = PageMapL4Table[PageMapL4TableIndex];
     }
 
     PageTableEntry* PageDirectoryPointerTable = (PageTableEntry*) (PmL4Entry.value & PHYS_PAGE_ADDR_MASK);
-    PageTableEntry PDPTEntry = PageDirectoryPointerTable[PageDirectoryPointerTableIndex];
+    PageTableEntry  PDPTEntry                 = PageDirectoryPointerTable[PageDirectoryPointerTableIndex];
 
     // If No PageDirectoryTable
-    if (!PDPTEntry.fields.present){
-        void* PageDirectoryTableAddr = AllocateAvailablePagesFromMemoryMap(1);
-        PageTableEntry PageDirectoryTable = {0};
-        PageDirectoryTable.value = (UINTN) PageDirectoryTableAddr;
+    if (!PDPTEntry.fields.present)
+    {
+        void*          PageDirectoryTableAddr = AllocateAvailablePagesFromMemoryMap(1);
+        PageTableEntry PageDirectoryTable     = {0};
+        PageDirectoryTable.value              = (UINTN) PageDirectoryTableAddr;
 
         kmemset(PageDirectoryTableAddr, 0, PAGE_SIZE);
 
-        PageDirectoryTable.fields.present = 1;
-        PageDirectoryTable.fields.writeable = 1;
+        PageDirectoryTable.fields.present     = 1;
+        PageDirectoryTable.fields.writeable   = 1;
         PageDirectoryTable.fields.user_access = 0;
 
         PageDirectoryPointerTable[PageDirectoryPointerTableIndex] = PageDirectoryTable;
+        PDPTEntry = PageDirectoryPointerTable[PageDirectoryPointerTableIndex];
     }
 
     PageTableEntry* PageDirectoryTable = (PageTableEntry*) (PDPTEntry.value & PHYS_PAGE_ADDR_MASK);
-    PageTableEntry PDTEntry = PageDirectoryTable[PageDirectoryTableIndex];
+    PageTableEntry  PDTEntry           = PageDirectoryTable[PageDirectoryTableIndex];
 
     // If No PageTable
-    if (!PDTEntry.fields.present){
-        void* PageTableAddr = AllocateAvailablePagesFromMemoryMap(1);
-        PageTableEntry PageTable = {0};
-        PageTable.value = (UINTN) PageTableAddr;
+    if (!PDTEntry.fields.present)
+    {
+        void*          PageTableAddr = AllocateAvailablePagesFromMemoryMap(1);
+        PageTableEntry PageTable     = {0};
+        PageTable.value              = (UINTN) PageTableAddr;
 
         kmemset(PageTableAddr, 0, PAGE_SIZE);
 
-        PageTable.fields.present = 1;
-        PageTable.fields.writeable = 1;
+        PageTable.fields.present     = 1;
+        PageTable.fields.writeable   = 1;
         PageTable.fields.user_access = 0;
 
         PageDirectoryTable[PageDirectoryTableIndex] = PageTable;
+        PDTEntry                                    = PageDirectoryTable[PageDirectoryTableIndex];
     }
 
     PageTableEntry* PageTable = (PageTableEntry*) (PDTEntry.value & PHYS_PAGE_ADDR_MASK);
-    PageTableEntry PTEntry = PageTable[PageTableIndex];
+    PageTableEntry  PTEntry   = PageTable[PageTableIndex];
 
     // If no Entry in page table
-    if (!PTEntry.fields.present){
+    if (!PTEntry.fields.present)
+    {
         PageTableEntry NewPTEntry = {0};
-        NewPTEntry.value = PhysicalAddr & PHYS_PAGE_ADDR_MASK;
+        NewPTEntry.value          = PhysicalAddr & PHYS_PAGE_ADDR_MASK;
 
-        NewPTEntry.fields.present = 1;
-        NewPTEntry.fields.writeable = 1;
+        NewPTEntry.fields.present     = 1;
+        NewPTEntry.fields.writeable   = 1;
         NewPTEntry.fields.user_access = 0;
 
         PageTable[PageTableIndex] = NewPTEntry;
     }
 
     return true;
-
 }
 
-bool MemoryManager::UnmapPage(UINTN VirtualAddr){
+bool MemoryManager::UnmapPage(UINTN VirtualAddr)
+{
     VirtualAddress Vaddr;
     Vaddr.value = VirtualAddr;
 
-    UINTN PageMapL4TableIndex = Vaddr.fields.pml4_index;
+    UINTN PageMapL4TableIndex            = Vaddr.fields.pml4_index;
     UINTN PageDirectoryPointerTableIndex = Vaddr.fields.pdpt_index;
-    UINTN PageDirectoryTableIndex = Vaddr.fields.pd_index;
-    UINTN PageTableIndex = Vaddr.fields.pt_index;
+    UINTN PageDirectoryTableIndex        = Vaddr.fields.pd_index;
+    UINTN PageTableIndex                 = Vaddr.fields.pt_index;
 
     PageTableEntry PmL4Entry = PageMapL4Table[PageMapL4TableIndex];
 
-    if (!PmL4Entry.fields.present) return false;
+    if (!PmL4Entry.fields.present)
+        return false;
 
     PageTableEntry* PageDirectoryPointerTable = (PageTableEntry*) (PmL4Entry.value & PHYS_PAGE_ADDR_MASK);
-    PageTableEntry PDPTEntry = PageDirectoryPointerTable[PageDirectoryPointerTableIndex];
+    PageTableEntry  PDPTEntry                 = PageDirectoryPointerTable[PageDirectoryPointerTableIndex];
 
-    if (!PDPTEntry.fields.present) return false;
+    if (!PDPTEntry.fields.present)
+        return false;
 
     PageTableEntry* PageDirectoryTable = (PageTableEntry*) (PDPTEntry.value & PHYS_PAGE_ADDR_MASK);
-    PageTableEntry PDTEntry = PageDirectoryTable[PageDirectoryTableIndex];
-    
-    if (!PDTEntry.fields.present) return false;
+    PageTableEntry  PDTEntry           = PageDirectoryTable[PageDirectoryTableIndex];
+
+    if (!PDTEntry.fields.present)
+        return false;
 
     PageTableEntry* PageTable = (PageTableEntry*) (PDTEntry.value & PHYS_PAGE_ADDR_MASK);
-    
+
     PageTable[PageTableIndex].value = 0;
 
     // Flush the TLB cache for this page
-    __asm__ ("invlpg (%0)\n" : : "r"(VirtualAddr));
+    __asm__("invlpg (%0)\n" : : "r"(VirtualAddr));
 
     return true;
 }
 
-bool MemoryManager::IdentityMapPage(UINTN Addr){
-    return MapPage(Addr,Addr);
+bool MemoryManager::IdentityMapPage(UINTN Addr)
+{
+    return MapPage(Addr, Addr);
 }
 
-void MemoryManager::IdentityMapMemoryMap(){
-
-    for(UINTN i = 0; i < MemoryMap.MemoryMapSize / MemoryMap.DescriptorSize; i++){
+void MemoryManager::IdentityMapMemoryMap()
+{
+    for (UINTN i = 0; i < MemoryMap.MemoryMapSize / MemoryMap.DescriptorSize; i++)
+    {
         EFI_MEMORY_DESCRIPTOR* desc
-                    = (EFI_MEMORY_DESCRIPTOR*) ((UINT8*) MemoryMap.MemoryMap + (i * MemoryMap.DescriptorSize));
+                = (EFI_MEMORY_DESCRIPTOR*) ((UINT8*) MemoryMap.MemoryMap + (i * MemoryMap.DescriptorSize));
 
-        for (UINTN j = 0; j < desc->NumberOfPages; j++){
-            IdentityMapPage(desc->PhysicalStart + (j*PAGE_SIZE));
+        for (UINTN j = 0; j < desc->NumberOfPages; j++)
+        {
+            IdentityMapPage(desc->PhysicalStart + (j * PAGE_SIZE));
         }
     }
-
 }
 
+void MemoryManager::InitPaging()
+{
+    UINT64 pml4_phys = (UINT64) PageMapL4Table;
+
+    asm volatile("mov %0, %%cr3" ::"r"(pml4_phys) : "memory");
+}

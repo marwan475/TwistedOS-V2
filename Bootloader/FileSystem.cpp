@@ -170,6 +170,15 @@ EFI_STATUS FileSystem::SetDirectoryPosition(EFI_FILE_PROTOCOL* Dir, EFI_FILE_PRO
 
         MemoryMgr.IdentityMapMemoryMap();
 
+        UINTN fb_pages = (KernelArgs.GopMode.FrameBufferSize + PAGE_SIZE - 1) / PAGE_SIZE;
+
+        for (UINTN i = 0; i < fb_pages; i++)
+        {
+            MemoryMgr.IdentityMapPage(KernelArgs.GopMode.FrameBufferBase + (i * PAGE_SIZE));
+        }
+
+        MemoryMgr.InitPaging();
+
         void EFIAPI (*EntryPoint)(KernelParameters) = (void EFIAPI (*)(KernelParameters)) KernelBuffer;
 
         EntryPoint(KernelArgs);

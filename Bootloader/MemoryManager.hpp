@@ -57,16 +57,17 @@ private:
     MemoryMapInfo   MemoryMap;
     Console*        efiConsole;
     PageTableEntry* PageMapL4Table;
-    void* NextPageAddress;
-    UINTN CurrentDescriptor;
-    UINTN RemainingPagesInDescriptor;
+    void*           NextPageAddress;
+    UINTN           CurrentDescriptor;
+    UINTN           RemainingPagesInDescriptor;
 
 public:
     MemoryManager(MemoryMapInfo MemoryMap, Console* efiConsole);
     ~MemoryManager();
     void* AllocateAvailablePagesFromMemoryMap(UINTN Pages);
-    bool MapPage(UINTN PysicalAddr, UINTN VirtualAddr);
-    bool UnmapPage(UINTN VirtualAddr);
-    bool IdentityMapPage(UINTN VirtualAddr);
-    void IdentityMapMemoryMap();
+    bool  MapPage(UINTN PysicalAddr, UINTN VirtualAddr);
+    bool  UnmapPage(UINTN VirtualAddr);
+    bool  IdentityMapPage(UINTN VirtualAddr);
+    void  IdentityMapMemoryMap();
+    void  InitPaging();
 };
