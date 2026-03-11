@@ -116,6 +116,22 @@ typedef enum
     IDT_FLAG_PRESENT = 0x80,
 } IDT_FLAGS;
 
+#define GDT_CODE_SEGMENT 0x08
+#define IDT_DEFAULT_GATE_FLAGS (IDT_FLAG_PRESENT | IDT_FLAG_RING0 | IDT_FLAG_GATE_32BIT_INT)
+
+#define PIC1_COMMAND_PORT 0x20
+#define PIC1_DATA_PORT    0x21
+#define PIC2_COMMAND_PORT 0xA0
+#define PIC2_DATA_PORT    0xA1
+
+#define PIC_INIT_COMMAND      0x11
+#define PIC_8086_MODE         0x01
+#define PIC1_VECTOR_OFFSET    0x20
+#define PIC2_VECTOR_OFFSET    0x28
+#define PIC1_CASCADE_IDENTITY 0x04
+#define PIC2_CASCADE_IDENTITY 0x02
+#define PIC_RESTORE_MASK_NONE 0x00
+
 typedef struct
 {
     uint64_t rax;
@@ -154,6 +170,7 @@ TSSDescriptor BuildTSSDescriptor(const TSS* tss);
 GDT           BuildGDT(const TSSDescriptor& tss_descriptor);
 void          InitGDT();
 void          InitInterrupts();
+void          RemapPIC();
 
 extern "C"
 {

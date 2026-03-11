@@ -6,14 +6,24 @@ TSS                KernelTSS  = {};
 GDT                KernelGDT  = {};
 DiscriptorRegister KernelGDTR = {};
 
-static constexpr uint16_t GDT_CODE_SEGMENT = 0x08;
-
 static IDTentry IDT[256] = {};
 static IDTdescription IDTDescriptor = {sizeof(IDT) - 1, IDT};
 
 static inline void LoadIDT(const IDTdescription* idt_descriptor)
 {
     __asm__ __volatile__("lidt %0" : : "m"(*idt_descriptor) : "memory");
+}
+
+static inline void outb(uint16_t port, uint8_t value)
+{
+    __asm__ __volatile__("outb %0, %1" : : "a"(value), "Nd"(port));
+}
+
+static inline uint8_t inb(uint16_t port)
+{
+    uint8_t value = 0;
+    __asm__ __volatile__("inb %1, %0" : "=a"(value) : "Nd"(port));
+    return value;
 }
 
 static void SetIDTEntry(int interrupt, void (*base)(), uint16_t segment, uint8_t flags)
@@ -63,13 +73,32 @@ static void (*const ISRHandlers[256])() = {
 
 static void ISR_init()
 {
-    //DisableIDTEntry(0);
+    DisableIDTEntry(0); // Avoid Compiler Warning
 
     for (int interrupt = 0; interrupt < 256; interrupt++)
     {
-        SetIDTEntry(interrupt, ISRHandlers[interrupt], GDT_CODE_SEGMENT, 0x8E);
+        SetIDTEntry(interrupt, ISRHandlers[interrupt], GDT_CODE_SEGMENT, IDT_DEFAULT_GATE_FLAGS);
         EnableIDTEntry(interrupt);
     }
+}
+
+void RemapPIC()
+{
+
+    outb(PIC1_COMMAND_PORT, PIC_INIT_COMMAND);
+    outb(PIC2_COMMAND_PORT, PIC_INIT_COMMAND);
+
+    outb(PIC1_DATA_PORT, PIC1_VECTOR_OFFSET);
+    outb(PIC2_DATA_PORT, PIC2_VECTOR_OFFSET);
+
+    outb(PIC1_DATA_PORT, PIC1_CASCADE_IDENTITY);
+    outb(PIC2_DATA_PORT, PIC2_CASCADE_IDENTITY);
+
+    outb(PIC1_DATA_PORT, PIC_8086_MODE);
+    outb(PIC2_DATA_PORT, PIC_8086_MODE);
+
+    outb(PIC1_DATA_PORT, PIC_RESTORE_MASK_NONE);
+    outb(PIC2_DATA_PORT, PIC_RESTORE_MASK_NONE);
 }
 
 
@@ -93,15 +122,14 @@ extern "C" void ISRHANDLER(Registers* reg)
             // sending response to interrupt to PIC
         }
 
+
+        outb(PIC1_COMMAND_PORT, 0x20); // Send End of Interrupt (EOI) signal to master PIC
         if (reg->interrupt_number >= 40)
         {
-            // write8bitportSlow(picSinput, 0x20);
+            outb(PIC2_COMMAND_PORT, 0x20); // Send End of Interrupt (EOI) signal to slave PIC
         }
     }
 
-    while(true){
-        __asm__ __volatile__("hlt");
-    }
 }
 
 void InitInterrupts()
