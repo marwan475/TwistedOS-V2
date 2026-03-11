@@ -129,7 +129,7 @@ EFI_STATUS FileSystem::SetupForKernel(EFI_FILE_PROTOCOL* Dir, EFI_FILE_INFO File
     // Get memory map
     MemoryMapInfo MemoryMap = {0};
     GetMemoryMapFromEfi(&MemoryMap, BootServices);
-    //PrintMemoryMap(MemoryMap, efiConsole);
+    // PrintMemoryMap(MemoryMap, efiConsole);
 
     KernelParameters KernelArgs = {0};
     KernelArgs.GopMode          = efiConsole->GetGopMode();

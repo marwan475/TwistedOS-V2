@@ -1,5 +1,4 @@
 #include <FrameBufferConsole.hpp>
-
 #include <font.hpp>
 #include <printf.hpp>
 
