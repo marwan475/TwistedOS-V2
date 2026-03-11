@@ -17,13 +17,13 @@ typedef struct
 class PhysicalMemoryManager
 {
 private:
-    MemoryMapInfo     MemoryMap;
-    UINTN             NextPageAddress;
-    UINTN             CurrentDescriptor;
-    UINTN             RemainingPagesInDescriptor;
-    UINTN             TotalUsableMemory;
-    UINTN             TotalNumberOfPages;
-    MemoryDescriptor* MemoryDescriptors;
+    MemoryMapInfo    MemoryMap;
+    UINTN            NextPageAddress;
+    UINTN            CurrentDescriptor;
+    UINTN            RemainingPagesInDescriptor;
+    UINTN            TotalUsableMemory;
+    UINTN            TotalNumberOfPages;
+    MemoryDescriptor MemoryDescriptorInfo;
 
     void InitializeMemoryStats();
 

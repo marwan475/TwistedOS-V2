@@ -5,7 +5,8 @@
 PhysicalMemoryManager::PhysicalMemoryManager(MemoryMapInfo MemoryMap, UINTN NextPageAddress, UINTN CurrentDescriptor,
                                              UINTN RemainingPagesInDescriptor)
     : MemoryMap(MemoryMap), NextPageAddress(NextPageAddress), CurrentDescriptor(CurrentDescriptor),
-      RemainingPagesInDescriptor(RemainingPagesInDescriptor), TotalUsableMemory(0), TotalNumberOfPages(0)
+      RemainingPagesInDescriptor(RemainingPagesInDescriptor), TotalUsableMemory(0), TotalNumberOfPages(0),
+      MemoryDescriptorInfo{0, 0, 0, NULL}
 {
     InitializeMemoryStats();
 }
@@ -102,19 +103,17 @@ void PhysicalMemoryManager::PrintConventionalMemoryMap(FrameBufferConsole& Conso
 
 void PhysicalMemoryManager::PrintMemoryDescriptors(FrameBufferConsole& Console) const
 {
-    uint64_t DescriptorCount = MemoryMap.MemoryMapSize / MemoryMap.DescriptorSize;
-
-    for (uint64_t i = 0; i < DescriptorCount; i++)
+    if (MemoryDescriptorInfo.TotalNumberOfPages == 0)
     {
-        MemoryDescriptor* Md = &MemoryDescriptors[i];
-
-        if (Md->TotalNumberOfPages == 0)
-            continue;
-
-        Console.printf_("Descriptor %llu: base=0x%llx total=%llu free=%llu bitmap=%s\n", (unsigned long long) i,
-                        (unsigned long long) Md->PhysicalAddressStart, (unsigned long long) Md->TotalNumberOfPages,
-                        (unsigned long long) Md->NumberOfFreePages, Md->BitMap ? "yes" : "no");
+        Console.printf_("Memory descriptor not initialized\n");
+        return;
     }
+
+    Console.printf_("Largest descriptor: base=0x%llx total=%llu free=%llu bitmap=%s\n",
+                    (unsigned long long) MemoryDescriptorInfo.PhysicalAddressStart,
+                    (unsigned long long) MemoryDescriptorInfo.TotalNumberOfPages,
+                    (unsigned long long) MemoryDescriptorInfo.NumberOfFreePages,
+                    MemoryDescriptorInfo.BitMap ? "yes" : "no");
 }
 
 void* InitializeMemoryDescriptorBitMap(MemoryDescriptor* Md)
@@ -131,40 +130,33 @@ void* InitializeMemoryDescriptorBitMap(MemoryDescriptor* Md)
     Md->NumberOfFreePages -= PagesForBitMap;
     Md->PhysicalAddressStart += PagesForBitMap * PAGE_SIZE;
 
+    kmemset(BitMapAddr, 0, BitMapSize);
+
     return BitMapAddr;
 }
 
 void PhysicalMemoryManager::InitializeMemoryDescriptors()
 {
     uint64_t DescriptorCount = MemoryMap.MemoryMapSize / MemoryMap.DescriptorSize;
-    MemoryDescriptors        = (MemoryDescriptor*) AllocatePagesFromMemoryMap(
-            (DescriptorCount * sizeof(MemoryDescriptor) + PAGE_SIZE - 1) / PAGE_SIZE);
-    kmemset(MemoryDescriptors, 0, DescriptorCount * sizeof(MemoryDescriptor));
+
+    MemoryDescriptorInfo.PhysicalAddressStart = 0;
+    MemoryDescriptorInfo.TotalNumberOfPages   = 0;
+    MemoryDescriptorInfo.NumberOfFreePages    = 0;
+    MemoryDescriptorInfo.BitMap               = NULL;
 
     for (uint64_t i = 0; i < DescriptorCount; i++)
     {
         EFI_MEMORY_DESCRIPTOR* Desc
                 = (EFI_MEMORY_DESCRIPTOR*) ((uint8_t*) MemoryMap.MemoryMap + (i * MemoryMap.DescriptorSize));
 
-        if (Desc->NumberOfPages <= 3) // Skip tiny regions
-            continue;
-
-        if (i == CurrentDescriptor)
+        if (Desc->Type == EfiConventionalMemory && Desc->NumberOfPages > MemoryDescriptorInfo.TotalNumberOfPages)
         {
-            MemoryDescriptors[i].PhysicalAddressStart
-                    = Desc->PhysicalStart + (Desc->NumberOfPages - RemainingPagesInDescriptor) * PAGE_SIZE;
-            MemoryDescriptors[i].TotalNumberOfPages = Desc->NumberOfPages;
-            MemoryDescriptors[i].NumberOfFreePages  = RemainingPagesInDescriptor;
-            MemoryDescriptors[i].BitMap = (uint8_t*) InitializeMemoryDescriptorBitMap(&MemoryDescriptors[i]);
-            continue;
-        }
-
-        if (Desc->Type == EfiConventionalMemory)
-        {
-            MemoryDescriptors[i].PhysicalAddressStart = Desc->PhysicalStart;
-            MemoryDescriptors[i].TotalNumberOfPages   = Desc->NumberOfPages;
-            MemoryDescriptors[i].NumberOfFreePages    = Desc->NumberOfPages;
-            MemoryDescriptors[i].BitMap = (uint8_t*) InitializeMemoryDescriptorBitMap(&MemoryDescriptors[i]);
+            MemoryDescriptorInfo.PhysicalAddressStart = Desc->PhysicalStart;
+            MemoryDescriptorInfo.TotalNumberOfPages   = Desc->NumberOfPages;
+            MemoryDescriptorInfo.NumberOfFreePages    = Desc->NumberOfPages;
+            MemoryDescriptorInfo.BitMap               = NULL;
         }
     }
+
+    MemoryDescriptorInfo.BitMap = (uint8_t*) InitializeMemoryDescriptorBitMap(&MemoryDescriptorInfo);
 }
