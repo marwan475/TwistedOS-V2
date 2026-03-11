@@ -129,7 +129,7 @@ EFI_STATUS FileSystem::SetupForKernel(EFI_FILE_PROTOCOL* Dir, EFI_FILE_INFO File
     // Get memory map
     MemoryMapInfo MemoryMap = {0};
     GetMemoryMapFromEfi(&MemoryMap, BootServices);
-    PrintMemoryMap(MemoryMap, efiConsole);
+    //PrintMemoryMap(MemoryMap, efiConsole);
 
     KernelParameters KernelArgs = {0};
     KernelArgs.GopMode          = efiConsole->GetGopMode();
@@ -154,7 +154,7 @@ EFI_STATUS FileSystem::SetupForKernel(EFI_FILE_PROTOCOL* Dir, EFI_FILE_INFO File
     UINTN kernel_end_virtual  = MemoryMgr.MapKernelToHigherHalf((UINTN) KernelBuffer, KernelAllocSize);
 
     // Set up stack for the kernel
-    void* stack_physical_addr      = MemoryMgr.AllocateAvailablePagesFromMemoryMap(KERNEL_STACK_SIZE / PAGE_SIZE);
+    void* stack_physical_addr = MemoryMgr.AllocateAvailablePagesFromMemoryMap(KERNEL_STACK_SIZE / PAGE_SIZE);
     UINTN stack_virtual_addr_end
             = MemoryMgr.IdentityMapRange((UINTN) stack_physical_addr, KERNEL_STACK_SIZE / PAGE_SIZE);
 

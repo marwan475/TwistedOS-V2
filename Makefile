@@ -61,10 +61,11 @@ $(EFI): Bootloader/bootloader.cpp utils/printf.cpp Bootloader/Console.cpp Bootlo
 	$(CC) $(CFLAGS) -I. -I./Bootloader -I./utils -o $(BIN)$@ $^ \
 		-L /usr/lib -l:libefi.a -l:libgnuefi.a
 
-$(KERNEL): Kernel/kernel.cpp utils/printf.cpp Kernel/linker.ld
+$(KERNEL): Kernel/kernel.cpp Kernel/FrameBufferConsole.cpp utils/printf.cpp Kernel/linker.ld
 	$(KERNEL_CC) $(KERNEL_CFLAGS) -I./Kernel -I./Bootloader -I./utils -c Kernel/kernel.cpp -o $(BUILD)kernel.o
+	$(KERNEL_CC) $(KERNEL_CFLAGS) -I./Kernel -I./Bootloader -I./utils -c Kernel/FrameBufferConsole.cpp -o $(BUILD)framebuffer_console.o
 	$(KERNEL_CC) $(KERNEL_CFLAGS) -I./Kernel -I./Bootloader -I./utils -c utils/printf.cpp -o $(BUILD)printf.o
-	$(KERNEL_LD) $(KERNEL_LDFLAGS) $(BUILD)kernel.o $(BUILD)printf.o -o $(BUILD)kernel.elf
+	$(KERNEL_LD) $(KERNEL_LDFLAGS) $(BUILD)kernel.o $(BUILD)framebuffer_console.o $(BUILD)printf.o -o $(BUILD)kernel.elf
 	objcopy -O binary $(BUILD)kernel.elf $(BIN)$@
 
 $(IMG): $(EFI) $(KERNEL)
