@@ -28,3 +28,5 @@ Resources:
 - https://wiki.osdev.org/UEFI
 - https://www.isec.tugraz.at/teaching/materials/os/tutorials/paging-on-intel-x86-64/
 - http://wiki.osdev.org/Paging
+- https://wiki.osdev.org/GDT_Tutorial
+- https://wiki.osdev.org/Global_Descriptor_Table
