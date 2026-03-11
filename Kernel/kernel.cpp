@@ -35,13 +35,20 @@ extern "C"
         Console.Clear();
         FrameBufferConsole::SetActive(&Console);
         Console.printf_("Framebuffer console Initialized\n");
-        Console.printf_("Kernel end virtual: 0x%lx\n", KernelArgs.KernelEndVirtual);
-        Console.printf_("PML4 physical: 0x%lx\n", KernelArgs.PageMapL4Table);
 
+        // Initialize GDT and TSS
         InitGDT();
-
         Console.printf_("GDT/TSS Initialized\n");
 
+        // Initialize Interrupts
+        InitInterrupts();
+        Console.printf_("Interrupts Initialized\n");
+
+        // Enable Interrupts
+        asm volatile("sti");
+
+        // asm volatile("int $0x80");
+        
         while (1)
             __asm__ __volatile__("hlt");
     }

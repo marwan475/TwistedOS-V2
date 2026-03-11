@@ -17,11 +17,16 @@ Developed
 - Kernel Entry
     - Initialize GDT and TSS
 
-Currently developing
+Todo:
 - Kernel Entry
+    - init IDT
+    - Physical memory manager using memory map
+    - Virtual memory manager
+    - Setup New Kernel virtual Stack/Heap
+    - Jump to dispatcher
 
 Build Dependencies:
-- base-devel mingw-w64-gcc mingw-w64-crt mingw-w64-headers mtools dosfstools parted qemu-full clang llvm gnu-efi
+- base-devel mingw-w64-gcc mingw-w64-crt mingw-w64-headers mtools dosfstools parted qemu-full clang llvm gnu-efi nasm
 
 Resources:
 - https://uefi.org/sites/default/files/resources/UEFI_Spec_2_10_Aug29.pdf
