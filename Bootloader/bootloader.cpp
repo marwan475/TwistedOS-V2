@@ -1,3 +1,4 @@
+#include <CommonUtils.hpp>
 #include <Console.hpp>
 #include <FileSystem.hpp>
 #include <uefi.hpp>
@@ -7,16 +8,6 @@ Console* Con;
 extern "C" void _putchar(char character)
 {
     Con->putchar(character);
-}
-
-char* strcpy(char* dest, const char* src)
-{
-    char* d = dest;
-
-    while ((*d++ = *src++))
-        ;
-
-    return dest;
 }
 
 extern "C"

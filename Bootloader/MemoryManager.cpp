@@ -1,15 +1,7 @@
+#include <CommonUtils.hpp>
 #include <MemoryManager.hpp>
 
 // Should only be created after ExitBootServices
-
-void kmemset(void* dest, int value, size_t count)
-{
-    uint8_t* ptr  = (uint8_t*) dest;
-    uint8_t  byte = (uint8_t) value;
-
-    for (size_t i = 0; i < count; i++)
-        ptr[i] = byte;
-}
 
 MemoryManager::MemoryManager(MemoryMapInfo MemoryMap) : MemoryMap(MemoryMap)
 {

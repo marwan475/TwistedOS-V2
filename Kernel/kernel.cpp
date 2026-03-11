@@ -32,13 +32,21 @@ extern "C"
                                   KernelArgs.RemainingPagesInDescriptor);
 
         Console.printf_("Physical Memory Manager Initialized\n");
+        PMM.PrintConventionalMemoryMap(Console);
 
-        UINTN TotalUsableMemoryBytes = PMM.GetTotalUsableMemory();
+        UINTN TotalUsableMemoryBytes = PMM.TotalUsableMemoryBytes();
         UINTN TotalUsableMemoryMiB   = TotalUsableMemoryBytes / (1024 * 1024);
         UINTN TotalUsableMemoryGiB   = TotalUsableMemoryMiB / 1024;
         Console.printf_("Total usable memory: %llu bytes (%llu MiB / %llu GiB)\n",
                         (unsigned long long) TotalUsableMemoryBytes, (unsigned long long) TotalUsableMemoryMiB,
                         (unsigned long long) TotalUsableMemoryGiB);
+
+        UINTN TotalPages = PMM.TotalPages();
+        Console.printf_("Total number of pages: %llu\n", (unsigned long long) TotalPages);
+
+        PMM.InitializeMemoryDescriptors();
+
+        PMM.PrintMemoryDescriptors(Console);
 
         while (1)
             __asm__ __volatile__("hlt");

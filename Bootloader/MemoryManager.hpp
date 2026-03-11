@@ -54,8 +54,6 @@ typedef struct
     UINT32                 DescriptorVersion;
 } MemoryMapInfo;
 
-void kmemset(void* dest, int value, size_t count);
-
 class MemoryManager
 {
 private:

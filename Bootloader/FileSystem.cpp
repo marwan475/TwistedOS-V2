@@ -1,3 +1,4 @@
+#include <CommonUtils.hpp>
 #include <FileSystem.hpp>
 
 FileSystem::FileSystem(EFI_HANDLE ImageHandle, EFI_BOOT_SERVICES* BootServices, Console* efiConsole)
