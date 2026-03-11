@@ -25,6 +25,11 @@ MemoryManager::~MemoryManager()
 {
 }
 
+UINTN MemoryManager::GetPageMapL4Table() const
+{
+    return (UINTN) PageMapL4Table;
+}
+
 void* MemoryManager::AllocateAvailablePagesFromMemoryMap(UINTN Pages)
 {
     if (RemainingPagesInDescriptor < Pages)

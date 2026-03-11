@@ -153,6 +153,9 @@ EFI_STATUS FileSystem::SetupForKernel(EFI_FILE_PROTOCOL* Dir, EFI_FILE_INFO File
     UINTN kernel_virtual_addr = KERNEL_BASE_VIRTUAL_ADDR;
     UINTN kernel_end_virtual  = MemoryMgr.MapKernelToHigherHalf((UINTN) KernelBuffer, KernelAllocSize);
 
+    KernelArgs.KernelEndVirtual = kernel_end_virtual;
+    KernelArgs.PageMapL4Table   = MemoryMgr.GetPageMapL4Table();
+
     // Set up stack for the kernel
     void* stack_physical_addr = MemoryMgr.AllocateAvailablePagesFromMemoryMap(KERNEL_STACK_SIZE / PAGE_SIZE);
     UINTN stack_virtual_addr_end

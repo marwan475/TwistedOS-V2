@@ -1,5 +1,5 @@
-#include <FrameBufferConsole.hpp>
-#include <font.hpp>
+#include <Logging/FrameBufferConsole.hpp>
+#include <Logging/font.hpp>
 #include <printf.hpp>
 
 FrameBufferConsole* FrameBufferConsole::ActiveConsole = nullptr;
