@@ -14,6 +14,8 @@ Developed
     - Maps kernel to higher half and allocates 64kb stack
     - Transfers control to higher half kernel with Kernel Arguments
 - Framebuffer Logging for kernel
+- Kernel Entry
+    - Initialize GDT and TSS
 
 Currently developing
 - Kernel Entry
