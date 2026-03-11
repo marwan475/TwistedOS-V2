@@ -18,22 +18,24 @@ static inline void LoadIDT(const IDTdescription* idt_descriptor)
 
 static void SetIDTEntry(int interrupt, void (*base)(), uint16_t segment, uint8_t flags)
 {
-    uintptr_t base_addr     = reinterpret_cast<uintptr_t>(base);
-    IDT[interrupt].baselow  = (uint16_t) (base_addr & 0xFFFF);
-    IDT[interrupt].segment  = segment;
-    IDT[interrupt].reserved = 0;
-    IDT[interrupt].flags    = flags;
-    IDT[interrupt].basehigh = (uint16_t) ((base_addr >> 16) & 0xFFFF);
+    uintptr_t base_addr        = reinterpret_cast<uintptr_t>(base);
+    IDT[interrupt].offset_low  = (uint16_t) (base_addr & 0xFFFF);
+    IDT[interrupt].selector    = segment;
+    IDT[interrupt].ist         = 0;
+    IDT[interrupt].type_attr   = flags;
+    IDT[interrupt].offset_mid  = (uint16_t) ((base_addr >> 16) & 0xFFFF);
+    IDT[interrupt].offset_high = (uint32_t) ((base_addr >> 32) & 0xFFFFFFFF);
+    IDT[interrupt].zero        = 0;
 }
 
 static void EnableIDTEntry(int interrupt)
 {
-    IDT[interrupt].flags |= IDT_FLAG_PRESENT;
+    IDT[interrupt].type_attr |= IDT_FLAG_PRESENT;
 }
 
 static void DisableIDTEntry(int interrupt)
 {
-    IDT[interrupt].flags &= ~IDT_FLAG_PRESENT;
+    IDT[interrupt].type_attr &= ~IDT_FLAG_PRESENT;
 }
 
 static void (*const ISRHandlers[256])() = {
@@ -61,13 +63,51 @@ static void (*const ISRHandlers[256])() = {
 
 static void ISR_init()
 {
-    DisableIDTEntry(0);
+    //DisableIDTEntry(0);
 
     for (int interrupt = 0; interrupt < 256; interrupt++)
     {
-        SetIDTEntry(interrupt, ISRHandlers[interrupt], GDT_CODE_SEGMENT, IDT_FLAG_RING0 | IDT_FLAG_GATE_32BIT_INT);
+        SetIDTEntry(interrupt, ISRHandlers[interrupt], GDT_CODE_SEGMENT, 0x8E);
         EnableIDTEntry(interrupt);
     }
+}
+
+
+extern "C" void ISRHANDLER(Registers* reg)
+{
+    FrameBufferConsole* Console = FrameBufferConsole::GetActive();
+
+    if (Console != nullptr)
+    {
+        Console->printf_("Interrupt %lu\n", reg->interrupt_number);
+    }
+
+    if (reg->interrupt_number < 32)
+    {
+        // Panic
+    }
+    else
+    {
+        if (reg->interrupt_number >= 32 && reg->interrupt_number < 42)
+        {
+            // sending response to interrupt to PIC
+        }
+
+        if (reg->interrupt_number >= 40)
+        {
+            // write8bitportSlow(picSinput, 0x20);
+        }
+    }
+
+    while(true){
+        __asm__ __volatile__("hlt");
+    }
+}
+
+void InitInterrupts()
+{
+    ISR_init();
+    LoadIDT(&IDTDescriptor);
 }
 
 TSSDescriptor BuildTSSDescriptor(const TSS* tss)
@@ -139,38 +179,6 @@ void InitGDT()
                          : "rax", "memory");
 }
 
-extern "C" void ISRHANDLER(Registers* reg)
-{
-    FrameBufferConsole* Console = FrameBufferConsole::GetActive();
-
-    if (Console != nullptr)
-    {
-        Console->printf_("Interrupt %lu\n", reg->interrupt_number);
-    }
-
-    if (reg->interrupt_number < 32)
-    {
-        // Panic
-    }
-    else
-    {
-        if (reg->interrupt_number >= 32 && reg->interrupt_number < 42)
-        {
-            // sending response to interrupt to PIC
-        }
-
-        if (reg->interrupt_number >= 40)
-        {
-            // write8bitportSlow(picSinput, 0x20);
-        }
-    }
-}
-
-void InitInterrupts()
-{
-    ISR_init();
-    LoadIDT(&IDTDescriptor);
-}
 
 static_assert(sizeof(DiscriptorRegister) == 10, "GDTR must be 10 bytes in long mode");
 static_assert(sizeof(TSSDescriptor) == 16, "TSS descriptor must be 16 bytes");

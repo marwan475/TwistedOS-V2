@@ -20,7 +20,9 @@ KERNEL_LD = ld
 KERNEL_AS = nasm
 KERNEL_CFLAGS = \
     -ffreestanding \
-    -fPIC \
+	-fno-pic \
+	-fno-pie \
+	-mcmodel=kernel \
     -mno-red-zone \
     -nostdlib \
     -fno-exceptions \
@@ -32,7 +34,6 @@ KERNEL_CFLAGS = \
 
 KERNEL_LDFLAGS = \
     -nostdlib \
-    -pie \
     -e kernel_main \
     -T Kernel/linker.ld
 
@@ -72,7 +73,7 @@ $(KERNEL): Kernel/kernel.cpp Kernel/Logging/FrameBufferConsole.cpp Kernel/Arch/x
 	$(KERNEL_AS) $(KERNEL_ASFLAGS) Kernel/Arch/Interrupts.asm -o $(BUILD)interrupts.o
 	$(KERNEL_CC) $(KERNEL_CFLAGS) -I./Kernel -I./Bootloader -I./utils -c utils/printf.cpp -o $(BUILD)printf.o
 	$(KERNEL_LD) $(KERNEL_LDFLAGS) $(BUILD)kernel.o $(BUILD)framebuffer_console.o $(BUILD)x86.o $(BUILD)interrupts.o $(BUILD)printf.o -o $(BUILD)kernel.elf
-	objcopy -O binary $(BUILD)kernel.elf $(BIN)$@
+	objcopy -O binary --set-section-flags .bss=alloc,load,contents $(BUILD)kernel.elf $(BIN)$@
 
 $(IMG): $(EFI) $(KERNEL)
 	rm -f $@

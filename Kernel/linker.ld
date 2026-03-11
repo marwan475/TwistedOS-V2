@@ -7,6 +7,8 @@ ENTRY(kernel_main)
 
 SECTIONS
 {
+    . = 0xFFFFFFFF80000000;
+
     .text :
     {
         KEEP(*(.text.entry))   /* kernel_main first */
