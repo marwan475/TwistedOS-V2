@@ -97,11 +97,14 @@ EFI_STATUS FileSystem::SetupForKernel(EFI_FILE_PROTOCOL* Dir, EFI_FILE_INFO File
         return status;
     }
 
-    UINTN KernelSize   = FileInfo.FileSize;
-    void* KernelBuffer = NULL;
+    UINTN                KernelSize       = FileInfo.FileSize;
+    UINTN                KernelPages      = (KernelSize + PAGE_SIZE - 1) / PAGE_SIZE;
+    UINTN                KernelAllocSize  = KernelPages * PAGE_SIZE;
+    EFI_PHYSICAL_ADDRESS KernelBufferAddr = 0;
+    void*                KernelBuffer     = NULL;
 
-    // Allocate buffer for kernel
-    status = BootServices->AllocatePool(EfiLoaderData, KernelSize, &KernelBuffer);
+    status       = BootServices->AllocatePages(AllocateAnyPages, EfiLoaderCode, KernelPages, &KernelBufferAddr);
+    KernelBuffer = (void*) KernelBufferAddr;
 
     if (EFI_ERROR(status))
     {
@@ -109,7 +112,8 @@ EFI_STATUS FileSystem::SetupForKernel(EFI_FILE_PROTOCOL* Dir, EFI_FILE_INFO File
         return status;
     }
 
-    // Read kernel into buffer
+    kmemset(KernelBuffer, 0, KernelAllocSize);
+
     UINTN ReadSize = KernelSize;
 
     status = KernelFile->Read(KernelFile, &ReadSize, KernelBuffer);
@@ -151,9 +155,19 @@ EFI_STATUS FileSystem::SetupForKernel(EFI_FILE_PROTOCOL* Dir, EFI_FILE_INFO File
         MemoryMgr.IdentityMapPage(KernelArgs.GopMode.FrameBufferBase + (i * PAGE_SIZE));
     }
 
+    // Map Kernel to higher half
+    UINTN kernel_virtual_addr  = KERNEL_BASE_VIRTUAL_ADDR;
+    UINTN kernel_physical_addr = (UINTN) KernelBuffer;
+    UINTN kernel_pages         = KernelPages;
+
+    for (UINTN i = 0; i < kernel_pages; i++)
+    {
+        MemoryMgr.MapPage(kernel_physical_addr + (i * PAGE_SIZE), kernel_virtual_addr + (i * PAGE_SIZE));
+    }
+
     MemoryMgr.InitPaging();
 
-    void EFIAPI (*EntryPoint)(KernelParameters) = (void EFIAPI (*)(KernelParameters)) KernelBuffer;
+    void EFIAPI (*EntryPoint)(KernelParameters) = (void EFIAPI (*)(KernelParameters)) kernel_virtual_addr;
 
     EntryPoint(KernelArgs);
 

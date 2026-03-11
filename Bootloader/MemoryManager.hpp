@@ -6,6 +6,8 @@
 #define PAGE_SIZE 4096
 #define PHYS_PAGE_ADDR_MASK 0x000FFFFFFFFFF000
 
+#define KERNEL_BASE_VIRTUAL_ADDR 0xFFFFFFFF80000000
+
 typedef union
 {
     uint64_t value; // full 64-bit virtual address
@@ -50,6 +52,8 @@ typedef struct
     UINTN                  DescriptorSize;
     UINT32                 DescriptorVersion;
 } MemoryMapInfo;
+
+void kmemset(void* dest, int value, size_t count);
 
 class MemoryManager
 {
