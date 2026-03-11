@@ -69,6 +69,9 @@ public:
     MemoryManager(MemoryMapInfo MemoryMap);
     ~MemoryManager();
     UINTN GetPageMapL4Table() const;
+    UINTN GetNextPageAddress() const;
+    UINTN GetCurrentDescriptor() const;
+    UINTN GetRemainingPagesInDescriptor() const;
     void* AllocateAvailablePagesFromMemoryMap(UINTN Pages);
     bool  MapPage(UINTN PysicalAddr, UINTN VirtualAddr);
     bool  UnmapPage(UINTN VirtualAddr);

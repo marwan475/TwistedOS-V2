@@ -1,28 +1,11 @@
 
 #include <Arch/x86.hpp>
+#include <KernelParameters.hpp>
 #include <Logging/FrameBufferConsole.hpp>
+#include <PhysicalMemoryManager.hpp>
 #include <stdint.h>
-#include <uefi.hpp>
-
-typedef struct
-{
-    UINTN                  MemoryMapSize;
-    EFI_MEMORY_DESCRIPTOR* MemoryMap;
-    UINTN                  MapKey;
-    UINTN                  DescriptorSize;
-    UINT32                 DescriptorVersion;
-} MemoryMapInfo;
-
-typedef struct
-{
-    MemoryMapInfo                     MemoryMap;
-    EFI_GRAPHICS_OUTPUT_PROTOCOL_MODE GopMode;
-    UINTN                             KernelEndVirtual;
-    UINTN                             PageMapL4Table;
-} KernelParameters;
 
 extern "C" void EFIAPI kernel_main(KernelParameters KernelArgs) __attribute__((section(".text.entry")));
-
 
 // Uefi sets us up in 64bit long mode with identity mapped pages
 extern "C"
@@ -45,12 +28,18 @@ extern "C"
         InitInterrupts();
         Console.printf_("Interrupts Initialized\n");
 
-        RemapPIC();
-        Console.printf_("PIC Remapped\n");
+        PhysicalMemoryManager PMM(KernelArgs.MemoryMap, KernelArgs.NextPageAddress, KernelArgs.CurrentDescriptor,
+                                  KernelArgs.RemainingPagesInDescriptor);
 
-        // Enable Interrupts
-        asm volatile("sti");
-        
+        Console.printf_("Physical Memory Manager Initialized\n");
+
+        UINTN TotalUsableMemoryBytes = PMM.GetTotalUsableMemory();
+        UINTN TotalUsableMemoryMiB   = TotalUsableMemoryBytes / (1024 * 1024);
+        UINTN TotalUsableMemoryGiB   = TotalUsableMemoryMiB / 1024;
+        Console.printf_("Total usable memory: %llu bytes (%llu MiB / %llu GiB)\n",
+                        (unsigned long long) TotalUsableMemoryBytes, (unsigned long long) TotalUsableMemoryMiB,
+                        (unsigned long long) TotalUsableMemoryGiB);
+
         while (1)
             __asm__ __volatile__("hlt");
     }

@@ -161,6 +161,10 @@ EFI_STATUS FileSystem::SetupForKernel(EFI_FILE_PROTOCOL* Dir, EFI_FILE_INFO File
     UINTN stack_virtual_addr_end
             = MemoryMgr.IdentityMapRange((UINTN) stack_physical_addr, KERNEL_STACK_SIZE / PAGE_SIZE);
 
+    KernelArgs.NextPageAddress            = MemoryMgr.GetNextPageAddress();
+    KernelArgs.CurrentDescriptor          = MemoryMgr.GetCurrentDescriptor();
+    KernelArgs.RemainingPagesInDescriptor = MemoryMgr.GetRemainingPagesInDescriptor();
+
     MemoryMgr.InitPaging();
 
     asm volatile("mov %0, %%rsp" ::"r"(stack_virtual_addr_end));

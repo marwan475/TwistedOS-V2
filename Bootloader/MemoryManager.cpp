@@ -30,6 +30,21 @@ UINTN MemoryManager::GetPageMapL4Table() const
     return (UINTN) PageMapL4Table;
 }
 
+UINTN MemoryManager::GetNextPageAddress() const
+{
+    return (UINTN) NextPageAddress;
+}
+
+UINTN MemoryManager::GetCurrentDescriptor() const
+{
+    return CurrentDescriptor;
+}
+
+UINTN MemoryManager::GetRemainingPagesInDescriptor() const
+{
+    return RemainingPagesInDescriptor;
+}
+
 void* MemoryManager::AllocateAvailablePagesFromMemoryMap(UINTN Pages)
 {
     if (RemainingPagesInDescriptor < Pages)

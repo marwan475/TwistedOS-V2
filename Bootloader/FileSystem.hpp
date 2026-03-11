@@ -10,6 +10,9 @@ typedef struct
     EFI_GRAPHICS_OUTPUT_PROTOCOL_MODE GopMode;
     UINTN                             KernelEndVirtual;
     UINTN                             PageMapL4Table;
+    UINTN                             NextPageAddress;
+    UINTN                             CurrentDescriptor;
+    UINTN                             RemainingPagesInDescriptor;
 } KernelParameters;
 
 class FileSystem
