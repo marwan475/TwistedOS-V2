@@ -8,6 +8,7 @@ typedef struct
 {
     MemoryMapInfo                     MemoryMap;
     EFI_GRAPHICS_OUTPUT_PROTOCOL_MODE GopMode;
+    UINTN                             StackVirtualAddrEnd;
 } KernelParameters;
 
 class FileSystem

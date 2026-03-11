@@ -185,6 +185,41 @@ bool MemoryManager::IdentityMapPage(UINTN Addr)
     return MapPage(Addr, Addr);
 }
 
+UINTN MemoryManager::IdentityMapRange(UINTN BaseAddr, UINTN Size)
+{
+    UINTN RangeStart = BaseAddr & PHYS_PAGE_ADDR_MASK;
+    UINTN Pages      = (Size + PAGE_SIZE - 1) / PAGE_SIZE;
+    UINTN RangeEnd   = RangeStart + (Pages * PAGE_SIZE);
+
+    for (UINTN Addr = RangeStart; Addr < RangeEnd; Addr += PAGE_SIZE)
+    {
+        IdentityMapPage(Addr);
+    }
+
+    return RangeEnd;
+}
+
+UINTN MemoryManager::MapRange(UINTN PhysicalAddr, UINTN VirtualAddr, UINTN Pages)
+{
+    UINTN RangeStartPhysical = PhysicalAddr & PHYS_PAGE_ADDR_MASK;
+    UINTN RangeStartVirtual  = VirtualAddr & PHYS_PAGE_ADDR_MASK;
+
+    for (UINTN i = 0; i < Pages; i++)
+    {
+        UINTN Offset = i * PAGE_SIZE;
+        MapPage(RangeStartPhysical + Offset, RangeStartVirtual + Offset);
+    }
+
+    return RangeStartVirtual + (Pages * PAGE_SIZE);
+}
+
+UINTN MemoryManager::MapKernelToHigherHalf(UINTN PhysicalAddr, UINTN Size)
+{
+    UINTN Pages = (Size + PAGE_SIZE - 1) / PAGE_SIZE;
+
+    return MapRange(PhysicalAddr, KERNEL_BASE_VIRTUAL_ADDR, Pages);
+}
+
 void MemoryManager::IdentityMapMemoryMap()
 {
     for (UINTN i = 0; i < MemoryMap.MemoryMapSize / MemoryMap.DescriptorSize; i++)

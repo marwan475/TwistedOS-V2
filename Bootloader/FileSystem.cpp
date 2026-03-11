@@ -147,25 +147,20 @@ EFI_STATUS FileSystem::SetupForKernel(EFI_FILE_PROTOCOL* Dir, EFI_FILE_INFO File
 
     MemoryMgr.IdentityMapMemoryMap();
 
-    // Identity Map FrameBuffer
-    UINTN fb_pages = (KernelArgs.GopMode.FrameBufferSize + PAGE_SIZE - 1) / PAGE_SIZE;
+    // Identity map the framebuffer
+    MemoryMgr.IdentityMapRange(KernelArgs.GopMode.FrameBufferBase, KernelArgs.GopMode.FrameBufferSize);
 
-    for (UINTN i = 0; i < fb_pages; i++)
-    {
-        MemoryMgr.IdentityMapPage(KernelArgs.GopMode.FrameBufferBase + (i * PAGE_SIZE));
-    }
+    UINTN kernel_virtual_addr = KERNEL_BASE_VIRTUAL_ADDR;
+    UINTN kernel_end_virtual  = MemoryMgr.MapKernelToHigherHalf((UINTN) KernelBuffer, KernelAllocSize);
 
-    // Map Kernel to higher half
-    UINTN kernel_virtual_addr  = KERNEL_BASE_VIRTUAL_ADDR;
-    UINTN kernel_physical_addr = (UINTN) KernelBuffer;
-    UINTN kernel_pages         = KernelPages;
-
-    for (UINTN i = 0; i < kernel_pages; i++)
-    {
-        MemoryMgr.MapPage(kernel_physical_addr + (i * PAGE_SIZE), kernel_virtual_addr + (i * PAGE_SIZE));
-    }
+    // Set up stack for the kernel
+    void* stack_physical_addr      = MemoryMgr.AllocateAvailablePagesFromMemoryMap(KERNEL_STACK_SIZE / PAGE_SIZE);
+    UINTN stack_virtual_addr_end
+            = MemoryMgr.IdentityMapRange((UINTN) stack_physical_addr, KERNEL_STACK_SIZE / PAGE_SIZE);
 
     MemoryMgr.InitPaging();
+
+    asm volatile("mov %0, %%rsp" ::"r"(stack_virtual_addr_end));
 
     void EFIAPI (*EntryPoint)(KernelParameters) = (void EFIAPI (*)(KernelParameters)) kernel_virtual_addr;
 

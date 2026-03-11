@@ -7,6 +7,7 @@
 #define PHYS_PAGE_ADDR_MASK 0x000FFFFFFFFFF000
 
 #define KERNEL_BASE_VIRTUAL_ADDR 0xFFFFFFFF80000000
+#define KERNEL_STACK_SIZE (16 * PAGE_SIZE)
 
 typedef union
 {
@@ -71,6 +72,9 @@ public:
     bool  MapPage(UINTN PysicalAddr, UINTN VirtualAddr);
     bool  UnmapPage(UINTN VirtualAddr);
     bool  IdentityMapPage(UINTN VirtualAddr);
+    UINTN IdentityMapRange(UINTN BaseAddr, UINTN Size);
+    UINTN MapRange(UINTN PhysicalAddr, UINTN VirtualAddr, UINTN Pages);
+    UINTN MapKernelToHigherHalf(UINTN PhysicalAddr, UINTN Size);
     void  IdentityMapMemoryMap();
     void  InitPaging();
 };

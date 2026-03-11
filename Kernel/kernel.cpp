@@ -19,8 +19,7 @@ typedef struct
     EFI_GRAPHICS_OUTPUT_PROTOCOL_MODE GopMode;
 } KernelParameters;
 
-extern "C" void EFIAPI kernel_main(KernelParameters KernelArgs) __attribute__((section(".text.entry")))
-__attribute__((aligned(4096)));
+extern "C" void EFIAPI kernel_main(KernelParameters KernelArgs) __attribute__((section(".text.entry")));
 
 static uint32_t* framebuffer;
 static uint32_t  screen_width;
