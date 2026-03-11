@@ -45,7 +45,25 @@ extern "C"
         Console.printf_("Total number of pages: %llu\n", (unsigned long long) TotalPages);
 
         PMM.InitializeMemoryDescriptors();
+        Console.printf_("Descriptor initialized\n");
+        PMM.PrintMemoryDescriptors(Console);
 
+        void* DescriptorAllocA = PMM.AllocateFromDescriptor(1);
+        Console.printf_("AllocateFromDescriptor(1) -> 0x%llx\n", (unsigned long long) (uint64_t) DescriptorAllocA);
+        PMM.PrintMemoryDescriptors(Console);
+
+        void* DescriptorAllocB = PMM.AllocateFromDescriptor(4);
+        Console.printf_("AllocateFromDescriptor(4) -> 0x%llx\n", (unsigned long long) (uint64_t) DescriptorAllocB);
+        PMM.PrintMemoryDescriptors(Console);
+
+        bool FreedAllocA = PMM.FreeFromDescriptor(DescriptorAllocA, 1);
+        Console.printf_("FreeFromDescriptor(0x%llx, 1) -> %s\n", (unsigned long long) (uint64_t) DescriptorAllocA,
+                        FreedAllocA ? "true" : "false");
+        PMM.PrintMemoryDescriptors(Console);
+
+        bool FreedAllocB = PMM.FreeFromDescriptor(DescriptorAllocB, 4);
+        Console.printf_("FreeFromDescriptor(0x%llx, 4) -> %s\n", (unsigned long long) (uint64_t) DescriptorAllocB,
+                        FreedAllocB ? "true" : "false");
         PMM.PrintMemoryDescriptors(Console);
 
         while (1)

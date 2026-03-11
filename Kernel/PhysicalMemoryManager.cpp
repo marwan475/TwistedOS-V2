@@ -55,6 +55,101 @@ void* PhysicalMemoryManager::AllocatePagesFromMemoryMap(UINTN Pages)
     return Page;
 }
 
+void* PhysicalMemoryManager::AllocateFromDescriptor(UINTN Pages)
+{
+    if (Pages == 0)
+        return NULL;
+
+    if (MemoryDescriptorInfo.BitMap == NULL)
+        return NULL;
+
+    if (Pages > MemoryDescriptorInfo.NumberOfFreePages)
+        return NULL;
+
+    uint64_t RunStart = 0;
+    uint64_t RunCount = 0;
+
+    for (uint64_t PageIndex = 0; PageIndex < MemoryDescriptorInfo.TotalNumberOfPages; PageIndex++)
+    {
+        uint64_t ByteIndex = PageIndex / 8;
+        uint64_t BitIndex  = PageIndex % 8;
+        bool     IsUsed    = (MemoryDescriptorInfo.BitMap[ByteIndex] & (1u << BitIndex)) != 0;
+
+        if (!IsUsed)
+        {
+            if (RunCount == 0)
+                RunStart = PageIndex;
+
+            RunCount++;
+
+            if (RunCount == Pages)
+            {
+                for (uint64_t AllocPage = RunStart; AllocPage < RunStart + Pages; AllocPage++)
+                {
+                    uint64_t AllocByteIndex = AllocPage / 8;
+                    uint64_t AllocBitIndex  = AllocPage % 8;
+                    MemoryDescriptorInfo.BitMap[AllocByteIndex] |= (1u << AllocBitIndex);
+                }
+
+                MemoryDescriptorInfo.NumberOfFreePages -= Pages;
+                return (void*) (MemoryDescriptorInfo.PhysicalAddressStart + (RunStart * PAGE_SIZE));
+            }
+        }
+        else
+        {
+            RunCount = 0;
+        }
+    }
+
+    return NULL;
+}
+
+bool PhysicalMemoryManager::FreeFromDescriptor(void* Address, UINTN Pages)
+{
+    if (Address == NULL || Pages == 0)
+        return false;
+
+    if (MemoryDescriptorInfo.BitMap == NULL)
+        return false;
+
+    uint64_t BaseAddress = MemoryDescriptorInfo.PhysicalAddressStart;
+    uint64_t EndAddress  = BaseAddress + (MemoryDescriptorInfo.TotalNumberOfPages * PAGE_SIZE);
+    uint64_t PhysAddr    = (uint64_t) Address;
+
+    if (PhysAddr < BaseAddress || PhysAddr >= EndAddress)
+        return false;
+
+    if (((PhysAddr - BaseAddress) % PAGE_SIZE) != 0)
+        return false;
+
+    uint64_t StartPage = (PhysAddr - BaseAddress) / PAGE_SIZE;
+    if (StartPage + Pages > MemoryDescriptorInfo.TotalNumberOfPages)
+        return false;
+
+    uint64_t FreedPages = 0;
+
+    for (uint64_t PageIndex = StartPage; PageIndex < StartPage + Pages; PageIndex++)
+    {
+        uint64_t ByteIndex = PageIndex / 8;
+        uint64_t BitIndex  = PageIndex % 8;
+        uint8_t  Mask      = (uint8_t) (1u << BitIndex);
+
+        if ((MemoryDescriptorInfo.BitMap[ByteIndex] & Mask) != 0)
+        {
+            MemoryDescriptorInfo.BitMap[ByteIndex] &= (uint8_t) ~Mask;
+            FreedPages++;
+        }
+    }
+
+    MemoryDescriptorInfo.NumberOfFreePages += FreedPages;
+    if (MemoryDescriptorInfo.NumberOfFreePages > MemoryDescriptorInfo.TotalNumberOfPages)
+    {
+        MemoryDescriptorInfo.NumberOfFreePages = MemoryDescriptorInfo.TotalNumberOfPages;
+    }
+
+    return true;
+}
+
 UINTN PhysicalMemoryManager::TotalUsableMemoryBytes() const
 {
     return TotalUsableMemory;
@@ -118,7 +213,7 @@ void PhysicalMemoryManager::PrintMemoryDescriptors(FrameBufferConsole& Console) 
 
 void* InitializeMemoryDescriptorBitMap(MemoryDescriptor* Md)
 {
-    uint64_t BitMapSize = (Md->NumberOfFreePages) / 8;
+    uint64_t BitMapSize = (Md->NumberOfFreePages + 7) / 8;
 
     // Allocate BitMap From the descriptor itself
     uint64_t PagesForBitMap = ((BitMapSize + PAGE_SIZE - 1) / PAGE_SIZE) + 1;
@@ -128,6 +223,7 @@ void* InitializeMemoryDescriptorBitMap(MemoryDescriptor* Md)
         return NULL;
 
     Md->NumberOfFreePages -= PagesForBitMap;
+    Md->TotalNumberOfPages -= PagesForBitMap;
     Md->PhysicalAddressStart += PagesForBitMap * PAGE_SIZE;
 
     kmemset(BitMapAddr, 0, BitMapSize);
