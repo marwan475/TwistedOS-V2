@@ -1,6 +1,6 @@
 #pragma once
 
-#include <KernelParameters.hpp>
+#include "../utils/KernelParameters.hpp"
 
 #define PAGE_SIZE 4096
 

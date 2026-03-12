@@ -1,6 +1,6 @@
 #pragma once
 
-#include <uefi.hpp>
+#include "../Bootloader/uefi.hpp"
 
 typedef struct
 {

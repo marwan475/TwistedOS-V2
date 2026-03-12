@@ -2,6 +2,7 @@
 
 #include <Console.hpp>
 #include <uefi.hpp>
+#include "../utils/KernelParameters.hpp"
 
 #define PAGE_SIZE 4096
 #define PHYS_PAGE_ADDR_MASK 0x000FFFFFFFFFF000
@@ -44,15 +45,6 @@ typedef union
         uint64_t execution_disabled : 1; // NX bit
     } __attribute__((__packed__)) fields;
 } PageTableEntry;
-
-typedef struct
-{
-    UINTN                  MemoryMapSize;
-    EFI_MEMORY_DESCRIPTOR* MemoryMap;
-    UINTN                  MapKey;
-    UINTN                  DescriptorSize;
-    UINT32                 DescriptorVersion;
-} MemoryMapInfo;
 
 class MemoryManager
 {

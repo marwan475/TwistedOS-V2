@@ -3,17 +3,7 @@
 #include <Console.hpp>
 #include <MemoryManager.hpp>
 #include <uefi.hpp>
-
-typedef struct
-{
-    MemoryMapInfo                     MemoryMap;
-    EFI_GRAPHICS_OUTPUT_PROTOCOL_MODE GopMode;
-    UINTN                             KernelEndVirtual;
-    UINTN                             PageMapL4Table;
-    UINTN                             NextPageAddress;
-    UINTN                             CurrentDescriptor;
-    UINTN                             RemainingPagesInDescriptor;
-} KernelParameters;
+#include "../utils/KernelParameters.hpp"
 
 class FileSystem
 {
