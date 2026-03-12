@@ -99,6 +99,20 @@ bool VirtualMemoryManager::MapPage(UINTN PhysicalAddr, UINTN VirtualAddr)
     return true;
 }
 
+UINTN VirtualMemoryManager::MapRange(UINTN PhysicalAddr, UINTN VirtualAddr, UINTN Pages)
+{
+    UINTN RangeStartPhysical = PhysicalAddr & PHYS_PAGE_ADDR_MASK;
+    UINTN RangeStartVirtual  = VirtualAddr & PHYS_PAGE_ADDR_MASK;
+
+    for (UINTN i = 0; i < Pages; i++)
+    {
+        UINTN Offset = i * PAGE_SIZE;
+        MapPage(RangeStartPhysical + Offset, RangeStartVirtual + Offset);
+    }
+
+    return RangeStartVirtual + (Pages * PAGE_SIZE);
+}
+
 bool VirtualMemoryManager::UnmapPage(UINTN VirtualAddr)
 {
     VirtualAddress Vaddr;
@@ -133,4 +147,17 @@ bool VirtualMemoryManager::UnmapPage(UINTN VirtualAddr)
     __asm__("invlpg (%0)\n" : : "r"(VirtualAddr));
 
     return true;
+}
+
+UINTN VirtualMemoryManager::UnmapRange(UINTN VirtualAddr, UINTN Pages)
+{
+    UINTN RangeStartVirtual = VirtualAddr & PHYS_PAGE_ADDR_MASK;
+
+    for (UINTN i = 0; i < Pages; i++)
+    {
+        UINTN Offset = i * PAGE_SIZE;
+        UnmapPage(RangeStartVirtual + Offset);
+    }
+
+    return RangeStartVirtual + (Pages * PAGE_SIZE);
 }

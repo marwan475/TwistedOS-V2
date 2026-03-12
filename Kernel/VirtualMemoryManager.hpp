@@ -43,11 +43,13 @@ typedef union
 class VirtualMemoryManager
 {
 private:
-    PageTableEntry*         PageMapL4Table;
-    PhysicalMemoryManager&  PMM;
+    PageTableEntry*        PageMapL4Table;
+    PhysicalMemoryManager& PMM;
 
 public:
     VirtualMemoryManager(UINTN PageMapL4TableAddr, PhysicalMemoryManager& PMM);
-    bool MapPage(UINTN PhysicalAddr, UINTN VirtualAddr);
-    bool UnmapPage(UINTN VirtualAddr);
+    bool  MapPage(UINTN PhysicalAddr, UINTN VirtualAddr);
+    bool  UnmapPage(UINTN VirtualAddr);
+    UINTN MapRange(UINTN PhysicalAddr, UINTN VirtualAddr, UINTN Pages);
+    UINTN UnmapRange(UINTN VirtualAddr, UINTN Pages);
 };

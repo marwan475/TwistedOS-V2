@@ -32,8 +32,8 @@ public:
                           UINTN RemainingPagesInDescriptor);
 
     void* AllocatePagesFromMemoryMap(UINTN Pages);
-    void* AllocateFromDescriptor(UINTN Pages);
-    bool  FreeFromDescriptor(void* Address, UINTN Pages);
+    void* AllocatePagesFromDescriptor(UINTN Pages);
+    bool  FreePagesFromDescriptor(void* Address, UINTN Pages);
     UINTN TotalUsableMemoryBytes() const;
     UINTN TotalPages() const;
     void  PrintConventionalMemoryMap(FrameBufferConsole& Console) const;

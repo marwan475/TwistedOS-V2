@@ -1,8 +1,9 @@
 #pragma once
 
+#include "../utils/KernelParameters.hpp"
+
 #include <Console.hpp>
 #include <uefi.hpp>
-#include "../utils/KernelParameters.hpp"
 
 #define PAGE_SIZE 4096
 #define PHYS_PAGE_ADDR_MASK 0x000FFFFFFFFFF000

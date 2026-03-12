@@ -55,7 +55,7 @@ void* PhysicalMemoryManager::AllocatePagesFromMemoryMap(UINTN Pages)
     return Page;
 }
 
-void* PhysicalMemoryManager::AllocateFromDescriptor(UINTN Pages)
+void* PhysicalMemoryManager::AllocatePagesFromDescriptor(UINTN Pages)
 {
     if (Pages == 0)
         return NULL;
@@ -104,7 +104,7 @@ void* PhysicalMemoryManager::AllocateFromDescriptor(UINTN Pages)
     return NULL;
 }
 
-bool PhysicalMemoryManager::FreeFromDescriptor(void* Address, UINTN Pages)
+bool PhysicalMemoryManager::FreePagesFromDescriptor(void* Address, UINTN Pages)
 {
     if (Address == NULL || Pages == 0)
         return false;
@@ -242,6 +242,9 @@ void PhysicalMemoryManager::InitializeMemoryDescriptors()
 
     for (uint64_t i = 0; i < DescriptorCount; i++)
     {
+
+        if (i <= CurrentDescriptor) continue; // skip descriptors that have been used by bootloader
+
         EFI_MEMORY_DESCRIPTOR* Desc
                 = (EFI_MEMORY_DESCRIPTOR*) ((uint8_t*) MemoryMap.MemoryMap + (i * MemoryMap.DescriptorSize));
 

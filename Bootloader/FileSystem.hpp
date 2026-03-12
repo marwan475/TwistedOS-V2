@@ -1,9 +1,10 @@
 #pragma once
 
+#include "../utils/KernelParameters.hpp"
+
 #include <Console.hpp>
 #include <MemoryManager.hpp>
 #include <uefi.hpp>
-#include "../utils/KernelParameters.hpp"
 
 class FileSystem
 {

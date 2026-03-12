@@ -1,41 +1,16 @@
 
+#include "../utils/KernelParameters.hpp"
+
 #include <Arch/x86.hpp>
+#include <CommonUtils.hpp>
 #include <Logging/FrameBufferConsole.hpp>
 #include <PhysicalMemoryManager.hpp>
 #include <VirtualMemoryManager.hpp>
-#include "../utils/KernelParameters.hpp"
 #include <stdint.h>
 
-static void RunMemoryManagersIntegrationTest(FrameBufferConsole& Console, PhysicalMemoryManager& PMM,
-                                             VirtualMemoryManager& VMM)
-{
-    void* PhysicalPage = PMM.AllocateFromDescriptor(1);
-    Console.printf_("IntegrationTest: AllocateFromDescriptor(1) -> 0x%llx\n",
-                    (unsigned long long) (uint64_t) PhysicalPage);
-
-    if (PhysicalPage == NULL)
-    {
-        Console.printf_("IntegrationTest: FAIL (allocation failed)\n");
-        return;
-    }
-
-    UINTN TestVirtualAddr = 0xFFFF800000200000;
-    bool  Mapped          = VMM.MapPage((UINTN) PhysicalPage, TestVirtualAddr);
-    Console.printf_("IntegrationTest: MapPage(0x%llx -> 0x%llx) -> %s\n",
-                    (unsigned long long) (uint64_t) PhysicalPage, (unsigned long long) TestVirtualAddr,
-                    Mapped ? "true" : "false");
-
-    bool Unmapped = Mapped ? VMM.UnmapPage(TestVirtualAddr) : false;
-    Console.printf_("IntegrationTest: UnmapPage(0x%llx) -> %s\n", (unsigned long long) TestVirtualAddr,
-                    Unmapped ? "true" : "false");
-
-    bool Freed = PMM.FreeFromDescriptor(PhysicalPage, 1);
-    Console.printf_("IntegrationTest: FreeFromDescriptor(0x%llx, 1) -> %s\n",
-                    (unsigned long long) (uint64_t) PhysicalPage, Freed ? "true" : "false");
-
-    bool Passed = Mapped && Unmapped && Freed;
-    Console.printf_("IntegrationTest: %s\n", Passed ? "PASS" : "FAIL");
-}
+#define KERNEL_HEAP_PAGES 16
+#define KERNEL_HEAP_START 0xFFFFFFFF82000000
+#define KERNEL_BASE 0xFFFFFFFF80000000
 
 extern "C" void EFIAPI kernel_main(KernelParameters KernelArgs) __attribute__((section(".text.entry")));
 
@@ -51,6 +26,8 @@ extern "C"
         Console.Clear();
         FrameBufferConsole::SetActive(&Console);
         Console.printf_("Framebuffer console Initialized\n");
+
+        Console.printf_("Kernel Loaded at %p to %p\n", KERNEL_BASE, KernelArgs.KernelEndVirtual);
 
         // Initialize GDT and TSS
         InitGDT();
@@ -81,8 +58,25 @@ extern "C"
         VirtualMemoryManager VMM(KernelArgs.PageMapL4Table, PMM);
         Console.printf_("Virtual Memory Manager Initialized\n");
 
-        RunMemoryManagersIntegrationTest(Console, PMM, VMM);
-        PMM.PrintMemoryDescriptors(Console);
+        void* KernelHeapPhysicalAddr = PMM.AllocatePagesFromMemoryMap(KERNEL_HEAP_PAGES);
+        if (KernelHeapPhysicalAddr == NULL)
+        {
+            Console.printf_("Failed to allocate kernel heap\n");
+        }
+        else
+        {
+            Console.printf_("Kernel heap allocated at physical address: %p\n", KernelHeapPhysicalAddr);
+        }
+        UINTN KernelHeapVirtualAddrStart = KERNEL_HEAP_START;
+
+        UINTN KernelHeapVirtualAddrEnd
+                = VMM.MapRange((UINTN) KernelHeapPhysicalAddr, KernelHeapVirtualAddrStart, KERNEL_HEAP_PAGES);
+        Console.printf_("Kernel heap mapped to virtual address range: %p - %p\n", KernelHeapVirtualAddrStart,
+                        KernelHeapVirtualAddrEnd);
+
+        kmemset((void*) KernelHeapVirtualAddrStart, 0, KERNEL_HEAP_PAGES * PAGE_SIZE);
+
+        Console.printf_("Kernel initialization complete. Halting the CPU.\n");
 
         while (1)
             __asm__ __volatile__("hlt");
