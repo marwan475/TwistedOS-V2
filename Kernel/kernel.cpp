@@ -201,7 +201,7 @@ extern "C"
 
         ActiveDispatcher->InitializeLayers(Params);
 
-        Params.Console->printf_("Creating kernel process switch test\n");
+        ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("Creating kernel process switch test\n");
         KernelTaskAId = ActiveDispatcher->GetLogicLayer()->CreateProcess(KernelTaskA);
         KernelTaskBId = ActiveDispatcher->GetLogicLayer()->CreateProcess(KernelTaskB);
         KernelTaskCId = ActiveDispatcher->GetLogicLayer()->CreateProcess(KernelTaskC);
@@ -209,12 +209,12 @@ extern "C"
 
         if (KernelTaskAId == 0xFF || KernelTaskBId == 0xFF || KernelTaskCId == 0xFF || KernelTaskDId == 0xFF)
         {
-            Params.Console->printf_("Failed to create kernel test processes\n");
+            ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("Failed to create kernel test processes\n");
             while (1)
                 __asm__ __volatile__("hlt");
         }
 
-        Params.Console->printf_("Switching to Task A (id=%u), Task B (id=%u), Task C (id=%u), Task D (id=%u)\n",
+        ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("Switching to Task A (id=%u), Task B (id=%u), Task C (id=%u), Task D (id=%u)\n",
                                 KernelTaskAId, KernelTaskBId, KernelTaskCId, KernelTaskDId);
         ActiveDispatcher->GetLogicLayer()->EnableScheduling();
 
