@@ -4,8 +4,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define MAX_PROCESSES 256
-#define PROCESS_STACK_SIZE 0x4000 // 16 KB
+#define MAX_PROCESSES 32
+#define PROCESS_STACK_SIZE 4096
 
 enum ProcessState
 {

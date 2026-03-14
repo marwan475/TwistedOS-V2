@@ -60,9 +60,13 @@ void Dispatcher::InterruptHandler(uint64_t InterruptNumber)
     {
         case 32:
         {
+            Ticks++;
             if (Logic.isScheduling())
-            {
-                Logic.Schedule();
+            {   
+                if (Ticks % 100 == 0) // Schedule every 100 ticks (1 second if timer is set to 10ms)
+                {
+                    Logic.Schedule();
+                }
             }
         }
         break;

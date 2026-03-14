@@ -21,6 +21,10 @@ extern "C" void EFIAPI KernelEntry(KernelParameters KernelArgs) __attribute__((s
 static Dispatcher KernelDispatcher;
 static uint8_t    KernelTaskAId = 0xFF;
 static uint8_t    KernelTaskBId = 0xFF;
+static uint8_t    KernelTaskCId = 0xFF;
+static uint8_t    KernelTaskDId = 0xFF;
+
+#define WAIT_TICKS 100000000
 
 static void KernelTaskA()
 {
@@ -34,7 +38,7 @@ static void KernelTaskA()
     while(1)
     {
         ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("[Task A] Running\n");
-        for (volatile int i = 0; i < 10000000; ++i)
+        for (volatile int i = 0; i < WAIT_TICKS; ++i)
             ;
     }
 
@@ -55,7 +59,47 @@ static void KernelTaskB()
     while(1)
     {
         ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("[Task B] Running\n");
-        for (volatile int i = 0; i < 10000000; ++i)
+        for (volatile int i = 0; i < WAIT_TICKS; ++i)
+            ;
+    }
+
+    while (1)
+        __asm__ __volatile__("hlt");
+}
+
+static void KernelTaskC()
+{
+    Dispatcher* ActiveDispatcher = Dispatcher::GetActive();
+    if (ActiveDispatcher == nullptr)
+    {
+        while (1)
+            __asm__ __volatile__("hlt");
+    }
+
+    while(1)
+    {
+        ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("[Task C] Running\n");
+        for (volatile int i = 0; i < WAIT_TICKS; ++i)
+            ;
+    }
+
+    while (1)
+        __asm__ __volatile__("hlt");
+}
+
+static void KernelTaskD()
+{
+    Dispatcher* ActiveDispatcher = Dispatcher::GetActive();
+    if (ActiveDispatcher == nullptr)
+    {
+        while (1)
+            __asm__ __volatile__("hlt");
+    }
+
+    while(1)
+    {
+        ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("[Task D] Running\n");
+        for (volatile int i = 0; i < WAIT_TICKS; ++i)
             ;
     }
 
@@ -85,6 +129,9 @@ extern "C"
         // Initialize Interrupts
         InitInterrupts();
         Console.printf_("Interrupts Initialized\n");
+
+        InitTimer();
+        Console.printf_("Timer Initialized\n");
 
         PhysicalMemoryManager PMM(KernelArgs.MemoryMap, KernelArgs.NextPageAddress, KernelArgs.CurrentDescriptor,
                                   KernelArgs.RemainingPagesInDescriptor);
@@ -157,15 +204,18 @@ extern "C"
         Params.Console->printf_("Creating kernel process switch test\n");
         KernelTaskAId = ActiveDispatcher->GetLogicLayer()->CreateProcess(KernelTaskA, false);
         KernelTaskBId = ActiveDispatcher->GetLogicLayer()->CreateProcess(KernelTaskB, false);
+        KernelTaskCId = ActiveDispatcher->GetLogicLayer()->CreateProcess(KernelTaskC, false);
+        KernelTaskDId = ActiveDispatcher->GetLogicLayer()->CreateProcess(KernelTaskD, false);
 
-        if (KernelTaskAId == 0xFF || KernelTaskBId == 0xFF)
+        if (KernelTaskAId == 0xFF || KernelTaskBId == 0xFF || KernelTaskCId == 0xFF || KernelTaskDId == 0xFF)
         {
             Params.Console->printf_("Failed to create kernel test processes\n");
             while (1)
                 __asm__ __volatile__("hlt");
         }
 
-        Params.Console->printf_("Switching to Task A (id=%u), Task B (id=%u)\n", KernelTaskAId, KernelTaskBId);
+        Params.Console->printf_("Switching to Task A (id=%u), Task B (id=%u), Task C (id=%u), Task D (id=%u)\n",
+                                KernelTaskAId, KernelTaskBId, KernelTaskCId, KernelTaskDId);
         ActiveDispatcher->GetLogicLayer()->EnableScheduling();
 
         while (1)

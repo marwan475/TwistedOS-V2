@@ -81,6 +81,18 @@ static void ISR_init()
     }
 }
 
+void InitTimer()
+{
+    constexpr uint32_t PIT_BASE_FREQUENCY_HZ = 1193182;
+    constexpr uint32_t TIMER_INTERVAL_MS     = 10;
+    constexpr uint32_t TIMER_FREQUENCY_HZ    = 1000 / TIMER_INTERVAL_MS;
+    constexpr uint16_t PIT_DIVISOR           = (uint16_t) (PIT_BASE_FREQUENCY_HZ / TIMER_FREQUENCY_HZ);
+
+    outb(PIT_COMMAND_PORT, PIT_CHANNEL0_SQUARE_WAVE);
+    outb(PIT_CHANNEL0_DATA_PORT, (uint8_t) (PIT_DIVISOR & 0xFF));
+    outb(PIT_CHANNEL0_DATA_PORT, (uint8_t) ((PIT_DIVISOR >> 8) & 0xFF));
+}
+
 void RemapPIC()
 {
     outb(PIC1_COMMAND_PORT, PIC_INIT_COMMAND);
@@ -146,6 +158,7 @@ void InitInterrupts()
     LoadIDT(&IDTDescriptor);
 
     RemapPIC();
+    InitTimer();
 
     // Enable Interrupts
     asm volatile("sti");

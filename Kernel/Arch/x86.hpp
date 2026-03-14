@@ -140,6 +140,10 @@ typedef enum
 #define PIC2_CASCADE_IDENTITY 0x02
 #define PIC_RESTORE_MASK_NONE 0x00
 
+#define PIT_COMMAND_PORT 0x43
+#define PIT_CHANNEL0_DATA_PORT 0x40
+#define PIT_CHANNEL0_SQUARE_WAVE 0x36
+
 typedef struct
 {
     uint64_t rax;
@@ -210,6 +214,7 @@ TSSDescriptor BuildTSSDescriptor(const TSS* tss);
 GDT           BuildGDT(const TSSDescriptor& tss_descriptor);
 void          InitGDT();
 void          InitInterrupts();
+void          InitTimer();
 void          RemapPIC();
 
 extern "C"
