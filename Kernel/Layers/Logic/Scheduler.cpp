@@ -2,21 +2,13 @@
 
 #include <new>
 
-Scheduler::Scheduler() : ReadyQueue(nullptr), CurrentProcess(nullptr)
+Scheduler::Scheduler() : CurrentProcess(nullptr)
 {
 }
 
 Scheduler::~Scheduler()
 {
-    ProcessTag* Node = ReadyQueue;
-    while (Node != nullptr)
-    {
-        ProcessTag* Next = Node->NextProcess;
-        delete Node;
-        Node = Next;
-    }
-
-    ReadyQueue     = nullptr;
+    ReadyQueue.ClearAndDelete();
     CurrentProcess = nullptr;
 }
 
@@ -31,56 +23,29 @@ void Scheduler::AddToReadyQueue(uint8_t ProcessId)
     NewTag->Id          = ProcessId;
     NewTag->NextProcess = nullptr;
 
-    if (ReadyQueue == nullptr)
-    {
-        ReadyQueue = NewTag;
-        return;
-    }
-
-    ProcessTag* Tail = ReadyQueue;
-    while (Tail->NextProcess != nullptr)
-    {
-        Tail = Tail->NextProcess;
-    }
-
-    Tail->NextProcess = NewTag;
+    ReadyQueue.PushBack(NewTag);
 }
 
 bool Scheduler::RemoveFromReadyQueue(uint8_t ProcessId)
 {
-    ProcessTag* Previous = nullptr;
-    ProcessTag* Node     = ReadyQueue;
-
-    while (Node != nullptr && Node->Id != ProcessId)
-    {
-        Previous = Node;
-        Node     = Node->NextProcess;
-    }
+    ProcessTag* Node = ReadyQueue.FindFirst(&ProcessTag::Id, ProcessId);
 
     if (Node == nullptr)
     {
         return false;
     }
 
-    ProcessTag* Next = Node->NextProcess;
-
-    if (Previous == nullptr)
-    {
-        ReadyQueue = Next;
-    }
-    else
-    {
-        Previous->NextProcess = Next;
-    }
+    ProcessTag* Next = ReadyQueue.Next(Node);
+    ReadyQueue.Remove(Node);
 
     if (CurrentProcess == Node)
     {
-        CurrentProcess = (Next != nullptr) ? Next : ReadyQueue;
+        CurrentProcess = (Next != nullptr) ? Next : ReadyQueue.Head();
     }
 
     delete Node;
 
-    if (ReadyQueue == nullptr)
+    if (ReadyQueue.IsEmpty())
     {
         CurrentProcess = nullptr;
     }
@@ -90,33 +55,23 @@ bool Scheduler::RemoveFromReadyQueue(uint8_t ProcessId)
 
 uint8_t Scheduler::SelectNextProcess()
 {
-    if (ReadyQueue == nullptr)
+    if (ReadyQueue.IsEmpty())
     {
         return 0xFF;
     }
 
     if (CurrentProcess == nullptr)
     {
-        CurrentProcess = ReadyQueue;
+        CurrentProcess = ReadyQueue.Head();
         return CurrentProcess->Id;
     }
 
-    if (ReadyQueue == CurrentProcess && CurrentProcess->NextProcess == nullptr)
+    if (ReadyQueue.Head() == CurrentProcess && ReadyQueue.Next(CurrentProcess) == nullptr)
     {
         return CurrentProcess->Id;
     }
 
-    ProcessTag* OldCurrent = CurrentProcess;
-    ReadyQueue             = OldCurrent->NextProcess;
-
-    OldCurrent->NextProcess = nullptr;
-    ProcessTag* Tail        = ReadyQueue;
-    while (Tail->NextProcess != nullptr)
-    {
-        Tail = Tail->NextProcess;
-    }
-    Tail->NextProcess = OldCurrent;
-
-    CurrentProcess = ReadyQueue;
+    ReadyQueue.RotateFrontToBack();
+    CurrentProcess = ReadyQueue.Head();
     return CurrentProcess->Id;
 }

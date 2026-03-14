@@ -1,5 +1,6 @@
 #pragma once
 
+#include "IntrusiveQueue.hpp"
 #include "ProcessManager.hpp"
 
 #include <stdint.h>
@@ -13,8 +14,8 @@ struct ProcessTag
 class Scheduler
 {
 private:
-    ProcessTag* ReadyQueue;
-    ProcessTag* CurrentProcess;
+    IntrusiveQueue<ProcessTag, &ProcessTag::NextProcess> ReadyQueue;
+    ProcessTag*                                          CurrentProcess;
 
 public:
     Scheduler();

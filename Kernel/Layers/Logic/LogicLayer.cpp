@@ -17,6 +17,11 @@ LogicLayer::~LogicLayer()
     {
         delete Sched;
     }
+
+    if (Sync != nullptr)
+    {
+        delete Sync;
+    }
 }
 
 void LogicLayer::Initialize(ResourceLayer* Resource)
@@ -49,6 +54,17 @@ void LogicLayer::InitializeScheduler()
 
     Sched = new Scheduler();
     Resource->GetConsole()->printf_("Scheduler Initialized\n");
+}
+
+void LogicLayer::InitializeSynchronizationManager()
+{
+    if (Sync != nullptr)
+    {
+        return;
+    }
+
+    Sync = new SynchronizationManager();
+    Resource->GetConsole()->printf_("Synchronization Manager Initialized\n");
 }
 
 uint8_t LogicLayer::CreateProcess(void (*EntryPoint)())
@@ -119,6 +135,23 @@ bool LogicLayer::RunProcess(uint8_t Id)
     return true;
 }
 
+void LogicLayer::Tick()
+{
+	if (Sync != nullptr)
+	{
+		Sync->Tick();
+		uint8_t IdToWake = Sync->GetNextProcessToWake();
+		if (IdToWake != 0xFF)
+		{
+			Sync->RemoveFromSleepQueue(IdToWake);
+
+			PM->GetProcessById(IdToWake)->Status = PROCESS_READY;
+
+			Sched->AddToReadyQueue(IdToWake);
+		}
+	}
+}
+
 void LogicLayer::Schedule()
 {
     if (Sched == nullptr || PM == nullptr)
@@ -128,7 +161,7 @@ void LogicLayer::Schedule()
 
     uint8_t NextProcessId = Sched->SelectNextProcess();
 
-	Resource->GetConsole()->printf_("Scheduling: Next process ID = %u\n", NextProcessId);
+    Resource->GetConsole()->printf_("Scheduling: Next process ID = %u\n", NextProcessId);
 
     if (NextProcessId == 0xFF)
     {

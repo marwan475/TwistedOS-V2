@@ -35,13 +35,12 @@ static void KernelTaskA()
             __asm__ __volatile__("hlt");
     }
 
-    while(1)
+    while (1)
     {
         ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("[Task A] Running\n");
         for (volatile int i = 0; i < WAIT_TICKS; ++i)
             ;
     }
-
 
     while (1)
         __asm__ __volatile__("hlt");
@@ -56,7 +55,7 @@ static void KernelTaskB()
             __asm__ __volatile__("hlt");
     }
 
-    while(1)
+    while (1)
     {
         ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("[Task B] Running\n");
         for (volatile int i = 0; i < WAIT_TICKS; ++i)
@@ -76,7 +75,7 @@ static void KernelTaskC()
             __asm__ __volatile__("hlt");
     }
 
-    while(1)
+    while (1)
     {
         ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("[Task C] Running\n");
         for (volatile int i = 0; i < WAIT_TICKS; ++i)
@@ -96,7 +95,7 @@ static void KernelTaskD()
             __asm__ __volatile__("hlt");
     }
 
-    while(1)
+    while (1)
     {
         ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("[Task D] Running\n");
         for (volatile int i = 0; i < WAIT_TICKS; ++i)
@@ -214,8 +213,9 @@ extern "C"
                 __asm__ __volatile__("hlt");
         }
 
-        ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("Switching to Task A (id=%u), Task B (id=%u), Task C (id=%u), Task D (id=%u)\n",
-                                KernelTaskAId, KernelTaskBId, KernelTaskCId, KernelTaskDId);
+        ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_(
+                "Switching to Task A (id=%u), Task B (id=%u), Task C (id=%u), Task D (id=%u)\n", KernelTaskAId,
+                KernelTaskBId, KernelTaskCId, KernelTaskDId);
         ActiveDispatcher->GetLogicLayer()->EnableScheduling();
 
         while (1)

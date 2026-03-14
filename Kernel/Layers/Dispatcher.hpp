@@ -26,7 +26,7 @@ private:
     LogicLayer         Logic;
     TranslationLayer   Translation;
     static Dispatcher* ActiveDispatcher;
-    uint64_t Ticks = 0;
+    uint64_t           Ticks = 0;
 
 public:
     Dispatcher();

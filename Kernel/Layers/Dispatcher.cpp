@@ -31,6 +31,7 @@ void Dispatcher::InitLogicLayer()
     Logic.Initialize(&Resource);
     Logic.InitializeProcessManager();
     Logic.InitializeScheduler();
+    Logic.InitializeSynchronizationManager();
 }
 
 void Dispatcher::InitTranslationLayer()
@@ -62,9 +63,11 @@ void Dispatcher::InterruptHandler(uint64_t InterruptNumber)
         {
             Ticks++;
             if (Logic.isScheduling())
-            {   
+            {
+                Logic.Tick();
                 if (Ticks % 100 == 0) // Schedule every 100 ticks (1 second if timer is set to 10ms)
                 {
+                    Ticks = 0;
                     Logic.Schedule();
                 }
             }

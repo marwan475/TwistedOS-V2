@@ -2,106 +2,65 @@
 
 #include <new>
 
-SynchronizationManager::SynchronizationManager() : SleepQueue(nullptr)
+SynchronizationManager::SynchronizationManager()
 {
 }
 
 SynchronizationManager::~SynchronizationManager()
 {
-	SleepTag* Node = SleepQueue;
-	while (Node != nullptr)
-	{
-		SleepTag* Next = Node->Next;
-		delete Node;
-		Node = Next;
-	}
-
-	SleepQueue = nullptr;
+    SleepQueue.ClearAndDelete();
 }
 
 void SynchronizationManager::AddToSleepQueue(uint8_t Id, uint64_t WaitTicks)
 {
-	SleepTag* NewTag = new SleepTag;
-	if (NewTag == nullptr)
-	{
-		return;
-	}
+    SleepTag* NewTag = new SleepTag;
+    if (NewTag == nullptr)
+    {
+        return;
+    }
 
-	NewTag->Id                 = Id;
-	NewTag->WaitTicksRemaining = WaitTicks;
-	NewTag->Next               = nullptr;
+    NewTag->Id                 = Id;
+    NewTag->WaitTicksRemaining = WaitTicks;
+    NewTag->Next               = nullptr;
 
-	if (SleepQueue == nullptr)
-	{
-		SleepQueue = NewTag;
-		return;
-	}
-
-	SleepTag* Tail = SleepQueue;
-	while (Tail->Next != nullptr)
-	{
-		Tail = Tail->Next;
-	}
-
-	Tail->Next = NewTag;
+    SleepQueue.PushBack(NewTag);
 }
 
 void SynchronizationManager::RemoveFromSleepQueue(uint8_t Id)
 {
-	SleepTag* Previous = nullptr;
-	SleepTag* Node     = SleepQueue;
+    SleepTag* Node = SleepQueue.FindFirst(&SleepTag::Id, Id);
 
-	while (Node != nullptr && Node->Id != Id)
-	{
-		Previous = Node;
-		Node     = Node->Next;
-	}
+    if (Node == nullptr)
+    {
+        return;
+    }
 
-	if (Node == nullptr)
-	{
-		return;
-	}
+    SleepQueue.Remove(Node);
 
-	SleepTag* Next = Node->Next;
-
-	if (Previous == nullptr)
-	{
-		SleepQueue = Next;
-	}
-	else
-	{
-		Previous->Next = Next;
-	}
-
-	delete Node;
+    delete Node;
 }
 
 void SynchronizationManager::Tick()
 {
-	SleepTag* Node = SleepQueue;
-	while (Node != nullptr)
-	{
-		if (Node->WaitTicksRemaining > 0)
-		{
-			--Node->WaitTicksRemaining;
-		}
+    SleepTag* Node = SleepQueue.Head();
+    while (Node != nullptr)
+    {
+        if (Node->WaitTicksRemaining > 0)
+        {
+            --Node->WaitTicksRemaining;
+        }
 
-		Node = Node->Next;
-	}
+        Node = SleepQueue.Next(Node);
+    }
 }
 
 uint8_t SynchronizationManager::GetNextProcessToWake()
 {
-	SleepTag* Node = SleepQueue;
-	while (Node != nullptr)
-	{
-		if (Node->WaitTicksRemaining == 0)
-		{
-			return Node->Id;
-		}
+    SleepTag* Node = SleepQueue.FindFirst(&SleepTag::WaitTicksRemaining, static_cast<uint64_t>(0));
+    if (Node != nullptr)
+    {
+        return Node->Id;
+    }
 
-		Node = Node->Next;
-	}
-
-	return 0xFF;
+    return 0xFF;
 }
