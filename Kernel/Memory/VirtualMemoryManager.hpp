@@ -1,6 +1,6 @@
 #pragma once
 
-#include <PhysicalMemoryManager.hpp>
+#include <Memory/PhysicalMemoryManager.hpp>
 
 #define PHYS_PAGE_ADDR_MASK 0x000FFFFFFFFFF000
 

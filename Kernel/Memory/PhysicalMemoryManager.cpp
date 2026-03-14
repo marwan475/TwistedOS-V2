@@ -1,6 +1,6 @@
 #include <CommonUtils.hpp>
 #include <Logging/FrameBufferConsole.hpp>
-#include <PhysicalMemoryManager.hpp>
+#include <Memory/PhysicalMemoryManager.hpp>
 
 PhysicalMemoryManager::PhysicalMemoryManager(MemoryMapInfo MemoryMap, UINTN NextPageAddress, UINTN CurrentDescriptor,
                                              UINTN RemainingPagesInDescriptor)

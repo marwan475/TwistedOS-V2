@@ -4,8 +4,8 @@
 #include <Arch/x86.hpp>
 #include <CommonUtils.hpp>
 #include <Logging/FrameBufferConsole.hpp>
-#include <PhysicalMemoryManager.hpp>
-#include <VirtualMemoryManager.hpp>
+#include <Memory/PhysicalMemoryManager.hpp>
+#include <Memory/VirtualMemoryManager.hpp>
 #include <stdint.h>
 
 #define KERNEL_HEAP_PAGES 16
@@ -69,7 +69,7 @@ extern "C"
         VirtualMemoryManager VMM(KernelArgs.PageMapL4Table, PMM);
         Console.printf_("Virtual Memory Manager Initialized\n");
 
-        void* KernelHeapPhysicalAddr = PMM.AllocatePagesFromMemoryMap(KERNEL_HEAP_PAGES);
+        void* KernelHeapPhysicalAddr = PMM.AllocatePagesFromDescriptor(KERNEL_HEAP_PAGES);
         if (KernelHeapPhysicalAddr == NULL)
         {
             Console.printf_("Failed to allocate kernel heap\n");

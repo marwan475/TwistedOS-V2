@@ -116,6 +116,12 @@ void FrameBufferConsole::PutChar(char c)
     {
         cursorX = 0;
         cursorY += FontHeight;
+
+        if (cursorY + FontHeight >= screenHeight)
+        {
+            Clear();
+        }
+
         return;
     }
 
@@ -137,8 +143,7 @@ void FrameBufferConsole::PutChar(char c)
 
     if (cursorY + FontHeight >= screenHeight)
     {
-        cursorX = 0;
-        cursorY = 0;
+        Clear();
     }
 }
 

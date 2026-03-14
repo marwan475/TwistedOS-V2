@@ -1,5 +1,5 @@
 #include <CommonUtils.hpp>
-#include <VirtualMemoryManager.hpp>
+#include <Memory/VirtualMemoryManager.hpp>
 
 VirtualMemoryManager::VirtualMemoryManager(UINTN PageMapL4TableAddr, PhysicalMemoryManager& PMM)
     : PageMapL4Table((PageTableEntry*) PageMapL4TableAddr), PMM(PMM)
