@@ -135,6 +135,31 @@ bool LogicLayer::RunProcess(uint8_t Id)
     return true;
 }
 
+void LogicLayer::SleepProcess(uint8_t Id, uint64_t WaitTicks)
+{
+	Process* TargetProcess = PM->GetProcessById(Id);
+	if (TargetProcess == nullptr || TargetProcess->Status != PROCESS_RUNNING)
+	{
+		return;
+	}
+
+	TargetProcess->Status = PROCESS_BLOCKED;
+	Sync->AddToSleepQueue(Id, WaitTicks);
+	Sched->RemoveFromReadyQueue(Id);
+}
+
+void LogicLayer::WakeProcess(uint8_t Id){
+	Process* TargetProcess = PM->GetProcessById(Id);
+	if (TargetProcess == nullptr || TargetProcess->Status != PROCESS_BLOCKED)
+	{
+		return;
+	}
+
+	TargetProcess->Status = PROCESS_READY;
+	Sync->RemoveFromSleepQueue(Id);
+	Sched->AddToReadyQueue(Id);
+}
+
 void LogicLayer::Tick()
 {
 	if (Sync != nullptr)
@@ -145,9 +170,11 @@ void LogicLayer::Tick()
 		{
 			Sync->RemoveFromSleepQueue(IdToWake);
 
-			PM->GetProcessById(IdToWake)->Status = PROCESS_READY;
-
-			Sched->AddToReadyQueue(IdToWake);
+			if (PM->GetProcessById(IdToWake)->Status == PROCESS_BLOCKED)
+			{
+				PM->GetProcessById(IdToWake)->Status = PROCESS_READY;
+				Sched->AddToReadyQueue(IdToWake);
+			}
 		}
 	}
 }

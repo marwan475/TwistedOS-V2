@@ -30,6 +30,8 @@ public:
     uint8_t        CreateProcess(void (*EntryPoint)());
     bool           RunProcess(uint8_t Id);
     void           KillProcess(uint8_t Id);
+    void           SleepProcess(uint8_t Id, uint64_t WaitTicks);
+    void           WakeProcess(uint8_t Id);
     void           Tick();
     void           Schedule();
     bool           isScheduling();
