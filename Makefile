@@ -8,6 +8,8 @@ CFLAGS = \
 	-Wall \
 	-Wextra \
 	-Wpedantic \
+	-g \
+	-O0 \
 	-mno-red-zone \
 	-ffreestanding \
 	-nostdlib \
@@ -28,6 +30,8 @@ KERNEL_CFLAGS = \
     -fno-exceptions \
     -fno-rtti \
     -fno-stack-protector \
+	-fno-omit-frame-pointer \
+	-g \
     -O0 \
     -Wall \
     -Wextra
@@ -38,7 +42,9 @@ KERNEL_LDFLAGS = \
     -T Kernel/linker.ld
 
 KERNEL_ASFLAGS = \
-	-f elf64
+	-f elf64 \
+	-g \
+	-F dwarf
 
 ifeq ($(DEBUG),1)
 CFLAGS += -DDEBUG_BUILD
@@ -55,6 +61,29 @@ IMG = $(OUTPUT)
 DRIVE = TwistedDrive.img
 ESP_SIZE = 64
 SECTORS = $(shell echo $$(( $(ESP_SIZE) * 2048 )))
+GDB = gdb
+QEMU_GDB_PORT = 1234
+QEMU_DEBUG_SERIAL_LOG = $(BUILD)qemu-debug-serial.log
+QEMU = qemu-system-x86_64
+QEMU_FW = \
+	-drive if=pflash,format=raw,readonly=on,file=Firmware/code.fd \
+	-drive if=pflash,format=raw,file=Firmware/TwistedOS_VARS.fd
+QEMU_COMMON = \
+	-m 512M \
+	$(QEMU_FW) \
+	-drive file=TwistedOS.img,format=raw \
+	-serial stdio
+QEMU_FULL = \
+	$(QEMU_COMMON) \
+	-drive if=none,id=data,file=TwistedDrive.img,format=raw \
+	-device virtio-blk-pci,drive=data \
+	-device virtio-gpu-gl-pci \
+	-display gtk,gl=on \
+	-netdev user,id=net0,hostfwd=tcp::2222-:22,hostfwd=tcp::8080-:80 \
+	-device virtio-net-pci,netdev=net0 \
+	-device nec-usb-xhci,id=xhci \
+	-device usb-kbd,bus=xhci.0 \
+	-device usb-mouse,bus=xhci.0
 
 all: bin build $(EFI) $(KERNEL) $(IMG) $(DRIVE)
 
@@ -120,31 +149,42 @@ $(DRIVE):
 
 
 qemu:
-	qemu-system-x86_64 -m 512M \
-	-drive if=pflash,format=raw,readonly=on,file=Firmware/code.fd \
-	-drive if=pflash,format=raw,file=Firmware/TwistedOS_VARS.fd \
-	-drive file=TwistedOS.img,format=raw \
-	-drive if=none,id=data,file=TwistedDrive.img,format=raw \
-	-device virtio-blk-pci,drive=data \
-	-device virtio-gpu-gl-pci \
-	-display gtk,gl=on \
-	-serial stdio \
-	-netdev user,id=net0,hostfwd=tcp::2222-:22,hostfwd=tcp::8080-:80 \
-	-device virtio-net-pci,netdev=net0 \
-	-device nec-usb-xhci,id=xhci \
-	-device usb-kbd,bus=xhci.0 \
-	-device usb-mouse,bus=xhci.0
+	$(QEMU) $(QEMU_FULL)
+
+qemu-debug: all
+	@mkdir -p $(BUILD)
+	@echo "QEMU GDB server listening on localhost:$(QEMU_GDB_PORT)"
+	$(QEMU) $(QEMU_FULL) \
+		-serial file:$(QEMU_DEBUG_SERIAL_LOG) \
+		-gdb tcp::$(QEMU_GDB_PORT) \
+		-S -no-reboot -no-shutdown
 
 qemu-basic:
-	qemu-system-x86_64 -m 512M \
-	-drive if=pflash,format=raw,readonly=on,file=Firmware/code.fd \
-	-drive if=pflash,format=raw,file=Firmware/TwistedOS_VARS.fd \
-	-drive file=TwistedOS.img,format=raw \
-	-serial stdio
+	$(QEMU) $(QEMU_COMMON)
+
+qemu-basic-debug: all
+	@mkdir -p $(BUILD)
+	@echo "QEMU GDB server listening on localhost:$(QEMU_GDB_PORT)"
+	$(QEMU) \
+		-m 512M \
+		$(QEMU_FW) \
+		-drive file=TwistedOS.img,format=raw \
+		-serial file:$(QEMU_DEBUG_SERIAL_LOG) \
+		-gdb tcp::$(QEMU_GDB_PORT) \
+		-S -no-reboot -no-shutdown
+
+gdb-kernel: all
+	$(GDB) $(BUILD)kernel.elf \
+		-ex "set architecture i386:x86-64" \
+		-ex "target remote localhost:$(QEMU_GDB_PORT)" \
+		-ex "hbreak KernelEntry"
+
+debug: all
+	./scripts/debug-kernel.sh
 
 ALL_SOURCE_FILES := $(shell find . -type f \( -name '*.c' -o -name '*.cpp' -o -name '*.h' -o -name '*.hpp' \))
 
-.PHONY: format
+.PHONY: format qemu qemu-basic qemu-debug qemu-basic-debug gdb-kernel debug
 
 format:
 	@echo "Formatting all C/C++ files in repository..."
