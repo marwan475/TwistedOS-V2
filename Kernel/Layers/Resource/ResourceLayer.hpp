@@ -33,5 +33,5 @@ public:
     void                   InitializeKernelHeapManager();
     void*                  kmalloc(size_t Size);
     void                   kfree(void* Ptr);
-    void                   TaskSwitch(CpuState* OldState, void** OldStack, const CpuState& NewState, void* NewStack);
+    void                   TaskSwitch(CpuState* OldState, const CpuState& NewState);
 };

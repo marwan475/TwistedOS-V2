@@ -5,6 +5,9 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#define MAX_PROCESSES 256
+#define PROCESS_STACK_SIZE 0x4000 // 16 KB
+
 enum ProcessState
 {
     PROCESS_RUNNING,
@@ -24,14 +27,16 @@ struct Process
 class ProcessManager
 {
 private:
-    static constexpr size_t MaxProcesses = 256;
+    static constexpr size_t MaxProcesses = MAX_PROCESSES;
     Process                 Processes[MaxProcesses];
+    uint8_t CurrentProcessId;
 
 public:
     ProcessManager();
 
     size_t   GetMaxProcesses() const;
     Process* GetProcessById(uint8_t Id);
+    Process* GetRunningProcess();
     uint8_t  CreateProcess(void* StackPointer , CpuState InitialState);
     void*  KillProcess(uint8_t Id);
 };

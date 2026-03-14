@@ -1,12 +1,32 @@
 #include "ProcessManager.hpp"
 
-ProcessManager::ProcessManager()
+ProcessManager::ProcessManager() : CurrentProcessId(0xFF)
 {
     for (size_t index = 0; index < MaxProcesses; ++index)
     {
         Processes[index].Id = static_cast<uint8_t>(index);
         Processes[index].Status = PROCESS_TERMINATED;
+        Processes[index].StackPointer = nullptr;
+        Processes[index].State = {};
     }
+
+    Processes[0].Status = PROCESS_RUNNING;
+    CurrentProcessId = Processes[0].Id;
+}
+
+Process* ProcessManager::GetRunningProcess()
+{
+    for (size_t index = 0; index < MaxProcesses; ++index)
+    {
+        if (Processes[index].Status == PROCESS_RUNNING)
+        {
+            CurrentProcessId = Processes[index].Id;
+            return &Processes[index];
+        }
+    }
+
+    CurrentProcessId = 0xFF;
+    return nullptr;
 }
 
 size_t ProcessManager::GetMaxProcesses() const
@@ -48,3 +68,4 @@ void* ProcessManager::KillProcess(uint8_t Id)
     Processes[Id].Status = PROCESS_TERMINATED;
     return Processes[Id].StackPointer;
 }
+

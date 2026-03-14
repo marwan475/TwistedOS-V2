@@ -19,6 +19,40 @@ extern "C" void DispatcherEntry(DispatcherParameters Params);
 extern "C" void EFIAPI KernelEntry(KernelParameters KernelArgs) __attribute__((section(".text.entry")));
 
 static Dispatcher KernelDispatcher;
+static uint8_t    KernelTaskAId = 0xFF;
+static uint8_t    KernelTaskBId = 0xFF;
+
+static void KernelTaskA()
+{
+    Dispatcher* ActiveDispatcher = Dispatcher::GetActive();
+    if (ActiveDispatcher == nullptr)
+    {
+        while (1)
+            __asm__ __volatile__("hlt");
+    }
+
+    while (1)
+    {
+        ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("[Task A] Running\n");
+        ActiveDispatcher->GetLogicLayer()->RunProcess(KernelTaskBId);
+    }
+}
+
+static void KernelTaskB()
+{
+    Dispatcher* ActiveDispatcher = Dispatcher::GetActive();
+    if (ActiveDispatcher == nullptr)
+    {
+        while (1)
+            __asm__ __volatile__("hlt");
+    }
+
+    while (1)
+    {
+        ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("[Task B] Running\n");
+        ActiveDispatcher->GetLogicLayer()->RunProcess(KernelTaskAId);
+    }
+}
 
 // Uefi sets us up in 64bit long mode with identity mapped pages
 extern "C"
@@ -110,6 +144,20 @@ extern "C"
         Params.Console->printf_("Initializing layers\n");
 
         ActiveDispatcher->InitializeLayers(Params);
+
+        Params.Console->printf_("Creating kernel process switch test\n");
+        KernelTaskAId = ActiveDispatcher->GetLogicLayer()->CreateProcess(KernelTaskA, false);
+        KernelTaskBId = ActiveDispatcher->GetLogicLayer()->CreateProcess(KernelTaskB, false);
+
+        if (KernelTaskAId == 0xFF || KernelTaskBId == 0xFF)
+        {
+            Params.Console->printf_("Failed to create kernel test processes\n");
+            while (1)
+                __asm__ __volatile__("hlt");
+        }
+
+        Params.Console->printf_("Switching to Task A (id=%u), Task B (id=%u)\n", KernelTaskAId, KernelTaskBId);
+        ActiveDispatcher->GetLogicLayer()->RunProcess(KernelTaskAId);
 
         while (1)
             __asm__ __volatile__("hlt");

@@ -22,13 +22,14 @@ global ResourceLayerTaskSwitchAsm
 %define CPUSTATE_R15     112
 %define CPUSTATE_RIP     120
 %define CPUSTATE_RFLAGS  128
+%define CPUSTATE_RSP     136
+%define CPUSTATE_CS      144
+%define CPUSTATE_SS      152
 
 ResourceLayerTaskSwitchAsm:
     ; SysV ABI:
     ; rdi = CpuState* old_state
-    ; rsi = void** old_stack
-    ; rdx = const CpuState* new_state
-    ; rcx = void* new_stack
+    ; rsi = const CpuState* new_state
 
     mov [rdi + CPUSTATE_RAX], rax
     mov [rdi + CPUSTATE_RCX], rcx
@@ -52,10 +53,18 @@ ResourceLayerTaskSwitchAsm:
     pushfq
     pop qword [rdi + CPUSTATE_RFLAGS]
 
-    mov [rsi], rsp
+    mov ax, cs
+    movzx rax, ax
+    mov [rdi + CPUSTATE_CS], rax
 
-    mov r11, rdx
-    mov rsp, rcx
+    mov ax, ss
+    movzx rax, ax
+    mov [rdi + CPUSTATE_SS], rax
+
+    mov [rdi + CPUSTATE_RSP], rsp
+
+    mov r11, rsi
+    mov rsp, [r11 + CPUSTATE_RSP]
 
     mov rax, [r11 + CPUSTATE_RAX]
     mov rcx, [r11 + CPUSTATE_RCX]
@@ -72,12 +81,27 @@ ResourceLayerTaskSwitchAsm:
     mov r14, [r11 + CPUSTATE_R14]
     mov r15, [r11 + CPUSTATE_R15]
 
+    mov rax, [r11 + CPUSTATE_CS]
+    and rax, 0x3
+    cmp rax, 0
+    jne .to_user
+
     push qword [r11 + CPUSTATE_RIP]
     push qword [r11 + CPUSTATE_RFLAGS]
     popfq
 
     mov r11, [r11 + CPUSTATE_R11]
     ret
+
+.to_user:
+    push qword [r11 + CPUSTATE_SS]
+    push qword [r11 + CPUSTATE_RSP]
+    push qword [r11 + CPUSTATE_RFLAGS]
+    push qword [r11 + CPUSTATE_CS]
+    push qword [r11 + CPUSTATE_RIP]
+
+    mov r11, [r11 + CPUSTATE_R11]
+    iretq
 
 .task_switch_resume:
     ret

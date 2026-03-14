@@ -43,6 +43,7 @@ void Dispatcher::InitializeLayers(const DispatcherParameters& Params)
     InitResourceLayer(Params);
     Resource.GetConsole()->printf_("Resource Layer initialized\n");
 
+    // Can use new operator post resource layer init
     Resource.GetConsole()->printf_("Initializing Logic Layer\n");
     InitLogicLayer();
     Resource.GetConsole()->printf_("Logic Layer initialized\n");

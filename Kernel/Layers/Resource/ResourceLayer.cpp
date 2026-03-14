@@ -1,7 +1,6 @@
 #include "ResourceLayer.hpp"
 
-extern "C" void ResourceLayerTaskSwitchAsm(CpuState* OldState, void** OldStack, const CpuState* NewState,
-                                           void* NewStack);
+extern "C" void ResourceLayerTaskSwitchAsm(CpuState* OldState, const CpuState* NewState);
 
 ResourceLayer::ResourceLayer()
     : PMM(nullptr), VMM(nullptr), Console(nullptr), KernelHeapVirtualAddrStart(0), KernelHeapVirtualAddrEnd(0),
@@ -60,12 +59,12 @@ void ResourceLayer::kfree(void* Ptr)
     KHM.kfree(Ptr);
 }
 
-void ResourceLayer::TaskSwitch(CpuState* OldState, void** OldStack, const CpuState& NewState, void* NewStack)
+void ResourceLayer::TaskSwitch(CpuState* OldState, const CpuState& NewState)
 {
-    if (OldState == nullptr || OldStack == nullptr || NewStack == nullptr || NewState.rip == 0)
+    if (OldState == nullptr || NewState.rip == 0 || NewState.rsp == 0)
     {
         return;
     }
 
-    ResourceLayerTaskSwitchAsm(OldState, OldStack, &NewState, NewStack);
+    ResourceLayerTaskSwitchAsm(OldState, &NewState);
 }

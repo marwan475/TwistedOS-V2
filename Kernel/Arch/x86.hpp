@@ -117,6 +117,14 @@ typedef enum
 } IDT_FLAGS;
 
 #define GDT_CODE_SEGMENT 0x08
+#define GDT_DATA_SEGMENT 0x10
+#define GDT_USER_DATA_SEGMENT 0x20
+#define GDT_USER_CODE_SEGMENT 0x18
+
+#define KERNEL_CS GDT_CODE_SEGMENT
+#define KERNEL_SS GDT_DATA_SEGMENT
+#define USER_CS (GDT_USER_CODE_SEGMENT | 0x3)
+#define USER_SS (GDT_USER_DATA_SEGMENT | 0x3)
 #define IDT_DEFAULT_GATE_FLAGS (IDT_FLAG_PRESENT | IDT_FLAG_RING0 | IDT_FLAG_GATE_32BIT_INT)
 
 #define PIC1_COMMAND_PORT 0x20
@@ -151,7 +159,18 @@ typedef struct
     uint64_t r15;
     uint64_t rip;
     uint64_t rflags;
+    uint64_t rsp;
+    uint64_t cs;
+    uint64_t ss;
 } CpuState;
+
+static_assert(offsetof(CpuState, rax) == 0, "CpuState::rax offset mismatch");
+static_assert(offsetof(CpuState, rip) == 120, "CpuState::rip offset mismatch");
+static_assert(offsetof(CpuState, rflags) == 128, "CpuState::rflags offset mismatch");
+static_assert(offsetof(CpuState, rsp) == 136, "CpuState::rsp offset mismatch");
+static_assert(offsetof(CpuState, cs) == 144, "CpuState::cs offset mismatch");
+static_assert(offsetof(CpuState, ss) == 152, "CpuState::ss offset mismatch");
+static_assert(sizeof(CpuState) == 160, "CpuState size mismatch");
 
 typedef struct
 {

@@ -20,5 +20,6 @@ public:
 
     ResourceLayer* GetResourceLayer() const;
     void InitializeProcessManager();
-    ProcessManager* GetProcessManager() const;
+    uint8_t CreateProcess(void (*EntryPoint)(), bool IsUserProcess = false);
+    bool RunProcess(uint8_t Id);
 };
