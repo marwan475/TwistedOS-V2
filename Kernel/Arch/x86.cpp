@@ -118,19 +118,24 @@ extern "C" void ISRHANDLER(Registers* reg)
 
     if (reg->interrupt_number < 32)
     {
-        // Panic
+        // panic
     }
     else
     {
         if (reg->interrupt_number >= 32 && reg->interrupt_number < 42)
         {
-            // sending response to interrupt to PIC
         }
 
         outb(PIC1_COMMAND_PORT, 0x20); // Send End of Interrupt (EOI) signal to master PIC
         if (reg->interrupt_number >= 40)
         {
             outb(PIC2_COMMAND_PORT, 0x20); // Send End of Interrupt (EOI) signal to slave PIC
+        }
+
+        Dispatcher* ActiveDispatcher = Dispatcher::GetActive();
+        if (ActiveDispatcher != nullptr)
+        {
+            ActiveDispatcher->InterruptHandler(reg->interrupt_number);
         }
     }
 }

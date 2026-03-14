@@ -31,11 +31,16 @@ static void KernelTaskA()
             __asm__ __volatile__("hlt");
     }
 
-    while (1)
+    while(1)
     {
         ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("[Task A] Running\n");
-        ActiveDispatcher->GetLogicLayer()->RunProcess(KernelTaskBId);
+        for (volatile int i = 0; i < 1000000000; ++i)
+            ;
     }
+
+
+    while (1)
+        __asm__ __volatile__("hlt");
 }
 
 static void KernelTaskB()
@@ -47,11 +52,15 @@ static void KernelTaskB()
             __asm__ __volatile__("hlt");
     }
 
-    while (1)
+    while(1)
     {
         ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("[Task B] Running\n");
-        ActiveDispatcher->GetLogicLayer()->RunProcess(KernelTaskAId);
+        for (volatile int i = 0; i < 1000000000; ++i)
+            ;
     }
+
+    while (1)
+        __asm__ __volatile__("hlt");
 }
 
 // Uefi sets us up in 64bit long mode with identity mapped pages
@@ -157,7 +166,7 @@ extern "C"
         }
 
         Params.Console->printf_("Switching to Task A (id=%u), Task B (id=%u)\n", KernelTaskAId, KernelTaskBId);
-        ActiveDispatcher->GetLogicLayer()->RunProcess(KernelTaskAId);
+        ActiveDispatcher->GetLogicLayer()->EnableScheduling();
 
         while (1)
             __asm__ __volatile__("hlt");

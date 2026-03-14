@@ -60,7 +60,7 @@ void KernelFreeFromDispatcher(void* Ptr)
 
     Resource->kfree(Ptr);
 }
-}
+} // namespace
 
 void KernelSetAllocator(KernelAllocFn AllocFn, KernelFreeFn FreeFn)
 {

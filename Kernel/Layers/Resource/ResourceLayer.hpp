@@ -1,9 +1,9 @@
 #pragma once
 
 #include "KernelHeapManager.hpp"
-#include <Logging/FrameBufferConsole.hpp>
 
 #include <Arch/x86.hpp>
+#include <Logging/FrameBufferConsole.hpp>
 #include <stdint.h>
 
 class PhysicalMemoryManager;

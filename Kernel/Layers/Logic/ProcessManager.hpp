@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Arch/x86.hpp>
-
 #include <stddef.h>
 #include <stdint.h>
 
@@ -18,7 +17,7 @@ enum ProcessState
 
 struct Process
 {
-    uint8_t     Id;
+    uint8_t      Id;
     CpuState     State;
     ProcessState Status;
     void*        StackPointer;
@@ -29,7 +28,7 @@ class ProcessManager
 private:
     static constexpr size_t MaxProcesses = MAX_PROCESSES;
     Process                 Processes[MaxProcesses];
-    uint8_t CurrentProcessId;
+    uint8_t                 CurrentProcessId;
 
 public:
     ProcessManager();
@@ -37,6 +36,6 @@ public:
     size_t   GetMaxProcesses() const;
     Process* GetProcessById(uint8_t Id);
     Process* GetRunningProcess();
-    uint8_t  CreateProcess(void* StackPointer , CpuState InitialState);
-    void*  KillProcess(uint8_t Id);
+    uint8_t  CreateProcess(void* StackPointer, CpuState InitialState);
+    void*    KillProcess(uint8_t Id);
 };

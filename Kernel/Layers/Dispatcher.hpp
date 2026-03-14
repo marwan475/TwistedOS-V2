@@ -1,7 +1,7 @@
 #pragma once
 
-#include <stdint.h>
 #include <Logging/FrameBufferConsole.hpp>
+#include <stdint.h>
 
 class PhysicalMemoryManager;
 class VirtualMemoryManager;
@@ -35,6 +35,7 @@ public:
     void               InitLogicLayer();
     void               InitTranslationLayer();
     void               InitializeLayers(const DispatcherParameters& Params);
+    void               InterruptHandler(uint64_t InterruptNumber);
 
     ResourceLayer*    GetResourceLayer();
     LogicLayer*       GetLogicLayer();

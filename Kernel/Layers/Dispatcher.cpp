@@ -30,6 +30,7 @@ void Dispatcher::InitLogicLayer()
 {
     Logic.Initialize(&Resource);
     Logic.InitializeProcessManager();
+    Logic.InitializeScheduler();
 }
 
 void Dispatcher::InitTranslationLayer()
@@ -51,6 +52,24 @@ void Dispatcher::InitializeLayers(const DispatcherParameters& Params)
     Resource.GetConsole()->printf_("Initializing Translation Layer\n");
     InitTranslationLayer();
     Resource.GetConsole()->printf_("Translation Layer initialized\n");
+}
+
+void Dispatcher::InterruptHandler(uint64_t InterruptNumber)
+{
+    switch (InterruptNumber)
+    {
+        case 32:
+        {
+            if (Logic.isScheduling())
+            {
+                Logic.Schedule();
+            }
+        }
+        break;
+        default:
+            Resource.GetConsole()->printf_("Unhandled interrupt: %lu\n", InterruptNumber);
+            break;
+    }
 }
 
 ResourceLayer* Dispatcher::GetResourceLayer()
