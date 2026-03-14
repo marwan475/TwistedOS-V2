@@ -242,8 +242,8 @@ void PhysicalMemoryManager::InitializeMemoryDescriptors()
 
     for (uint64_t i = 0; i < DescriptorCount; i++)
     {
-
-        if (i <= CurrentDescriptor) continue; // skip descriptors that have been used by bootloader
+        if (i <= CurrentDescriptor)
+            continue; // skip descriptors that have been used by bootloader
 
         EFI_MEMORY_DESCRIPTOR* Desc
                 = (EFI_MEMORY_DESCRIPTOR*) ((uint8_t*) MemoryMap.MemoryMap + (i * MemoryMap.DescriptorSize));

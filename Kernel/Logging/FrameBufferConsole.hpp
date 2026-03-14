@@ -27,6 +27,7 @@ public:
     void Clear(uint32_t color = 0x00000000);
     void PutChar(char c);
     int  printf_(const char* format, ...);
+    int  dbgprintf_(const char* format, ...);
 
     static void                SetActive(FrameBufferConsole* console);
     static FrameBufferConsole* GetActive();

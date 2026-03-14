@@ -12,6 +12,17 @@
 #define KERNEL_HEAP_START 0xFFFFFFFF82000000
 #define KERNEL_BASE 0xFFFFFFFF80000000
 
+struct DispatcherParameters
+{
+    PhysicalMemoryManager* PMM;
+    VirtualMemoryManager*  VMM;
+    FrameBufferConsole*    Console;
+    uint64_t               KernelHeapVirtualAddrStart;
+    uint64_t               KernelHeapVirtualAddrEnd;
+};
+
+extern "C" void DispatcherEntry(DispatcherParameters Params);
+
 extern "C" void EFIAPI kernel_main(KernelParameters KernelArgs) __attribute__((section(".text.entry")));
 
 // Uefi sets us up in 64bit long mode with identity mapped pages
@@ -67,6 +78,14 @@ extern "C"
         {
             Console.printf_("Kernel heap allocated at physical address: %p\n", KernelHeapPhysicalAddr);
         }
+
+        if (KernelArgs.KernelEndVirtual >= KERNEL_HEAP_START)
+        {
+            Console.printf_("Error: Kernel end virtual address overlaps with kernel heap start address\n");
+            while (1)
+                __asm__ __volatile__("hlt");
+        }
+
         UINTN KernelHeapVirtualAddrStart = KERNEL_HEAP_START;
 
         UINTN KernelHeapVirtualAddrEnd
@@ -76,7 +95,14 @@ extern "C"
 
         kmemset((void*) KernelHeapVirtualAddrStart, 0, KERNEL_HEAP_PAGES * PAGE_SIZE);
 
-        Console.printf_("Kernel initialization complete. Halting the CPU.\n");
+        DispatcherParameters DispatcherArgs
+                = {&PMM, &VMM, &Console, (uint64_t) KernelHeapVirtualAddrStart, (uint64_t) KernelHeapVirtualAddrEnd};
+        DispatcherEntry(DispatcherArgs);
+    }
+
+    void DispatcherEntry(DispatcherParameters DispatcherArgs)
+    {
+        DispatcherArgs.Console->printf_("Entered Dispatcher\n");
 
         while (1)
             __asm__ __volatile__("hlt");

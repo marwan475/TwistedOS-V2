@@ -40,6 +40,11 @@ KERNEL_LDFLAGS = \
 KERNEL_ASFLAGS = \
 	-f elf64
 
+ifeq ($(DEBUG),1)
+CFLAGS += -DDEBUG_BUILD
+KERNEL_CFLAGS += -DDEBUG_BUILD
+endif
+
 BIN = bin/
 BUILD = build/
 OUTPUT = TwistedOS.img

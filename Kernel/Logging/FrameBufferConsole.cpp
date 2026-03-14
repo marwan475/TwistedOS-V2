@@ -2,6 +2,55 @@
 #include <Logging/font.hpp>
 #include <printf.hpp>
 
+namespace
+{
+    constexpr uint16_t COM1_PORT = 0x3F8;
+
+    static inline void outb(uint16_t port, uint8_t value)
+    {
+        __asm__ __volatile__("outb %0, %1" : : "a"(value), "Nd"(port));
+    }
+
+    static inline uint8_t inb(uint16_t port)
+    {
+        uint8_t value = 0;
+        __asm__ __volatile__("inb %1, %0" : "=a"(value) : "Nd"(port));
+        return value;
+    }
+
+    static void SerialInit()
+    {
+        outb(COM1_PORT + 1, 0x00);
+        outb(COM1_PORT + 3, 0x80);
+        outb(COM1_PORT + 0, 0x03);
+        outb(COM1_PORT + 1, 0x00);
+        outb(COM1_PORT + 3, 0x03);
+        outb(COM1_PORT + 2, 0xC7);
+        outb(COM1_PORT + 4, 0x0B);
+    }
+
+    static void SerialWriteChar(char character)
+    {
+        while ((inb(COM1_PORT + 5) & 0x20) == 0)
+        {
+        }
+
+        outb(COM1_PORT, (uint8_t) character);
+    }
+
+    static void SerialPrintfOut(char character, void* arg)
+    {
+        (void) arg;
+
+        if (character == '\n')
+        {
+            SerialWriteChar('\r');
+        }
+
+        SerialWriteChar(character);
+    }
+}
+
 FrameBufferConsole* FrameBufferConsole::ActiveConsole = nullptr;
 
 FrameBufferConsole::FrameBufferConsole()
@@ -98,9 +147,58 @@ int FrameBufferConsole::printf_(const char* format, ...)
     va_list args;
     va_start(args, format);
 
+#ifdef DEBUG_BUILD
+    va_list debugArgs;
+    va_copy(debugArgs, args);
+#endif
+
     int ret = vprintf_proxy(format, args);
 
+#ifdef DEBUG_BUILD
+    char buffer[512] = {};
+    int  debugRet    = vsnprintf_(buffer, sizeof(buffer), format, debugArgs);
+    va_end(debugArgs);
+
+    if (debugRet > 0)
+    {
+        for (int i = 0; i < debugRet && i < (int) (sizeof(buffer) - 1); i++)
+        {
+            SerialPrintfOut(buffer[i], nullptr);
+        }
+    }
+#endif
+
     va_end(args);
+    return ret;
+}
+
+int FrameBufferConsole::dbgprintf_(const char* format, ...)
+{
+    static bool SerialInitialized = false;
+    if (!SerialInitialized)
+    {
+        SerialInit();
+        SerialInitialized = true;
+    }
+
+    va_list args;
+    va_start(args, format);
+
+    char buffer[512] = {};
+    int  ret         = vsnprintf_(buffer, sizeof(buffer), format, args);
+
+    va_end(args);
+
+    if (ret < 0)
+    {
+        return ret;
+    }
+
+    for (int i = 0; i < ret && i < (int) (sizeof(buffer) - 1); i++)
+    {
+        SerialPrintfOut(buffer[i], nullptr);
+    }
+
     return ret;
 }
 
