@@ -10,7 +10,7 @@
 #include <Memory/VirtualMemoryManager.hpp>
 #include <stdint.h>
 
-#define KERNEL_HEAP_PAGES 16
+#define KERNEL_HEAP_PAGES 32
 #define KERNEL_HEAP_START 0xFFFFFFFF82000000
 #define KERNEL_BASE 0xFFFFFFFF80000000
 
@@ -202,10 +202,10 @@ extern "C"
         ActiveDispatcher->InitializeLayers(Params);
 
         Params.Console->printf_("Creating kernel process switch test\n");
-        KernelTaskAId = ActiveDispatcher->GetLogicLayer()->CreateProcess(KernelTaskA, false);
-        KernelTaskBId = ActiveDispatcher->GetLogicLayer()->CreateProcess(KernelTaskB, false);
-        KernelTaskCId = ActiveDispatcher->GetLogicLayer()->CreateProcess(KernelTaskC, false);
-        KernelTaskDId = ActiveDispatcher->GetLogicLayer()->CreateProcess(KernelTaskD, false);
+        KernelTaskAId = ActiveDispatcher->GetLogicLayer()->CreateProcess(KernelTaskA);
+        KernelTaskBId = ActiveDispatcher->GetLogicLayer()->CreateProcess(KernelTaskB);
+        KernelTaskCId = ActiveDispatcher->GetLogicLayer()->CreateProcess(KernelTaskC);
+        KernelTaskDId = ActiveDispatcher->GetLogicLayer()->CreateProcess(KernelTaskD);
 
         if (KernelTaskAId == 0xFF || KernelTaskBId == 0xFF || KernelTaskCId == 0xFF || KernelTaskDId == 0xFF)
         {

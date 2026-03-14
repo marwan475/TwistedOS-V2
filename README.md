@@ -24,6 +24,7 @@ Developed
     - Dispatcher
         - Init and manage layers
         - Callable from anywhere in the kernel
+        - Called on Interrupt
     - Resource Layer
         - Manages all Hardware resources
         - Stores Physical and Virtual Memory managers
@@ -36,6 +37,8 @@ Developed
         - Creates Process manager
             - Stores array of Process structs using id to index
         - Exposes Api to Create and run processes
+        - Creates Scheduler
+            - Schedules Process using timer interrupt
     - Translation Layer
         - TODO (How User process will interract with the kernel)
 

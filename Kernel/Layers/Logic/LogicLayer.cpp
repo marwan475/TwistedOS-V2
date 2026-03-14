@@ -51,7 +51,7 @@ void LogicLayer::InitializeScheduler()
     Resource->GetConsole()->printf_("Scheduler Initialized\n");
 }
 
-uint8_t LogicLayer::CreateProcess(void (*EntryPoint)(), bool IsUserProcess)
+uint8_t LogicLayer::CreateProcess(void (*EntryPoint)())
 {
     void*    ProcessStack = Resource->kmalloc(PROCESS_STACK_SIZE);
     uint64_t StackTop     = reinterpret_cast<uint64_t>(ProcessStack) + PROCESS_STACK_SIZE;
@@ -61,8 +61,8 @@ uint8_t LogicLayer::CreateProcess(void (*EntryPoint)(), bool IsUserProcess)
     State.rflags   = 0x202;                    // Bit1 always set, IF enabled
     State.rbp      = 0;                        // bottom of stack frame
     State.rsp      = (StackTop & ~0xFULL) - 8; // SysV entry alignment without a real CALL
-    State.cs       = IsUserProcess ? USER_CS : KERNEL_CS;
-    State.ss       = IsUserProcess ? USER_SS : KERNEL_SS;
+    State.cs       = KERNEL_CS;
+    State.ss       = KERNEL_SS;
 
     *reinterpret_cast<uint64_t*>(State.rsp) = 0;
 

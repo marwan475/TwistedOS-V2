@@ -24,7 +24,7 @@ public:
     ResourceLayer* GetResourceLayer() const;
     void           InitializeProcessManager();
     void           InitializeScheduler();
-    uint8_t        CreateProcess(void (*EntryPoint)(), bool IsUserProcess = false);
+    uint8_t        CreateProcess(void (*EntryPoint)());
     bool           RunProcess(uint8_t Id);
     void           KillProcess(uint8_t Id);
     void           Schedule();
