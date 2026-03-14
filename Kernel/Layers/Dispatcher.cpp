@@ -1,5 +1,7 @@
 #include "Dispatcher.hpp"
 
+#include <Memory/KernelHeapAllocations.hpp>
+
 Dispatcher* Dispatcher::ActiveDispatcher = nullptr;
 
 Dispatcher::Dispatcher()
@@ -21,11 +23,13 @@ void Dispatcher::InitResourceLayer(const DispatcherParameters& Params)
     Resource.Initialize(Params.PMM, Params.VMM, Params.Console, Params.KernelHeapVirtualAddrStart,
                         Params.KernelHeapVirtualAddrEnd);
     Resource.InitializeKernelHeapManager();
+    KernelUseDispatcherAllocator();
 }
 
 void Dispatcher::InitLogicLayer()
 {
     Logic.Initialize(&Resource);
+    Logic.InitializeProcessManager();
 }
 
 void Dispatcher::InitTranslationLayer()
@@ -35,9 +39,17 @@ void Dispatcher::InitTranslationLayer()
 
 void Dispatcher::InitializeLayers(const DispatcherParameters& Params)
 {
+    Params.Console->printf_("Initializing Resource Layer\n");
     InitResourceLayer(Params);
+    Resource.GetConsole()->printf_("Resource Layer initialized\n");
+
+    Resource.GetConsole()->printf_("Initializing Logic Layer\n");
     InitLogicLayer();
+    Resource.GetConsole()->printf_("Logic Layer initialized\n");
+
+    Resource.GetConsole()->printf_("Initializing Translation Layer\n");
     InitTranslationLayer();
+    Resource.GetConsole()->printf_("Translation Layer initialized\n");
 }
 
 ResourceLayer* Dispatcher::GetResourceLayer()

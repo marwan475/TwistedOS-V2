@@ -1,10 +1,10 @@
 #pragma once
 
 #include <stdint.h>
+#include <Logging/FrameBufferConsole.hpp>
 
 class PhysicalMemoryManager;
 class VirtualMemoryManager;
-class FrameBufferConsole;
 
 #include "Logic/LogicLayer.hpp"
 #include "Resource/ResourceLayer.hpp"

@@ -1,7 +1,7 @@
 #include "ResourceLayer.hpp"
 
 extern "C" void ResourceLayerTaskSwitchAsm(CpuState* OldState, void** OldStack, const CpuState* NewState,
-                                             void* NewStack);
+                                           void* NewStack);
 
 ResourceLayer::ResourceLayer()
     : PMM(nullptr), VMM(nullptr), Console(nullptr), KernelHeapVirtualAddrStart(0), KernelHeapVirtualAddrEnd(0),
@@ -47,6 +47,7 @@ uint64_t ResourceLayer::GetKernelHeapVirtualAddrEnd() const
 void ResourceLayer::InitializeKernelHeapManager()
 {
     KHM = KernelHeapManager(KernelHeapVirtualAddrStart, KernelHeapVirtualAddrEnd);
+    Console->printf_("Kernel Heap Manager Initialized\n");
 }
 
 void* ResourceLayer::kmalloc(size_t Size)

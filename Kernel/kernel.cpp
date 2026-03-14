@@ -106,8 +106,10 @@ extern "C"
                 __asm__ __volatile__("hlt");
         }
 
+        Params.Console->printf_("Entered Dispatcher\n");
+        Params.Console->printf_("Initializing layers\n");
+
         ActiveDispatcher->InitializeLayers(Params);
-        ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("Entered Dispatcher\n");
 
         while (1)
             __asm__ __volatile__("hlt");
