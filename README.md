@@ -32,11 +32,11 @@ Developed
             - Tracks allocations using header before allocation with size and magic
             - Supports new and delete operators for C++ object allocations in the kernel 
         - exposes Task Switch to Logic Layer
-    Logic Layer
+    - Logic Layer
         - Creates Process manager
             - Stores array of Process structs using id to index
         - Exposes Api to Create and run processes
-    Translation Layer
+    - Translation Layer
         - TODO (How User process will interract with the kernel)
 
 
