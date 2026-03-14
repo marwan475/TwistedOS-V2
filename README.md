@@ -15,15 +15,31 @@ Developed
     - Transfers control to higher half kernel with Kernel Arguments
 - Framebuffer Logging for kernel
 - Kernel Entry
-    - Initialize GDT and TSS
-
-Todo:
-- Kernel Entry
     - init IDT
     - Physical memory manager using memory map
     - Virtual memory manager
-    - Setup New Kernel virtual Stack/Heap
+    - Setup New Kernel virtual Heap
     - Jump to dispatcher
+- Layered Kernel
+    - Dispatcher
+        - Init and manage layers
+        - Callable from anywhere in the kernel
+    - Resource Layer
+        - Manages all Hardware resources
+        - Stores Physical and Virtual Memory managers
+        - Initializes Kernel Heap manager
+            - Tracks free memory using bitmap
+            - Tracks allocations using header before allocation with size and magic
+            - Supports new and delete operators for C++ object allocations in the kernel 
+        - exposes Task Switch to Logic Layer
+    Logic Layer
+        - Creates Process manager
+            - Stores array of Process structs using id to index
+        - Exposes Api to Create and run processes
+    Translation Layer
+        - TODO (How User process will interract with the kernel)
+
+
 
 Build Dependencies:
 - base-devel mingw-w64-gcc mingw-w64-crt mingw-w64-headers mtools dosfstools parted qemu-full clang llvm gnu-efi nasm
