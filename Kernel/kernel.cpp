@@ -109,23 +109,6 @@ extern "C"
         ActiveDispatcher->InitializeLayers(Params);
         ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("Entered Dispatcher\n");
 
-        ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("Testing kernel heap allocation\n");
-        void* Ptr1 = ActiveDispatcher->GetResourceLayer()->kmalloc(100);
-        kmemset(Ptr1, 0xAB, 100);
-        ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("Allocated 100 bytes at %p\n", Ptr1);
-        void* Ptr2 = ActiveDispatcher->GetResourceLayer()->kmalloc(200);
-        kmemset(Ptr2, 0xCD, 200);
-        ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("Allocated 200 bytes at %p\n", Ptr2);
-        ActiveDispatcher->GetResourceLayer()->kfree(Ptr1);
-        ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("Freed memory at %p\n", Ptr1);
-        void* Ptr3 = ActiveDispatcher->GetResourceLayer()->kmalloc(50);
-        kmemset(Ptr3, 0xEF, 50);
-        ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("Allocated 50 bytes at %p\n", Ptr3);
-        ActiveDispatcher->GetResourceLayer()->kfree(Ptr2);
-        ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("Freed memory at %p\n", Ptr2);
-        ActiveDispatcher->GetResourceLayer()->kfree(Ptr3);
-        ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("Freed memory at %p\n", Ptr3);
-
         while (1)
             __asm__ __volatile__("hlt");
     }

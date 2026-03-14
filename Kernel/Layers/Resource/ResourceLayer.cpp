@@ -1,5 +1,8 @@
 #include "ResourceLayer.hpp"
 
+extern "C" void ResourceLayerTaskSwitchAsm(CpuState* OldState, void** OldStack, const CpuState* NewState,
+                                             void* NewStack);
+
 ResourceLayer::ResourceLayer()
     : PMM(nullptr), VMM(nullptr), Console(nullptr), KernelHeapVirtualAddrStart(0), KernelHeapVirtualAddrEnd(0),
       KHM(0, 0)
@@ -54,4 +57,14 @@ void* ResourceLayer::kmalloc(size_t Size)
 void ResourceLayer::kfree(void* Ptr)
 {
     KHM.kfree(Ptr);
+}
+
+void ResourceLayer::TaskSwitch(CpuState* OldState, void** OldStack, const CpuState& NewState, void* NewStack)
+{
+    if (OldState == nullptr || OldStack == nullptr || NewStack == nullptr || NewState.rip == 0)
+    {
+        return;
+    }
+
+    ResourceLayerTaskSwitchAsm(OldState, OldStack, &NewState, NewStack);
 }

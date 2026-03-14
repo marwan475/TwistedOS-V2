@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Arch/x86.hpp>
+
 #include "KernelHeapManager.hpp"
 
 #include <stdint.h>
@@ -31,4 +33,5 @@ public:
     void                   InitializeKernelHeapManager();
     void*                  kmalloc(size_t Size);
     void                   kfree(void* Ptr);
+    void                   TaskSwitch(CpuState* OldState, void** OldStack, const CpuState& NewState, void* NewStack);
 };
