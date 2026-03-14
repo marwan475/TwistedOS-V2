@@ -1,5 +1,5 @@
 # TwistedOS
-The goal is to build a POSIX complaint portable operating system
+The goal is to build a semi POSIX complaint x86 64 bit operating system
 
 Developed
 - Bootstraping a UEFI program on qemu

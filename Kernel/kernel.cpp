@@ -34,7 +34,7 @@ static void KernelTaskA()
     while(1)
     {
         ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("[Task A] Running\n");
-        for (volatile int i = 0; i < 1000000000; ++i)
+        for (volatile int i = 0; i < 10000000; ++i)
             ;
     }
 
@@ -55,7 +55,7 @@ static void KernelTaskB()
     while(1)
     {
         ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("[Task B] Running\n");
-        for (volatile int i = 0; i < 1000000000; ++i)
+        for (volatile int i = 0; i < 10000000; ++i)
             ;
     }
 
