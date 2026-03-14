@@ -47,25 +47,6 @@ Developed
 Build Dependencies:
 - base-devel mingw-w64-gcc mingw-w64-crt mingw-w64-headers mtools dosfstools parted qemu-full clang llvm gnu-efi nasm gdb
 
-Kernel debugging with QEMU:
-- The kernel is linked as `build/kernel.elf` with DWARF symbols and then converted to `bin/kernel.bin` for boot. Use the ELF file as the debugger symbol file.
-- The bootloader image `bin/BOOTX64.EFI` is also built with debug symbols so bootloader source can be debugged in GDB.
-- Fast path: run `make debug` to build, start QEMU in paused debug mode, wait for the GDB stub, and launch GDB automatically.
-- `make debug` now sets breakpoints for `efi_main`, `FileSystem::SetupForKernel`, and `KernelEntry` so you can step bootloader -> kernel in one session.
-- Start a paused QEMU session with the GDB stub enabled:
-    - `make qemu-basic-debug`
-    - or `make qemu-debug` if you want the full device configuration
-- Attach GDB from another terminal:
-    - `make gdb-kernel`
-- After GDB connects, continue execution and it will stop on the hardware breakpoint at `KernelEntry`:
-    - `continue`
-- Serial output from debug-mode QEMU is written to `build/qemu-debug-serial.log`.
-
-VS Code debugging:
-- Use the `Kernel: Launch QEMU and attach` launch configuration to start QEMU in paused mode and attach GDB automatically.
-- Use the `Kernel: Attach to QEMU` launch configuration if QEMU is already running with `make qemu-basic-debug` or `make qemu-debug`.
-- The debugger uses `build/kernel.elf` as the symbol file and connects to QEMU on `localhost:1234`.
-
 Resources:
 - https://uefi.org/sites/default/files/resources/UEFI_Spec_2_10_Aug29.pdf
 - https://wiki.osdev.org/UEFI
