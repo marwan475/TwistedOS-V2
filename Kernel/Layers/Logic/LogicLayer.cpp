@@ -1,18 +1,17 @@
 #include "LogicLayer.hpp"
 
-#include "ResourceLayer.hpp"
+#include "Layers/Resource/ResourceLayer.hpp"
 
-LogicLayer::LogicLayer()
-	: Resource(nullptr)
+LogicLayer::LogicLayer() : Resource(nullptr)
 {
 }
 
 void LogicLayer::Initialize(ResourceLayer* Resource)
 {
-	this->Resource = Resource;
+    this->Resource = Resource;
 }
 
 ResourceLayer* LogicLayer::GetResourceLayer() const
 {
-	return Resource;
+    return Resource;
 }

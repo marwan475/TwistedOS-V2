@@ -1,7 +1,7 @@
 
 #include "../utils/KernelParameters.hpp"
 #include "Layers/Dispatcher.hpp"
-#include "Layers/ResourceLayer.hpp"
+#include "Layers/Resource/ResourceLayer.hpp"
 
 #include <Arch/x86.hpp>
 #include <CommonUtils.hpp>
@@ -17,6 +17,8 @@
 extern "C" void DispatcherEntry(DispatcherParameters Params);
 
 extern "C" void EFIAPI KernelEntry(KernelParameters KernelArgs) __attribute__((section(".text.entry")));
+
+static Dispatcher KernelDispatcher;
 
 // Uefi sets us up in 64bit long mode with identity mapped pages
 extern "C"
@@ -95,10 +97,17 @@ extern "C"
 
     void DispatcherEntry(DispatcherParameters Params)
     {
-        Dispatcher Dispatcher;
-        Dispatcher.InitializeLayers(Params);
+        Dispatcher::SetActive(&KernelDispatcher);
 
-        Dispatcher.GetResourceLayer()->GetConsole()->printf_("Entered Dispatcher\n");
+        Dispatcher* ActiveDispatcher = Dispatcher::GetActive();
+        if (ActiveDispatcher == nullptr)
+        {
+            while (1)
+                __asm__ __volatile__("hlt");
+        }
+
+        ActiveDispatcher->InitializeLayers(Params);
+        ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("Entered Dispatcher\n");
 
         while (1)
             __asm__ __volatile__("hlt");

@@ -71,12 +71,12 @@ $(EFI): Bootloader/bootloader.cpp utils/printf.cpp utils/CommonUtils.cpp Bootloa
 	$(CC) $(CFLAGS) -I. -I./Bootloader -I./utils -o $(BIN)$@ $^ \
 		-L /usr/lib -l:libefi.a -l:libgnuefi.a
 
-$(KERNEL): Kernel/kernel.cpp Kernel/Layers/Dispatcher.cpp Kernel/Layers/ResourceLayer.cpp Kernel/Layers/LogicLayer.cpp Kernel/Layers/TranslationLayer.cpp Kernel/Memory/PhysicalMemoryManager.cpp Kernel/Memory/VirtualMemoryManager.cpp Kernel/Logging/FrameBufferConsole.cpp Kernel/Arch/x86.cpp Kernel/Arch/Interrupts.asm utils/printf.cpp utils/CommonUtils.cpp Kernel/linker.ld
+$(KERNEL): Kernel/kernel.cpp Kernel/Layers/Dispatcher.cpp Kernel/Layers/Resource/ResourceLayer.cpp Kernel/Layers/Logic/LogicLayer.cpp Kernel/Layers/Translation/TranslationLayer.cpp Kernel/Memory/PhysicalMemoryManager.cpp Kernel/Memory/VirtualMemoryManager.cpp Kernel/Logging/FrameBufferConsole.cpp Kernel/Arch/x86.cpp Kernel/Arch/Interrupts.asm utils/printf.cpp utils/CommonUtils.cpp Kernel/linker.ld
 	$(KERNEL_CC) $(KERNEL_CFLAGS) -I./Kernel -I./Bootloader -I./utils -c Kernel/kernel.cpp -o $(BUILD)kernel.o
 	$(KERNEL_CC) $(KERNEL_CFLAGS) -I./Kernel -I./Bootloader -I./utils -c Kernel/Layers/Dispatcher.cpp -o $(BUILD)dispatcher.o
-	$(KERNEL_CC) $(KERNEL_CFLAGS) -I./Kernel -I./Bootloader -I./utils -c Kernel/Layers/ResourceLayer.cpp -o $(BUILD)resource_layer.o
-	$(KERNEL_CC) $(KERNEL_CFLAGS) -I./Kernel -I./Bootloader -I./utils -c Kernel/Layers/LogicLayer.cpp -o $(BUILD)logic_layer.o
-	$(KERNEL_CC) $(KERNEL_CFLAGS) -I./Kernel -I./Bootloader -I./utils -c Kernel/Layers/TranslationLayer.cpp -o $(BUILD)translation_layer.o
+	$(KERNEL_CC) $(KERNEL_CFLAGS) -I./Kernel -I./Bootloader -I./utils -c Kernel/Layers/Resource/ResourceLayer.cpp -o $(BUILD)resource_layer.o
+	$(KERNEL_CC) $(KERNEL_CFLAGS) -I./Kernel -I./Bootloader -I./utils -c Kernel/Layers/Logic/LogicLayer.cpp -o $(BUILD)logic_layer.o
+	$(KERNEL_CC) $(KERNEL_CFLAGS) -I./Kernel -I./Bootloader -I./utils -c Kernel/Layers/Translation/TranslationLayer.cpp -o $(BUILD)translation_layer.o
 	$(KERNEL_CC) $(KERNEL_CFLAGS) -I./Kernel -I./Bootloader -I./utils -c Kernel/Memory/PhysicalMemoryManager.cpp -o $(BUILD)physical_memory_manager.o
 	$(KERNEL_CC) $(KERNEL_CFLAGS) -I./Kernel -I./Bootloader -I./utils -c Kernel/Memory/VirtualMemoryManager.cpp -o $(BUILD)virtual_memory_manager.o
 	$(KERNEL_CC) $(KERNEL_CFLAGS) -I./Kernel -I./Bootloader -I./utils -c Kernel/Logging/FrameBufferConsole.cpp -o $(BUILD)framebuffer_console.o

@@ -1,7 +1,19 @@
 #include "Dispatcher.hpp"
 
+Dispatcher* Dispatcher::ActiveDispatcher = nullptr;
+
 Dispatcher::Dispatcher()
 {
+}
+
+void Dispatcher::SetActive(Dispatcher* dispatcher)
+{
+    ActiveDispatcher = dispatcher;
+}
+
+Dispatcher* Dispatcher::GetActive()
+{
+    return ActiveDispatcher;
 }
 
 void Dispatcher::InitResourceLayer(const DispatcherParameters& Params)
@@ -56,4 +68,3 @@ const TranslationLayer* Dispatcher::GetTranslationLayer() const
 {
     return &Translation;
 }
-

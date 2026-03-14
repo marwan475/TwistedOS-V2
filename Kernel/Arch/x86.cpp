@@ -1,5 +1,6 @@
 #include <Arch/x86.hpp>
 #include <Logging/FrameBufferConsole.hpp>
+#include <Layers/Dispatcher.hpp>
 
 TSS                KernelTSS  = {};
 GDT                KernelGDT  = {};
@@ -98,6 +99,7 @@ void RemapPIC()
     outb(PIC2_DATA_PORT, PIC_RESTORE_MASK_NONE);
 }
 
+// All ISRs will call this handler with a pointer to the registers struct
 extern "C" void ISRHANDLER(Registers* reg)
 {
     FrameBufferConsole* Console = FrameBufferConsole::GetActive();
@@ -105,7 +107,13 @@ extern "C" void ISRHANDLER(Registers* reg)
     if (Console != nullptr)
     {
         if (reg->interrupt_number != 32)
-            Console->printf_("Interrupt %lu\n", reg->interrupt_number);
+        {
+            Dispatcher* ActiveDispatcher = Dispatcher::GetActive();
+            if (ActiveDispatcher != nullptr)
+            {
+                ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("Interrupt %lu\n", reg->interrupt_number);
+            }
+        }
     }
 
     if (reg->interrupt_number < 32)
