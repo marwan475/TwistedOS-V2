@@ -1,6 +1,6 @@
 #include <Arch/x86.hpp>
-#include <Logging/FrameBufferConsole.hpp>
 #include <Layers/Dispatcher.hpp>
+#include <Logging/FrameBufferConsole.hpp>
 
 TSS                KernelTSS  = {};
 GDT                KernelGDT  = {};

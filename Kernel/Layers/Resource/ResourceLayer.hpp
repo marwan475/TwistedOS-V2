@@ -1,5 +1,7 @@
 #pragma once
 
+#include "KernelHeapManager.hpp"
+
 #include <stdint.h>
 
 class PhysicalMemoryManager;
@@ -14,6 +16,7 @@ private:
     FrameBufferConsole*    Console;
     uint64_t               KernelHeapVirtualAddrStart;
     uint64_t               KernelHeapVirtualAddrEnd;
+    KernelHeapManager      KHM;
 
 public:
     ResourceLayer();
@@ -25,4 +28,7 @@ public:
     FrameBufferConsole*    GetConsole() const;
     uint64_t               GetKernelHeapVirtualAddrStart() const;
     uint64_t               GetKernelHeapVirtualAddrEnd() const;
+    void                   InitializeKernelHeapManager();
+    void*                  kmalloc(size_t Size);
+    void                   kfree(void* Ptr);
 };

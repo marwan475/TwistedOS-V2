@@ -20,6 +20,7 @@ void Dispatcher::InitResourceLayer(const DispatcherParameters& Params)
 {
     Resource.Initialize(Params.PMM, Params.VMM, Params.Console, Params.KernelHeapVirtualAddrStart,
                         Params.KernelHeapVirtualAddrEnd);
+    Resource.InitializeKernelHeapManager();
 }
 
 void Dispatcher::InitLogicLayer()

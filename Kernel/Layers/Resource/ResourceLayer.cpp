@@ -1,7 +1,8 @@
 #include "ResourceLayer.hpp"
 
 ResourceLayer::ResourceLayer()
-    : PMM(nullptr), VMM(nullptr), Console(nullptr), KernelHeapVirtualAddrStart(0), KernelHeapVirtualAddrEnd(0)
+    : PMM(nullptr), VMM(nullptr), Console(nullptr), KernelHeapVirtualAddrStart(0), KernelHeapVirtualAddrEnd(0),
+      KHM(0, 0)
 {
 }
 
@@ -38,4 +39,19 @@ uint64_t ResourceLayer::GetKernelHeapVirtualAddrStart() const
 uint64_t ResourceLayer::GetKernelHeapVirtualAddrEnd() const
 {
     return KernelHeapVirtualAddrEnd;
+}
+
+void ResourceLayer::InitializeKernelHeapManager()
+{
+    KHM = KernelHeapManager(KernelHeapVirtualAddrStart, KernelHeapVirtualAddrEnd);
+}
+
+void* ResourceLayer::kmalloc(size_t Size)
+{
+    return KHM.kmalloc(Size);
+}
+
+void ResourceLayer::kfree(void* Ptr)
+{
+    KHM.kfree(Ptr);
 }
