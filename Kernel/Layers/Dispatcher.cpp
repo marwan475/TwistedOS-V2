@@ -3,6 +3,7 @@
 #include <Memory/KernelHeapAllocations.hpp>
 
 Dispatcher* Dispatcher::ActiveDispatcher = nullptr;
+uint64_t    Ticks                       = 0;
 
 Dispatcher::Dispatcher()
 {

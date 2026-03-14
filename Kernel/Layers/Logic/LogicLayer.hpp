@@ -7,6 +7,8 @@
 #include <Arch/x86.hpp>
 #include <stdint.h>
 
+extern uint64_t Ticks;
+
 class ResourceLayer;
 
 class LogicLayer

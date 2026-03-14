@@ -14,6 +14,11 @@
 #define KERNEL_HEAP_START 0xFFFFFFFF82000000
 #define KERNEL_BASE 0xFFFFFFFF80000000
 
+#define TASK_A_SLEEP_TICKS 20
+#define TASK_B_SLEEP_TICKS 35
+#define TASK_C_SLEEP_TICKS 50
+#define TASK_D_SLEEP_TICKS 75
+
 extern "C" void DispatcherEntry(DispatcherParameters Params);
 
 extern "C" void EFIAPI KernelEntry(KernelParameters KernelArgs) __attribute__((section(".text.entry")));
@@ -24,8 +29,6 @@ static uint8_t    KernelTaskBId = 0xFF;
 static uint8_t    KernelTaskCId = 0xFF;
 static uint8_t    KernelTaskDId = 0xFF;
 
-#define WAIT_TICKS 100000000
-
 static void KernelTaskA()
 {
     Dispatcher* ActiveDispatcher = Dispatcher::GetActive();
@@ -35,11 +38,13 @@ static void KernelTaskA()
             __asm__ __volatile__("hlt");
     }
 
+    uint32_t SleepCycle = 0;
     while (1)
     {
-        ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("[Task A] Running\n");
-        for (volatile int i = 0; i < WAIT_TICKS; ++i)
-            ;
+        ++SleepCycle;
+        ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_(
+                "[Task A] cycle=%u sleeping for %u ticks\n", SleepCycle, TASK_A_SLEEP_TICKS);
+        ActiveDispatcher->GetLogicLayer()->SleepProcess(KernelTaskAId, TASK_A_SLEEP_TICKS);
     }
 
     while (1)
@@ -55,11 +60,13 @@ static void KernelTaskB()
             __asm__ __volatile__("hlt");
     }
 
+    uint32_t SleepCycle = 0;
     while (1)
     {
-        ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("[Task B] Running\n");
-        for (volatile int i = 0; i < WAIT_TICKS; ++i)
-            ;
+        ++SleepCycle;
+        ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_(
+                "[Task B] cycle=%u sleeping for %u ticks\n", SleepCycle, TASK_B_SLEEP_TICKS);
+        ActiveDispatcher->GetLogicLayer()->SleepProcess(KernelTaskBId, TASK_B_SLEEP_TICKS);
     }
 
     while (1)
@@ -75,11 +82,13 @@ static void KernelTaskC()
             __asm__ __volatile__("hlt");
     }
 
+    uint32_t SleepCycle = 0;
     while (1)
     {
-        ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("[Task C] Running\n");
-        for (volatile int i = 0; i < WAIT_TICKS; ++i)
-            ;
+        ++SleepCycle;
+        ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_(
+                "[Task C] cycle=%u sleeping for %u ticks\n", SleepCycle, TASK_C_SLEEP_TICKS);
+        ActiveDispatcher->GetLogicLayer()->SleepProcess(KernelTaskCId, TASK_C_SLEEP_TICKS);
     }
 
     while (1)
@@ -95,11 +104,13 @@ static void KernelTaskD()
             __asm__ __volatile__("hlt");
     }
 
+    uint32_t SleepCycle = 0;
     while (1)
     {
-        ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("[Task D] Running\n");
-        for (volatile int i = 0; i < WAIT_TICKS; ++i)
-            ;
+        ++SleepCycle;
+        ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_(
+                "[Task D] cycle=%u sleeping for %u ticks\n", SleepCycle, TASK_D_SLEEP_TICKS);
+        ActiveDispatcher->GetLogicLayer()->SleepProcess(KernelTaskDId, TASK_D_SLEEP_TICKS);
     }
 
     while (1)
@@ -200,7 +211,7 @@ extern "C"
 
         ActiveDispatcher->InitializeLayers(Params);
 
-        ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("Creating kernel process switch test\n");
+        ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("Creating kernel sleep test processes\n");
         KernelTaskAId = ActiveDispatcher->GetLogicLayer()->CreateProcess(KernelTaskA);
         KernelTaskBId = ActiveDispatcher->GetLogicLayer()->CreateProcess(KernelTaskB);
         KernelTaskCId = ActiveDispatcher->GetLogicLayer()->CreateProcess(KernelTaskC);

@@ -137,46 +137,50 @@ bool LogicLayer::RunProcess(uint8_t Id)
 
 void LogicLayer::SleepProcess(uint8_t Id, uint64_t WaitTicks)
 {
-	Process* TargetProcess = PM->GetProcessById(Id);
-	if (TargetProcess == nullptr || TargetProcess->Status != PROCESS_RUNNING)
-	{
-		return;
-	}
+    Process* TargetProcess = PM->GetProcessById(Id);
+    if (TargetProcess == nullptr || TargetProcess->Status != PROCESS_RUNNING)
+    {
+        return;
+    }
 
-	TargetProcess->Status = PROCESS_BLOCKED;
-	Sync->AddToSleepQueue(Id, WaitTicks);
-	Sched->RemoveFromReadyQueue(Id);
+    TargetProcess->Status = PROCESS_BLOCKED;
+    Sync->AddToSleepQueue(Id, WaitTicks);
+    Sched->RemoveFromReadyQueue(Id);
+
+	Ticks = 0; // Reset ticks to ensure the sleeping process gets the correct sleep duration
+	Schedule();
 }
 
-void LogicLayer::WakeProcess(uint8_t Id){
-	Process* TargetProcess = PM->GetProcessById(Id);
-	if (TargetProcess == nullptr || TargetProcess->Status != PROCESS_BLOCKED)
-	{
-		return;
-	}
+void LogicLayer::WakeProcess(uint8_t Id)
+{
+    Process* TargetProcess = PM->GetProcessById(Id);
+    if (TargetProcess == nullptr || TargetProcess->Status != PROCESS_BLOCKED)
+    {
+        return;
+    }
 
-	TargetProcess->Status = PROCESS_READY;
-	Sync->RemoveFromSleepQueue(Id);
-	Sched->AddToReadyQueue(Id);
+    TargetProcess->Status = PROCESS_READY;
+    Sync->RemoveFromSleepQueue(Id);
+    Sched->AddToReadyQueue(Id);
 }
 
 void LogicLayer::Tick()
 {
-	if (Sync != nullptr)
-	{
-		Sync->Tick();
-		uint8_t IdToWake = Sync->GetNextProcessToWake();
-		if (IdToWake != 0xFF)
-		{
-			Sync->RemoveFromSleepQueue(IdToWake);
+    if (Sync != nullptr)
+    {
+        Sync->Tick();
+        uint8_t IdToWake = Sync->GetNextProcessToWake();
+        if (IdToWake != 0xFF)
+        {
+            Sync->RemoveFromSleepQueue(IdToWake);
 
-			if (PM->GetProcessById(IdToWake)->Status == PROCESS_BLOCKED)
-			{
-				PM->GetProcessById(IdToWake)->Status = PROCESS_READY;
-				Sched->AddToReadyQueue(IdToWake);
-			}
-		}
-	}
+            if (PM->GetProcessById(IdToWake)->Status == PROCESS_BLOCKED)
+            {
+                PM->GetProcessById(IdToWake)->Status = PROCESS_READY;
+                Sched->AddToReadyQueue(IdToWake);
+            }
+        }
+    }
 }
 
 void LogicLayer::Schedule()
