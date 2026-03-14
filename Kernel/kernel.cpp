@@ -1,5 +1,7 @@
 
 #include "../utils/KernelParameters.hpp"
+#include "Layers/Dispatcher.hpp"
+#include "Layers/ResourceLayer.hpp"
 
 #include <Arch/x86.hpp>
 #include <CommonUtils.hpp>
@@ -12,23 +14,14 @@
 #define KERNEL_HEAP_START 0xFFFFFFFF82000000
 #define KERNEL_BASE 0xFFFFFFFF80000000
 
-struct DispatcherParameters
-{
-    PhysicalMemoryManager* PMM;
-    VirtualMemoryManager*  VMM;
-    FrameBufferConsole*    Console;
-    uint64_t               KernelHeapVirtualAddrStart;
-    uint64_t               KernelHeapVirtualAddrEnd;
-};
-
 extern "C" void DispatcherEntry(DispatcherParameters Params);
 
-extern "C" void EFIAPI kernel_main(KernelParameters KernelArgs) __attribute__((section(".text.entry")));
+extern "C" void EFIAPI KernelEntry(KernelParameters KernelArgs) __attribute__((section(".text.entry")));
 
 // Uefi sets us up in 64bit long mode with identity mapped pages
 extern "C"
 {
-    void EFIAPI kernel_main(KernelParameters KernelArgs)
+    void EFIAPI KernelEntry(KernelParameters KernelArgs)
     {
         FrameBufferConsole Console;
         Console.Initialize((uint32_t*) KernelArgs.GopMode.FrameBufferBase,
@@ -95,14 +88,17 @@ extern "C"
 
         kmemset((void*) KernelHeapVirtualAddrStart, 0, KERNEL_HEAP_PAGES * PAGE_SIZE);
 
-        DispatcherParameters DispatcherArgs
+        DispatcherParameters Params
                 = {&PMM, &VMM, &Console, (uint64_t) KernelHeapVirtualAddrStart, (uint64_t) KernelHeapVirtualAddrEnd};
-        DispatcherEntry(DispatcherArgs);
+        DispatcherEntry(Params);
     }
 
-    void DispatcherEntry(DispatcherParameters DispatcherArgs)
+    void DispatcherEntry(DispatcherParameters Params)
     {
-        DispatcherArgs.Console->printf_("Entered Dispatcher\n");
+        Dispatcher Dispatcher;
+        Dispatcher.InitializeLayers(Params);
+
+        Dispatcher.GetResourceLayer()->GetConsole()->printf_("Entered Dispatcher\n");
 
         while (1)
             __asm__ __volatile__("hlt");

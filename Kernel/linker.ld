@@ -3,7 +3,7 @@ PHDRS {
   data PT_LOAD FLAGS(6);
 }
 
-ENTRY(kernel_main)
+ENTRY(KernelEntry)
 
 SECTIONS
 {
@@ -11,7 +11,7 @@ SECTIONS
 
     .text :
     {
-        KEEP(*(.text.entry))   /* kernel_main first */
+        KEEP(*(.text.entry))   /* KernelEntry first */
         *(.text*)              /* rest of code */
     } :text
 
