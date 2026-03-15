@@ -71,7 +71,7 @@ uint8_t ProcessManager::CreateKernelProcess(void* StackPointer, CpuState Initial
     return 0xFF; // Indicate failure to create process
 }
 
-uint8_t ProcessManager::CreateUserProcess(void* StackPointer, CpuState InitialState)
+uint8_t ProcessManager::CreateUserProcess(void* StackPointer, CpuState InitialState, VirtualAddressSpace* AddressSpace)
 {
     for (size_t index = 0; index < MaxProcesses; ++index)
     {
@@ -80,6 +80,7 @@ uint8_t ProcessManager::CreateUserProcess(void* StackPointer, CpuState InitialSt
             Processes[index].Status       = PROCESS_READY;
             Processes[index].Level        = PROCESS_LEVEL_USER;
             Processes[index].StackPointer = StackPointer;
+            Processes[index].AddressSpace = AddressSpace;
             Processes[index].State        = InitialState;
             return Processes[index].Id;
         }

@@ -1,12 +1,15 @@
 #pragma once
 
 #include <Arch/x86.hpp>
+#include <Layers/Resource/VirtualAddressSpace.hpp>
 #include <stddef.h>
 #include <stdint.h>
 
 #define MAX_PROCESSES 32
 #define KERNEL_PROCESS_STACK_SIZE 4096
 #define USER_PROCESS_STACK_SIZE 8192
+#define USER_PROCESS_HEAP_SIZE 8192
+#define USER_PROCESS_VIRTUAL_BASE 0x400000
 
 enum ProcessState
 {
@@ -24,11 +27,12 @@ enum ProcessLevel
 
 struct Process
 {
-    uint8_t      Id;
-    CpuState     State;
-    ProcessState Status;
-    ProcessLevel Level;
-    void*        StackPointer;
+    uint8_t              Id;
+    CpuState             State;
+    ProcessState         Status;
+    ProcessLevel         Level;
+    void*                StackPointer;
+    VirtualAddressSpace* AddressSpace = nullptr;
 };
 
 class ProcessManager
@@ -46,6 +50,6 @@ public:
     Process* GetRunningProcess();
     void     UpdateCurrentProcessId(uint8_t Id);
     uint8_t  CreateKernelProcess(void* StackPointer, CpuState InitialState);
-    uint8_t  CreateUserProcess(void* StackPointer, CpuState InitialState);
+    uint8_t  CreateUserProcess(void* StackPointer, CpuState InitialState, VirtualAddressSpace* AddressSpace);
     void*    KillProcess(uint8_t Id);
 };

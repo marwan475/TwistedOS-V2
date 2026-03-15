@@ -160,3 +160,94 @@ UINTN VirtualMemoryManager::UnmapRange(UINTN VirtualAddr, UINTN Pages)
 
     return RangeStartVirtual + (Pages * PAGE_SIZE);
 }
+
+PageTableEntry* VirtualMemoryManager::CopyPageMapL4Table()
+{
+    void* NewPML4Addr = PMM.AllocatePagesFromMemoryMap(1);
+    if (NewPML4Addr == NULL)
+    {
+        return NULL;
+    }
+
+    PageTableEntry* NewPML4 = (PageTableEntry*) NewPML4Addr;
+    kmemset(NewPML4, 0, PAGE_SIZE);
+
+    for (UINTN PML4Index = 0; PML4Index < 512; PML4Index++)
+    {
+        PageTableEntry PML4Entry = PageMapL4Table[PML4Index];
+        if (!PML4Entry.fields.present)
+        {
+            continue;
+        }
+
+        void* NewPDPTAddr = PMM.AllocatePagesFromMemoryMap(1);
+        if (NewPDPTAddr == NULL)
+        {
+            return NULL;
+        }
+
+        kmemset(NewPDPTAddr, 0, PAGE_SIZE);
+
+        PageTableEntry* OldPDPT = (PageTableEntry*) (PML4Entry.value & PHYS_PAGE_ADDR_MASK);
+        PageTableEntry* NewPDPT = (PageTableEntry*) NewPDPTAddr;
+
+        for (UINTN PDPTIndex = 0; PDPTIndex < 512; PDPTIndex++)
+        {
+            PageTableEntry PDPTEntry = OldPDPT[PDPTIndex];
+            if (!PDPTEntry.fields.present)
+            {
+                continue;
+            }
+
+            void* NewPDAddr = PMM.AllocatePagesFromMemoryMap(1);
+            if (NewPDAddr == NULL)
+            {
+                return NULL;
+            }
+
+            kmemset(NewPDAddr, 0, PAGE_SIZE);
+
+            PageTableEntry* OldPD = (PageTableEntry*) (PDPTEntry.value & PHYS_PAGE_ADDR_MASK);
+            PageTableEntry* NewPD = (PageTableEntry*) NewPDAddr;
+
+            for (UINTN PDIndex = 0; PDIndex < 512; PDIndex++)
+            {
+                PageTableEntry PDEntry = OldPD[PDIndex];
+                if (!PDEntry.fields.present)
+                {
+                    continue;
+                }
+
+                void* NewPTAddr = PMM.AllocatePagesFromMemoryMap(1);
+                if (NewPTAddr == NULL)
+                {
+                    return NULL;
+                }
+
+                kmemset(NewPTAddr, 0, PAGE_SIZE);
+
+                PageTableEntry* OldPT = (PageTableEntry*) (PDEntry.value & PHYS_PAGE_ADDR_MASK);
+                PageTableEntry* NewPT = (PageTableEntry*) NewPTAddr;
+
+                for (UINTN PTIndex = 0; PTIndex < 512; PTIndex++)
+                {
+                    NewPT[PTIndex] = OldPT[PTIndex];
+                }
+
+                PageTableEntry NewPDEntry = PDEntry;
+                NewPDEntry.value          = ((UINTN) NewPTAddr & PHYS_PAGE_ADDR_MASK) | (PDEntry.value & ~PHYS_PAGE_ADDR_MASK);
+                NewPD[PDIndex]            = NewPDEntry;
+            }
+
+            PageTableEntry NewPDPTEntry = PDPTEntry;
+            NewPDPTEntry.value          = ((UINTN) NewPDAddr & PHYS_PAGE_ADDR_MASK) | (PDPTEntry.value & ~PHYS_PAGE_ADDR_MASK);
+            NewPDPT[PDPTIndex]          = NewPDPTEntry;
+        }
+
+        PageTableEntry NewPML4Entry = PML4Entry;
+        NewPML4Entry.value          = ((UINTN) NewPDPTAddr & PHYS_PAGE_ADDR_MASK) | (PML4Entry.value & ~PHYS_PAGE_ADDR_MASK);
+        NewPML4[PML4Index]          = NewPML4Entry;
+    }
+
+    return NewPML4;
+}
