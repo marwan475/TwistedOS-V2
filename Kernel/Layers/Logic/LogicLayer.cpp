@@ -134,8 +134,7 @@ uint8_t LogicLayer::CreateUserProcess(uint64_t CodeAddr, uint64_t CodeSize)
     uint64_t ProcessStackVirtualAddrStart = (USER_PROCESS_VIRTUAL_STACK_TOP + 1) - USER_PROCESS_STACK_SIZE;
 
     VirtualAddressSpace* AddressSpace = new VirtualAddressSpace(CodeAddr, CodeSize, USER_PROCESS_VIRTUAL_BASE, reinterpret_cast<uint64_t>(ProcessHeap), USER_PROCESS_HEAP_SIZE,
-                                                                ProcessHeapVirtualAddrStart,
-                                                                reinterpret_cast<uint64_t>(ProcessStack), USER_PROCESS_STACK_SIZE, ProcessStackVirtualAddrStart);
+                                                                ProcessHeapVirtualAddrStart, reinterpret_cast<uint64_t>(ProcessStack), USER_PROCESS_STACK_SIZE, ProcessStackVirtualAddrStart);
 
     if (AddressSpace == nullptr)
     {
@@ -181,12 +180,12 @@ void LogicLayer::KillProcess(uint8_t Id)
     {
         VirtualAddressSpace* AddressSpace = TargetProcess->AddressSpace;
 
-        uint64_t CodePhysAddr = AddressSpace->GetCodePhysicalAddress();
-        uint64_t CodeSize     = AddressSpace->GetCodeSize();
-        uint64_t HeapPhysAddr = AddressSpace->GetHeapPhysicalAddress();
-        uint64_t HeapSize     = AddressSpace->GetHeapSize();
+        uint64_t CodePhysAddr  = AddressSpace->GetCodePhysicalAddress();
+        uint64_t CodeSize      = AddressSpace->GetCodeSize();
+        uint64_t HeapPhysAddr  = AddressSpace->GetHeapPhysicalAddress();
+        uint64_t HeapSize      = AddressSpace->GetHeapSize();
         uint64_t StackPhysAddr = AddressSpace->GetStackPhysicalAddress();
-        uint64_t StackSize    = AddressSpace->GetStackSize();
+        uint64_t StackSize     = AddressSpace->GetStackSize();
 
         PM->KillProcess(Id);
 

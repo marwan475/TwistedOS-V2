@@ -6,8 +6,8 @@ TSS                KernelTSS  = {};
 GDT                KernelGDT  = {};
 DiscriptorRegister KernelGDTR = {};
 
-static IDTentry       IDT[256]      = {};
-static IDTdescription IDTDescriptor = {sizeof(IDT) - 1, IDT};
+static IDTentry       IDT[256]                                                 = {};
+static IDTdescription IDTDescriptor                                            = {sizeof(IDT) - 1, IDT};
 static uint8_t        KernelInterruptStack[16384] __attribute__((aligned(16))) = {};
 
 static inline void LoadIDT(const IDTdescription* idt_descriptor)
@@ -199,8 +199,8 @@ void InitGDT()
     uint64_t KernelInterruptStackTop = reinterpret_cast<uint64_t>(&KernelInterruptStack[sizeof(KernelInterruptStack)]);
     KernelInterruptStackTop          = (KernelInterruptStackTop & ~0xFULL) - 8;
 
-    KernelTSS.RSP0_lower = static_cast<uint32_t>(KernelInterruptStackTop & 0xFFFFFFFF);
-    KernelTSS.RSP0_upper = static_cast<uint32_t>((KernelInterruptStackTop >> 32) & 0xFFFFFFFF);
+    KernelTSS.RSP0_lower  = static_cast<uint32_t>(KernelInterruptStackTop & 0xFFFFFFFF);
+    KernelTSS.RSP0_upper  = static_cast<uint32_t>((KernelInterruptStackTop >> 32) & 0xFFFFFFFF);
     KernelTSS.io_map_base = sizeof(TSS); // No IO bitmap, so set base to end of TSS
 
     TSSDescriptor tss_descriptor = BuildTSSDescriptor(&KernelTSS);

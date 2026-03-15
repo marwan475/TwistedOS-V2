@@ -39,16 +39,21 @@ Developed
         - exposes Task Switch to Logic Layer
         - Creates RamFileSystemManager
             - Load files from initramfs
+        - VirtualAddresSpace
+            - Creates and manaeges virtual address space for user processes
     - Logic Layer
         - Creates Process manager
             - Stores array of Process structs using id to index
         - Exposes Api to Create and run processes
+            - Supports Kernel and User level processes
+            - User process support process isolation via virtual address space
         - Creates Scheduler
             - Schedules Process using timer interrupt
         - Creates Syncronization Manager
             - Sleep processes for certian amount of timer ticks
     - Translation Layer
         - TODO (How User process will interract with the kernel)
+        - Translate User Requests/System calls to Kernel services
 - Debug suport
     - Debug print to Qemu serial (make DEBUG=1)
     - debug kernel source using gdb (make debug)
