@@ -1,8 +1,11 @@
 #include "ResourceLayer.hpp"
 
+#include "VirtualAddressSpace.hpp"
+
 #include <CommonUtils.hpp>
 
-extern "C" void ResourceLayerTaskSwitchAsm(CpuState* OldState, const CpuState* NewState);
+extern "C" void ResourceLayerTaskSwitchKernelAsm(CpuState* OldState, const CpuState* NewState);
+extern "C" void ResourceLayerTaskSwitchUserAsm(CpuState* OldState, const CpuState* NewState, uint64_t PageMapL4TableAddr);
 
 ResourceLayer::ResourceLayer() : PMM(nullptr), VMM(nullptr), Console(nullptr), KernelHeapVirtualAddrStart(0), KernelHeapVirtualAddrEnd(0), KHM(0, 0), RFS(0, 0)
 {
@@ -94,12 +97,28 @@ void* ResourceLayer::LoadFileFromInitramfs(const char* Path, uint64_t* Size)
     return AllocatedData;
 }
 
-void ResourceLayer::TaskSwitch(CpuState* OldState, const CpuState& NewState)
+void ResourceLayer::TaskSwitchKernel(CpuState* OldState, const CpuState& NewState)
 {
     if (OldState == nullptr || NewState.rip == 0 || NewState.rsp == 0)
     {
         return;
     }
 
-    ResourceLayerTaskSwitchAsm(OldState, &NewState);
+    ResourceLayerTaskSwitchKernelAsm(OldState, &NewState);
+}
+
+void ResourceLayer::TaskSwitchUser(CpuState* OldState, const CpuState& NewState, const VirtualAddressSpace* NewAddressSpace)
+{
+    if (OldState == nullptr || NewState.rip == 0 || NewState.rsp == 0 || NewAddressSpace == nullptr)
+    {
+        return;
+    }
+
+    uint64_t PageMapL4TableAddr = NewAddressSpace->GetPageMapL4TableAddr();
+    if (PageMapL4TableAddr == 0)
+    {
+        return;
+    }
+
+    ResourceLayerTaskSwitchUserAsm(OldState, &NewState, PageMapL4TableAddr);
 }

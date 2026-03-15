@@ -188,7 +188,14 @@ bool LogicLayer::RunProcess(uint8_t Id)
     }
     TargetProcess->Status = PROCESS_RUNNING;
     PM->UpdateCurrentProcessId(TargetProcess->Id);
-    Resource->TaskSwitch(&CurrentProcess->State, TargetProcess->State);
+    if (TargetProcess->Level == PROCESS_LEVEL_USER)
+    {
+        Resource->TaskSwitchUser(&CurrentProcess->State, TargetProcess->State, TargetProcess->AddressSpace);
+    }
+    else
+    {
+        Resource->TaskSwitchKernel(&CurrentProcess->State, TargetProcess->State);
+    }
 
     if (TargetProcess->Status == PROCESS_RUNNING)
     {

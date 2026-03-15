@@ -10,6 +10,7 @@
 class PhysicalMemoryManager;
 class VirtualMemoryManager;
 class FrameBufferConsole;
+class VirtualAddressSpace;
 
 class ResourceLayer
 {
@@ -39,5 +40,6 @@ public:
     void*                  kmalloc(size_t Size);
     void                   kfree(void* Ptr);
     void*                  LoadFileFromInitramfs(const char* Path, uint64_t* Size);
-    void                   TaskSwitch(CpuState* OldState, const CpuState& NewState);
+    void                   TaskSwitchKernel(CpuState* OldState, const CpuState& NewState);
+    void                   TaskSwitchUser(CpuState* OldState, const CpuState& NewState, const VirtualAddressSpace* NewAddressSpace);
 };
