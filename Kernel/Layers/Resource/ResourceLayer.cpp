@@ -1,15 +1,15 @@
 #include "ResourceLayer.hpp"
 
+#include <CommonUtils.hpp>
+
 extern "C" void ResourceLayerTaskSwitchAsm(CpuState* OldState, const CpuState* NewState);
 
-ResourceLayer::ResourceLayer()
-    : PMM(nullptr), VMM(nullptr), Console(nullptr), KernelHeapVirtualAddrStart(0), KernelHeapVirtualAddrEnd(0),
-      KHM(0, 0), RFS(0, 0)
+ResourceLayer::ResourceLayer() : PMM(nullptr), VMM(nullptr), Console(nullptr), KernelHeapVirtualAddrStart(0), KernelHeapVirtualAddrEnd(0), KHM(0, 0), RFS(0, 0)
 {
 }
 
-void ResourceLayer::Initialize(PhysicalMemoryManager* PMM, VirtualMemoryManager* VMM, FrameBufferConsole* Console,
-                               uint64_t KernelHeapVirtualAddrStart, uint64_t KernelHeapVirtualAddrEnd, uint64_t InitramfsAddress, uint64_t InitramfsSize)
+void ResourceLayer::Initialize(PhysicalMemoryManager* PMM, VirtualMemoryManager* VMM, FrameBufferConsole* Console, uint64_t KernelHeapVirtualAddrStart, uint64_t KernelHeapVirtualAddrEnd,
+                               uint64_t InitramfsAddress, uint64_t InitramfsSize)
 {
     this->PMM                        = PMM;
     this->VMM                        = VMM;
@@ -55,6 +55,7 @@ void ResourceLayer::InitializeRamFileSystemManager()
 {
     RFS = RamFileSystemManager(InitramfsAddress, InitramfsSize);
     Console->printf_("RAM File System Manager Initialized\n");
+    RFS.ParseAndPrintInitramfs(Console);
 }
 
 void* ResourceLayer::kmalloc(size_t Size)
@@ -65,6 +66,32 @@ void* ResourceLayer::kmalloc(size_t Size)
 void ResourceLayer::kfree(void* Ptr)
 {
     KHM.kfree(Ptr);
+}
+
+// Loads file from initramfs into kernel heap
+void* ResourceLayer::LoadFileFromInitramfs(const char* Path, uint64_t* Size)
+{
+    if (Path == nullptr || Size == nullptr)
+    {
+        return nullptr;
+    }
+
+    const void* Data = nullptr;
+
+    if (!RFS.FindFile(Path, &Data, Size, Console) || Data == nullptr || *Size == 0)
+    {
+        return nullptr;
+    }
+
+    void* AllocatedData = kmalloc(*Size);
+    if (AllocatedData == nullptr)
+    {
+        return nullptr;
+    }
+
+    memcpy(AllocatedData, Data, *Size);
+
+    return AllocatedData;
 }
 
 void ResourceLayer::TaskSwitch(CpuState* OldState, const CpuState& NewState)

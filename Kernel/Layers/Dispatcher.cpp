@@ -21,8 +21,7 @@ Dispatcher* Dispatcher::GetActive()
 
 void Dispatcher::InitResourceLayer(const DispatcherParameters& Params)
 {
-    Resource.Initialize(Params.PMM, Params.VMM, Params.Console, Params.KernelHeapVirtualAddrStart,
-                        Params.KernelHeapVirtualAddrEnd, Params.InitramfsAddress, Params.InitramfsSize);
+    Resource.Initialize(Params.PMM, Params.VMM, Params.Console, Params.KernelHeapVirtualAddrStart, Params.KernelHeapVirtualAddrEnd, Params.InitramfsAddress, Params.InitramfsSize);
     Resource.InitializeKernelHeapManager();
     Resource.InitializeRamFileSystemManager();
     KernelUseDispatcherAllocator();
@@ -77,6 +76,11 @@ void Dispatcher::InterruptHandler(uint64_t InterruptNumber)
         break;
         default:
             Resource.GetConsole()->printf_("Unhandled interrupt: %lu\n", InterruptNumber);
+            while (1)
+            {
+                __asm__ __volatile__("hlt");
+            }
+
             break;
     }
 }

@@ -2,10 +2,8 @@
 #include <Logging/FrameBufferConsole.hpp>
 #include <Memory/PhysicalMemoryManager.hpp>
 
-PhysicalMemoryManager::PhysicalMemoryManager(MemoryMapInfo MemoryMap, UINTN NextPageAddress, UINTN CurrentDescriptor,
-                                             UINTN RemainingPagesInDescriptor)
-    : MemoryMap(MemoryMap), NextPageAddress(NextPageAddress), CurrentDescriptor(CurrentDescriptor),
-      RemainingPagesInDescriptor(RemainingPagesInDescriptor), TotalUsableMemory(0), TotalNumberOfPages(0),
+PhysicalMemoryManager::PhysicalMemoryManager(MemoryMapInfo MemoryMap, UINTN NextPageAddress, UINTN CurrentDescriptor, UINTN RemainingPagesInDescriptor)
+    : MemoryMap(MemoryMap), NextPageAddress(NextPageAddress), CurrentDescriptor(CurrentDescriptor), RemainingPagesInDescriptor(RemainingPagesInDescriptor), TotalUsableMemory(0), TotalNumberOfPages(0),
       MemoryDescriptorInfo{0, 0, 0, NULL}
 {
     InitializeMemoryStats();
@@ -17,8 +15,7 @@ void PhysicalMemoryManager::InitializeMemoryStats()
 
     for (UINTN i = 0; i < DescriptorCount; i++)
     {
-        EFI_MEMORY_DESCRIPTOR* Desc
-                = (EFI_MEMORY_DESCRIPTOR*) ((UINT8*) MemoryMap.MemoryMap + (i * MemoryMap.DescriptorSize));
+        EFI_MEMORY_DESCRIPTOR* Desc = (EFI_MEMORY_DESCRIPTOR*) ((UINT8*) MemoryMap.MemoryMap + (i * MemoryMap.DescriptorSize));
 
         if (Desc->Type == EfiConventionalMemory)
         {
@@ -34,8 +31,7 @@ void* PhysicalMemoryManager::AllocatePagesFromMemoryMap(UINTN Pages)
     {
         for (UINTN i = CurrentDescriptor + 1; i < MemoryMap.MemoryMapSize / MemoryMap.DescriptorSize; i++)
         {
-            EFI_MEMORY_DESCRIPTOR* Desc
-                    = (EFI_MEMORY_DESCRIPTOR*) ((UINT8*) MemoryMap.MemoryMap + (i * MemoryMap.DescriptorSize));
+            EFI_MEMORY_DESCRIPTOR* Desc = (EFI_MEMORY_DESCRIPTOR*) ((UINT8*) MemoryMap.MemoryMap + (i * MemoryMap.DescriptorSize));
 
             if (Desc->Type == EfiConventionalMemory && Desc->NumberOfPages >= Pages)
             {
@@ -167,8 +163,7 @@ void PhysicalMemoryManager::PrintConventionalMemoryMap(FrameBufferConsole& Conso
 
     for (UINTN i = 0; i < DescriptorCount; i++)
     {
-        EFI_MEMORY_DESCRIPTOR* Desc
-                = (EFI_MEMORY_DESCRIPTOR*) ((UINT8*) MemoryMap.MemoryMap + (i * MemoryMap.DescriptorSize));
+        EFI_MEMORY_DESCRIPTOR* Desc = (EFI_MEMORY_DESCRIPTOR*) ((UINT8*) MemoryMap.MemoryMap + (i * MemoryMap.DescriptorSize));
 
         if (Desc->Type == EfiConventionalMemory)
         {
@@ -182,16 +177,14 @@ void PhysicalMemoryManager::PrintConventionalMemoryMap(FrameBufferConsole& Conso
 
     for (UINTN i = 0; i < DescriptorCount; i++)
     {
-        EFI_MEMORY_DESCRIPTOR* Desc
-                = (EFI_MEMORY_DESCRIPTOR*) ((UINT8*) MemoryMap.MemoryMap + (i * MemoryMap.DescriptorSize));
+        EFI_MEMORY_DESCRIPTOR* Desc = (EFI_MEMORY_DESCRIPTOR*) ((UINT8*) MemoryMap.MemoryMap + (i * MemoryMap.DescriptorSize));
 
         if (Desc->Type != EfiConventionalMemory)
         {
             continue;
         }
 
-        Console.printf_("Descriptor %llu: %llu pages\n", (unsigned long long) ConventionalDescriptorIndex,
-                        (unsigned long long) Desc->NumberOfPages);
+        Console.printf_("Descriptor %llu: %llu pages\n", (unsigned long long) ConventionalDescriptorIndex, (unsigned long long) Desc->NumberOfPages);
         ConventionalDescriptorIndex++;
     }
 }
@@ -204,11 +197,8 @@ void PhysicalMemoryManager::PrintMemoryDescriptors(FrameBufferConsole& Console) 
         return;
     }
 
-    Console.printf_("Largest descriptor: base=0x%llx total=%llu free=%llu bitmap=%s\n",
-                    (unsigned long long) MemoryDescriptorInfo.PhysicalAddressStart,
-                    (unsigned long long) MemoryDescriptorInfo.TotalNumberOfPages,
-                    (unsigned long long) MemoryDescriptorInfo.NumberOfFreePages,
-                    MemoryDescriptorInfo.BitMap ? "yes" : "no");
+    Console.printf_("Largest descriptor: base=0x%llx total=%llu free=%llu bitmap=%s\n", (unsigned long long) MemoryDescriptorInfo.PhysicalAddressStart,
+                    (unsigned long long) MemoryDescriptorInfo.TotalNumberOfPages, (unsigned long long) MemoryDescriptorInfo.NumberOfFreePages, MemoryDescriptorInfo.BitMap ? "yes" : "no");
 }
 
 void* InitializeMemoryDescriptorBitMap(MemoryDescriptor* Md)
@@ -245,8 +235,7 @@ void PhysicalMemoryManager::InitializeMemoryDescriptors()
         if (i <= CurrentDescriptor)
             continue; // skip descriptors that have been used by bootloader
 
-        EFI_MEMORY_DESCRIPTOR* Desc
-                = (EFI_MEMORY_DESCRIPTOR*) ((uint8_t*) MemoryMap.MemoryMap + (i * MemoryMap.DescriptorSize));
+        EFI_MEMORY_DESCRIPTOR* Desc = (EFI_MEMORY_DESCRIPTOR*) ((uint8_t*) MemoryMap.MemoryMap + (i * MemoryMap.DescriptorSize));
 
         if (Desc->Type == EfiConventionalMemory && Desc->NumberOfPages > MemoryDescriptorInfo.TotalNumberOfPages)
         {

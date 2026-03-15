@@ -28,8 +28,7 @@ private:
     void InitializeMemoryStats();
 
 public:
-    PhysicalMemoryManager(MemoryMapInfo MemoryMap, UINTN NextPageAddress, UINTN CurrentDescriptor,
-                          UINTN RemainingPagesInDescriptor);
+    PhysicalMemoryManager(MemoryMapInfo MemoryMap, UINTN NextPageAddress, UINTN CurrentDescriptor, UINTN RemainingPagesInDescriptor);
 
     void* AllocatePagesFromMemoryMap(UINTN Pages);
     void* AllocatePagesFromDescriptor(UINTN Pages);

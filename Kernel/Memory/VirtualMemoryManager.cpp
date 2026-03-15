@@ -1,8 +1,7 @@
 #include <CommonUtils.hpp>
 #include <Memory/VirtualMemoryManager.hpp>
 
-VirtualMemoryManager::VirtualMemoryManager(UINTN PageMapL4TableAddr, PhysicalMemoryManager& PMM)
-    : PageMapL4Table((PageTableEntry*) PageMapL4TableAddr), PMM(PMM)
+VirtualMemoryManager::VirtualMemoryManager(UINTN PageMapL4TableAddr, PhysicalMemoryManager& PMM) : PageMapL4Table((PageTableEntry*) PageMapL4TableAddr), PMM(PMM)
 {
 }
 
@@ -56,7 +55,7 @@ bool VirtualMemoryManager::MapPage(UINTN PhysicalAddr, UINTN VirtualAddr)
         PageDirectoryTable.fields.user_access = 0;
 
         PageDirectoryPointerTable[PageDirectoryPointerTableIndex] = PageDirectoryTable;
-        PDPTEntry = PageDirectoryPointerTable[PageDirectoryPointerTableIndex];
+        PDPTEntry                                                 = PageDirectoryPointerTable[PageDirectoryPointerTableIndex];
     }
 
     PageTableEntry* PageDirectoryTable = (PageTableEntry*) (PDPTEntry.value & PHYS_PAGE_ADDR_MASK);

@@ -53,8 +53,7 @@ static void SerialPrintfOut(char character, void* arg)
 
 FrameBufferConsole* FrameBufferConsole::ActiveConsole = nullptr;
 
-FrameBufferConsole::FrameBufferConsole()
-    : framebuffer(nullptr), screenWidth(0), screenHeight(0), pitch(0), cursorX(0), cursorY(0), textColor(0xFFFFFFFF)
+FrameBufferConsole::FrameBufferConsole() : framebuffer(nullptr), screenWidth(0), screenHeight(0), pitch(0), cursorX(0), cursorY(0), textColor(0xFFFFFFFF)
 {
 }
 

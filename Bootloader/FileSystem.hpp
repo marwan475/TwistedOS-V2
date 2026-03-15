@@ -17,8 +17,7 @@ public:
     FileSystem(EFI_HANDLE ImageHandle, EFI_BOOT_SERVICES* BootServices, Console* efiConsole);
     EFI_STATUS LoadKernel();
     EFI_STATUS SetupForKernel(EFI_FILE_PROTOCOL* Dir);
-    EFI_STATUS LoadFileToMemory(EFI_FILE_PROTOCOL* Dir, CHAR16* Path, EFI_MEMORY_TYPE MemoryType, void** Buffer,
-                                UINTN* BufferSize);
+    EFI_STATUS LoadFileToMemory(EFI_FILE_PROTOCOL* Dir, CHAR16* Path, EFI_MEMORY_TYPE MemoryType, void** Buffer, UINTN* BufferSize);
     void       OutputDirectoryInfo(EFI_FILE_PROTOCOL* Dir);
     ~FileSystem();
 };

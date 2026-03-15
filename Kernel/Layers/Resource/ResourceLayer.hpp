@@ -26,8 +26,8 @@ private:
 
 public:
     ResourceLayer();
-    void Initialize(PhysicalMemoryManager* PMM, VirtualMemoryManager* VMM, FrameBufferConsole* Console,
-                    uint64_t KernelHeapVirtualAddrStart, uint64_t KernelHeapVirtualAddrEnd, uint64_t InitramfsAddress, uint64_t InitramfsSize);
+    void Initialize(PhysicalMemoryManager* PMM, VirtualMemoryManager* VMM, FrameBufferConsole* Console, uint64_t KernelHeapVirtualAddrStart, uint64_t KernelHeapVirtualAddrEnd,
+                    uint64_t InitramfsAddress, uint64_t InitramfsSize);
 
     PhysicalMemoryManager* GetPMM() const;
     VirtualMemoryManager*  GetVMM() const;
@@ -38,5 +38,6 @@ public:
     void                   InitializeRamFileSystemManager();
     void*                  kmalloc(size_t Size);
     void                   kfree(void* Ptr);
+    void*                  LoadFileFromInitramfs(const char* Path, uint64_t* Size);
     void                   TaskSwitch(CpuState* OldState, const CpuState& NewState);
 };

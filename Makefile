@@ -63,6 +63,7 @@ DRIVE = TwistedDrive.img
 ROOTFS_DIR = initramfs/rootfs
 INIT_SRC = initramfs/init.asm
 INIT_OBJ = $(BUILD)initramfs_init.o
+INIT_ELF = $(BUILD)initramfs_init.elf
 INIT_BIN = $(ROOTFS_DIR)/init
 ESP_SIZE = 64
 SECTORS = $(shell echo $$(( $(ESP_SIZE) * 2048 )))
@@ -93,7 +94,7 @@ QEMU_FULL = \
 all: bin build $(EFI) $(KERNEL) $(INITRAMFS) $(IMG) $(DRIVE)
 
 clean:
-	rm -rf $(BIN) $(BUILD) $(OUTPUT) *.pcap
+	rm -rf $(BIN) $(BUILD) $(OUTPUT) *.pcap $(INIT_BIN)
 
 build:
 	mkdir $(BUILD)
@@ -128,9 +129,11 @@ $(KERNEL): Kernel/kernel.cpp Kernel/Layers/Dispatcher.cpp Kernel/Layers/Resource
 	$(KERNEL_LD) $(KERNEL_LDFLAGS) $(BUILD)kernel.o $(BUILD)dispatcher.o $(BUILD)resource_layer.o $(BUILD)kernel_heap_manager.o $(BUILD)ram_file_system_manager.o $(BUILD)logic_layer.o $(BUILD)process_manager.o $(BUILD)scheduler.o $(BUILD)synchronization_manager.o $(BUILD)translation_layer.o $(BUILD)kernel_heap_allocations.o $(BUILD)physical_memory_manager.o $(BUILD)virtual_memory_manager.o $(BUILD)framebuffer_console.o $(BUILD)x86.o $(BUILD)interrupts.o $(BUILD)task_switch.o $(BUILD)printf.o $(BUILD)common_utils.o -o $(BUILD)kernel.elf
 	objcopy -O binary --set-section-flags .bss=alloc,load,contents $(BUILD)kernel.elf $(BIN)$@
 
-$(INIT_BIN): $(INIT_SRC)
+
+$(INIT_BIN): $(INIT_SRC) | build
 	$(KERNEL_AS) -f elf64 $(INIT_SRC) -o $(INIT_OBJ)
-	$(KERNEL_LD) -nostdlib -static -e _start $(INIT_OBJ) -o $(INIT_BIN)
+	$(KERNEL_LD) -nostdlib -static -e _start $(INIT_OBJ) -o $(INIT_ELF)
+	objcopy -O binary $(INIT_ELF) $(INIT_BIN)
 
 $(INITRAMFS): $(INIT_BIN)
 	chmod +x $(INIT_BIN)
@@ -211,7 +214,7 @@ format:
 			IndentWidth: 4, \
 			TabWidth: 4, \
 			UseTab: Never, \
-			ColumnLimit: 120, \
+			ColumnLimit: 200, \
 			BreakBeforeBraces: Allman, \
 			AllowShortIfStatementsOnASingleLine: false, \
 			AllowShortLoopsOnASingleLine: false, \

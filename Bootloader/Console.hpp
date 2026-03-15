@@ -11,8 +11,7 @@ private:
     EFI_GRAPHICS_OUTPUT_PROTOCOL*    Gop;
 
 public:
-    Console(EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL* ConOut, EFI_SIMPLE_TEXT_INPUT_PROTOCOL* ConIn,
-            EFI_BOOT_SERVICES* BootServices);
+    Console(EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL* ConOut, EFI_SIMPLE_TEXT_INPUT_PROTOCOL* ConIn, EFI_BOOT_SERVICES* BootServices);
     void                              Reset();
     void                              ClearConsole();
     void                              ChangeColor(int forground, int background);

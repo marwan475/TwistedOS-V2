@@ -43,8 +43,7 @@ void* MemoryManager::AllocateAvailablePagesFromMemoryMap(UINTN Pages)
     {
         for (UINTN i = CurrentDescriptor + 1; i < MemoryMap.MemoryMapSize / MemoryMap.DescriptorSize; i++)
         {
-            EFI_MEMORY_DESCRIPTOR* desc
-                    = (EFI_MEMORY_DESCRIPTOR*) ((UINT8*) MemoryMap.MemoryMap + (i * MemoryMap.DescriptorSize));
+            EFI_MEMORY_DESCRIPTOR* desc = (EFI_MEMORY_DESCRIPTOR*) ((UINT8*) MemoryMap.MemoryMap + (i * MemoryMap.DescriptorSize));
 
             if (desc->Type == EfiConventionalMemory && desc->NumberOfPages >= Pages)
             {
@@ -113,7 +112,7 @@ bool MemoryManager::MapPage(UINTN PhysicalAddr, UINTN VirtualAddr)
         PageDirectoryTable.fields.user_access = 0;
 
         PageDirectoryPointerTable[PageDirectoryPointerTableIndex] = PageDirectoryTable;
-        PDPTEntry = PageDirectoryPointerTable[PageDirectoryPointerTableIndex];
+        PDPTEntry                                                 = PageDirectoryPointerTable[PageDirectoryPointerTableIndex];
     }
 
     PageTableEntry* PageDirectoryTable = (PageTableEntry*) (PDPTEntry.value & PHYS_PAGE_ADDR_MASK);
@@ -236,8 +235,7 @@ void MemoryManager::IdentityMapMemoryMap()
 {
     for (UINTN i = 0; i < MemoryMap.MemoryMapSize / MemoryMap.DescriptorSize; i++)
     {
-        EFI_MEMORY_DESCRIPTOR* desc
-                = (EFI_MEMORY_DESCRIPTOR*) ((UINT8*) MemoryMap.MemoryMap + (i * MemoryMap.DescriptorSize));
+        EFI_MEMORY_DESCRIPTOR* desc = (EFI_MEMORY_DESCRIPTOR*) ((UINT8*) MemoryMap.MemoryMap + (i * MemoryMap.DescriptorSize));
 
         for (UINTN j = 0; j < desc->NumberOfPages; j++)
         {

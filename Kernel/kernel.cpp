@@ -44,8 +44,7 @@ static void KernelTaskA()
     while (1)
     {
         ++SleepCycle;
-        ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("[Task A] cycle=%u sleeping for %u ticks\n",
-                                                                    SleepCycle, TASK_A_SLEEP_TICKS);
+        ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("[Task A] cycle=%u sleeping for %u ticks\n", SleepCycle, TASK_A_SLEEP_TICKS);
         ActiveDispatcher->GetLogicLayer()->SleepProcess(KernelTaskAId, TASK_A_SLEEP_TICKS);
     }
 
@@ -66,8 +65,7 @@ static void KernelTaskB()
     while (1)
     {
         ++SleepCycle;
-        ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("[Task B] cycle=%u sleeping for %u ticks\n",
-                                                                    SleepCycle, TASK_B_SLEEP_TICKS);
+        ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("[Task B] cycle=%u sleeping for %u ticks\n", SleepCycle, TASK_B_SLEEP_TICKS);
         ActiveDispatcher->GetLogicLayer()->SleepProcess(KernelTaskBId, TASK_B_SLEEP_TICKS);
     }
 
@@ -88,8 +86,7 @@ static void KernelTaskC()
     while (1)
     {
         ++SleepCycle;
-        ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("[Task C] cycle=%u sleeping for %u ticks\n",
-                                                                    SleepCycle, TASK_C_SLEEP_TICKS);
+        ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("[Task C] cycle=%u sleeping for %u ticks\n", SleepCycle, TASK_C_SLEEP_TICKS);
         ActiveDispatcher->GetLogicLayer()->SleepProcess(KernelTaskCId, TASK_C_SLEEP_TICKS);
     }
 
@@ -110,8 +107,7 @@ static void KernelTaskD()
     while (1)
     {
         ++SleepCycle;
-        ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("[Task D] cycle=%u sleeping for %u ticks\n",
-                                                                    SleepCycle, TASK_D_SLEEP_TICKS);
+        ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("[Task D] cycle=%u sleeping for %u ticks\n", SleepCycle, TASK_D_SLEEP_TICKS);
         ActiveDispatcher->GetLogicLayer()->SleepProcess(KernelTaskDId, TASK_D_SLEEP_TICKS);
     }
 
@@ -125,16 +121,14 @@ extern "C"
     void EFIAPI KernelEntry(KernelParameters KernelArgs)
     {
         FrameBufferConsole Console;
-        Console.Initialize((uint32_t*) KernelArgs.GopMode.FrameBufferBase,
-                           KernelArgs.GopMode.Info->HorizontalResolution, KernelArgs.GopMode.Info->VerticalResolution,
+        Console.Initialize((uint32_t*) KernelArgs.GopMode.FrameBufferBase, KernelArgs.GopMode.Info->HorizontalResolution, KernelArgs.GopMode.Info->VerticalResolution,
                            KernelArgs.GopMode.Info->PixelsPerScanLine);
         Console.Clear();
         FrameBufferConsole::SetActive(&Console);
         Console.printf_("Framebuffer console Initialized\n");
 
         Console.printf_("Kernel Loaded at %p to %p\n", KERNEL_BASE, KernelArgs.KernelEndVirtual);
-        Console.printf_("Initramfs loaded at %p (%llu bytes)\n", (void*) KernelArgs.InitramfsAddress,
-                        (unsigned long long) KernelArgs.InitramfsSize);
+        Console.printf_("Initramfs loaded at %p (%llu bytes)\n", (void*) KernelArgs.InitramfsAddress, (unsigned long long) KernelArgs.InitramfsSize);
 
         // Initialize GDT and TSS
         InitGDT();
@@ -147,16 +141,14 @@ extern "C"
         InitTimer();
         Console.printf_("Timer Initialized\n");
 
-        PhysicalMemoryManager PMM(KernelArgs.MemoryMap, KernelArgs.NextPageAddress, KernelArgs.CurrentDescriptor,
-                                  KernelArgs.RemainingPagesInDescriptor);
+        PhysicalMemoryManager PMM(KernelArgs.MemoryMap, KernelArgs.NextPageAddress, KernelArgs.CurrentDescriptor, KernelArgs.RemainingPagesInDescriptor);
 
         Console.printf_("Physical Memory Manager Initialized\n");
 
         UINTN TotalUsableMemoryBytes = PMM.TotalUsableMemoryBytes();
         UINTN TotalUsableMemoryMiB   = TotalUsableMemoryBytes / (1024 * 1024);
         UINTN TotalUsableMemoryGiB   = TotalUsableMemoryMiB / 1024;
-        Console.printf_("Total usable memory: %llu bytes (%llu MiB / %llu GiB)\n",
-                        (unsigned long long) TotalUsableMemoryBytes, (unsigned long long) TotalUsableMemoryMiB,
+        Console.printf_("Total usable memory: %llu bytes (%llu MiB / %llu GiB)\n", (unsigned long long) TotalUsableMemoryBytes, (unsigned long long) TotalUsableMemoryMiB,
                         (unsigned long long) TotalUsableMemoryGiB);
 
         UINTN TotalPages = PMM.TotalPages();
@@ -187,15 +179,12 @@ extern "C"
 
         UINTN KernelHeapVirtualAddrStart = KERNEL_HEAP_START;
 
-        UINTN KernelHeapVirtualAddrEnd
-                = VMM.MapRange((UINTN) KernelHeapPhysicalAddr, KernelHeapVirtualAddrStart, KERNEL_HEAP_PAGES);
-        Console.printf_("Kernel heap mapped to virtual address range: %p - %p\n", KernelHeapVirtualAddrStart,
-                        KernelHeapVirtualAddrEnd);
+        UINTN KernelHeapVirtualAddrEnd = VMM.MapRange((UINTN) KernelHeapPhysicalAddr, KernelHeapVirtualAddrStart, KERNEL_HEAP_PAGES);
+        Console.printf_("Kernel heap mapped to virtual address range: %p - %p\n", KernelHeapVirtualAddrStart, KernelHeapVirtualAddrEnd);
 
         kmemset((void*) KernelHeapVirtualAddrStart, 0, KERNEL_HEAP_PAGES * PAGE_SIZE);
 
-        DispatcherParameters Params
-                = {&PMM, &VMM, &Console, (uint64_t) KernelHeapVirtualAddrStart, (uint64_t) KernelHeapVirtualAddrEnd, KernelArgs.InitramfsAddress, KernelArgs.InitramfsSize};
+        DispatcherParameters Params = {&PMM, &VMM, &Console, (uint64_t) KernelHeapVirtualAddrStart, (uint64_t) KernelHeapVirtualAddrEnd, KernelArgs.InitramfsAddress, KernelArgs.InitramfsSize};
         DispatcherEntry(Params);
     }
 
@@ -231,9 +220,20 @@ extern "C"
                 __asm__ __volatile__("hlt");
         }
 
-        ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_(
-                "Switching to Task A (id=%u), Task B (id=%u), Task C (id=%u), Task D (id=%u)\n", KernelTaskAId,
-                KernelTaskBId, KernelTaskCId, KernelTaskDId);
+        uint64_t InitFileSize = 0;
+        void*    InitFileData = ActiveDispatcher->GetResourceLayer()->LoadFileFromInitramfs("/init", &InitFileSize);
+        if (InitFileData == nullptr || InitFileSize == 0)
+        {
+            ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("Failed to load /init from initramfs\n");
+        }
+        else
+        {
+            ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("/init loaded from initramfs at %p (%llu bytes)\n", InitFileData, (unsigned long long) InitFileSize);
+            ActiveDispatcher->GetLogicLayer()->CreateProcess(reinterpret_cast<void (*)()>(InitFileData));
+        }
+
+        ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("Switching to Task A (id=%u), Task B (id=%u), Task C (id=%u), Task D (id=%u)\n", KernelTaskAId, KernelTaskBId, KernelTaskCId,
+                                                                    KernelTaskDId);
         ActiveDispatcher->GetLogicLayer()->EnableScheduling();
 
         while (1)

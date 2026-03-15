@@ -1,9 +1,7 @@
 #include <Console.hpp>
 #include <printf.hpp>
 
-Console::Console(EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL* ConOut, EFI_SIMPLE_TEXT_INPUT_PROTOCOL* ConIn,
-                 EFI_BOOT_SERVICES* BootServices)
-    : ConsoleOut(ConOut), ConsoleIn(ConIn), BootServices(BootServices)
+Console::Console(EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL* ConOut, EFI_SIMPLE_TEXT_INPUT_PROTOCOL* ConIn, EFI_BOOT_SERVICES* BootServices) : ConsoleOut(ConOut), ConsoleIn(ConIn), BootServices(BootServices)
 {
     Gop               = NULL;
     EFI_GUID Gop_GUID = EFI_GRAPHICS_OUTPUT_PROTOCOL_GUID;
@@ -101,8 +99,7 @@ void Console::DisplayAllGraphicsModeInfo()
     for (i = 0; i < MaxMode; i++)
     {
         Gop->QueryMode(Gop, (UINTN) i, &ModeInfoSize, &GopModeInfo);
-        printf_("Mode %d: Width x Height %ux%u\r\n", i, GopModeInfo->HorizontalResolution,
-                GopModeInfo->VerticalResolution);
+        printf_("Mode %d: Width x Height %ux%u\r\n", i, GopModeInfo->HorizontalResolution, GopModeInfo->VerticalResolution);
     }
 }
 
