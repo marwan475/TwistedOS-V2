@@ -6,6 +6,7 @@ ProcessManager::ProcessManager() : CurrentProcessId(0xFF)
     {
         Processes[index].Id           = static_cast<uint8_t>(index);
         Processes[index].Status       = PROCESS_TERMINATED;
+        Processes[index].Level        = PROCESS_LEVEL_KERNEL;
         Processes[index].StackPointer = nullptr;
         Processes[index].State        = {};
     }
@@ -54,13 +55,30 @@ Process* ProcessManager::GetProcessById(uint8_t Id)
     return &Processes[Id];
 }
 
-uint8_t ProcessManager::CreateProcess(void* StackPointer, CpuState InitialState)
+uint8_t ProcessManager::CreateKernelProcess(void* StackPointer, CpuState InitialState)
 {
     for (size_t index = 0; index < MaxProcesses; ++index)
     {
         if (Processes[index].Status == PROCESS_TERMINATED)
         {
             Processes[index].Status       = PROCESS_READY;
+            Processes[index].Level        = PROCESS_LEVEL_KERNEL;
+            Processes[index].StackPointer = StackPointer;
+            Processes[index].State        = InitialState;
+            return Processes[index].Id;
+        }
+    }
+    return 0xFF; // Indicate failure to create process
+}
+
+uint8_t ProcessManager::CreateUserProcess(void* StackPointer, CpuState InitialState)
+{
+    for (size_t index = 0; index < MaxProcesses; ++index)
+    {
+        if (Processes[index].Status == PROCESS_TERMINATED)
+        {
+            Processes[index].Status       = PROCESS_READY;
+            Processes[index].Level        = PROCESS_LEVEL_USER;
             Processes[index].StackPointer = StackPointer;
             Processes[index].State        = InitialState;
             return Processes[index].Id;

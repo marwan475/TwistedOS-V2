@@ -78,7 +78,7 @@ void LogicLayer::InitializeSynchronizationManager()
 
 uint8_t LogicLayer::CreateNullProcess()
 {
-    uint8_t Id = CreateProcess(NullProcessEntry);
+    uint8_t Id = CreateProcess(NullProcessEntry, PROCESS_LEVEL_KERNEL);
 
     Process* NullProcess = PM->GetProcessById(Id);
     NullProcess->Status  = PROCESS_RUNNING; // So RunProcess works on first schedule
@@ -86,23 +86,48 @@ uint8_t LogicLayer::CreateNullProcess()
     return Id;
 }
 
-uint8_t LogicLayer::CreateProcess(void (*EntryPoint)())
+uint8_t LogicLayer::CreateProcess(void (*EntryPoint)(), ProcessLevel Level)
 {
-    void*    ProcessStack = Resource->kmalloc(PROCESS_STACK_SIZE);
-    uint64_t StackTop     = reinterpret_cast<uint64_t>(ProcessStack) + PROCESS_STACK_SIZE;
+    uint8_t Id = 0xFF;
+    if (Level == PROCESS_LEVEL_KERNEL)
+    {
+        void*    ProcessStack = Resource->kmalloc(KERNEL_PROCESS_STACK_SIZE);
+        uint64_t StackTop     = reinterpret_cast<uint64_t>(ProcessStack) + KERNEL_PROCESS_STACK_SIZE;
 
-    CpuState State = {};
-    State.rip      = reinterpret_cast<uint64_t>(EntryPoint);
-    State.rflags   = 0x202;                    // Bit1 always set, IF enabled
-    State.rbp      = 0;                        // bottom of stack frame
-    State.rsp      = (StackTop & ~0xFULL) - 8; // SysV entry alignment without a real CALL
-    State.cs       = KERNEL_CS;
-    State.ss       = KERNEL_SS;
+        CpuState State = {};
+        State.rip      = reinterpret_cast<uint64_t>(EntryPoint);
+        State.rflags   = 0x202;                    // Bit1 always set, IF enabled
+        State.rbp      = 0;                        // bottom of stack frame
+        State.rsp      = (StackTop & ~0xFULL) - 8; // SysV entry alignment without a real CALL
 
-    *reinterpret_cast<uint64_t*>(State.rsp) = 0;
+        *reinterpret_cast<uint64_t*>(State.rsp) = 0;
 
-    uint8_t Id = PM->CreateProcess(ProcessStack, State);
-    Sched->AddToReadyQueue(Id);
+        State.cs = KERNEL_CS;
+        State.ss = KERNEL_SS;
+        Id       = PM->CreateKernelProcess(ProcessStack, State);
+    }
+    else
+    {
+        void*    ProcessStack = Resource->kmalloc(USER_PROCESS_STACK_SIZE);
+        uint64_t StackTop     = reinterpret_cast<uint64_t>(ProcessStack) + USER_PROCESS_STACK_SIZE;
+
+        CpuState State = {};
+        State.rip      = reinterpret_cast<uint64_t>(EntryPoint);
+        State.rflags   = 0x202;                    // Bit1 always set, IF enabled
+        State.rbp      = 0;                        // bottom of stack frame
+        State.rsp      = (StackTop & ~0xFULL) - 8; // SysV entry alignment without a real CALL
+
+        *reinterpret_cast<uint64_t*>(State.rsp) = 0;
+
+        State.cs = USER_CS;
+        State.ss = USER_SS;
+        Id       = PM->CreateUserProcess(ProcessStack, State);
+    }
+
+    if (Id != 0xFF)
+    {
+        Sched->AddToReadyQueue(Id);
+    }
 
     return Id;
 }

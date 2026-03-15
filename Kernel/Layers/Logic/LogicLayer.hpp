@@ -30,7 +30,7 @@ public:
     void           InitializeScheduler();
     void           InitializeSynchronizationManager();
     uint8_t        CreateNullProcess();
-    uint8_t        CreateProcess(void (*EntryPoint)());
+    uint8_t        CreateProcess(void (*EntryPoint)(), ProcessLevel Level);
     bool           RunProcess(uint8_t Id);
     void           KillProcess(uint8_t Id);
     void           SleepProcess(uint8_t Id, uint64_t WaitTicks);

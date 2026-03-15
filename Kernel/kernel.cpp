@@ -208,10 +208,10 @@ extern "C"
         ActiveDispatcher->GetLogicLayer()->CreateNullProcess();
 
         ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("Creating kernel sleep test processes\n");
-        KernelTaskAId = ActiveDispatcher->GetLogicLayer()->CreateProcess(KernelTaskA);
-        KernelTaskBId = ActiveDispatcher->GetLogicLayer()->CreateProcess(KernelTaskB);
-        KernelTaskCId = ActiveDispatcher->GetLogicLayer()->CreateProcess(KernelTaskC);
-        KernelTaskDId = ActiveDispatcher->GetLogicLayer()->CreateProcess(KernelTaskD);
+        KernelTaskAId = ActiveDispatcher->GetLogicLayer()->CreateProcess(KernelTaskA, PROCESS_LEVEL_KERNEL);
+        KernelTaskBId = ActiveDispatcher->GetLogicLayer()->CreateProcess(KernelTaskB, PROCESS_LEVEL_KERNEL);
+        KernelTaskCId = ActiveDispatcher->GetLogicLayer()->CreateProcess(KernelTaskC, PROCESS_LEVEL_KERNEL);
+        KernelTaskDId = ActiveDispatcher->GetLogicLayer()->CreateProcess(KernelTaskD, PROCESS_LEVEL_KERNEL);
 
         if (KernelTaskAId == 0xFF || KernelTaskBId == 0xFF || KernelTaskCId == 0xFF || KernelTaskDId == 0xFF)
         {
@@ -229,7 +229,7 @@ extern "C"
         else
         {
             ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("/init loaded from initramfs at %p (%llu bytes)\n", InitFileData, (unsigned long long) InitFileSize);
-            ActiveDispatcher->GetLogicLayer()->CreateProcess(reinterpret_cast<void (*)()>(InitFileData));
+            ActiveDispatcher->GetLogicLayer()->CreateProcess(reinterpret_cast<void (*)()>(InitFileData), PROCESS_LEVEL_KERNEL);
         }
 
         ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("Switching to Task A (id=%u), Task B (id=%u), Task C (id=%u), Task D (id=%u)\n", KernelTaskAId, KernelTaskBId, KernelTaskCId,
