@@ -18,7 +18,6 @@ private:
     uint64_t StackVirtualAddressStart;
     uint64_t PageMapL4TableAddr;
 
-
 public:
     VirtualAddressSpace();
     VirtualAddressSpace(uint64_t CodePhysicalAddress, uint64_t CodeSize, uint64_t CodeVirtualAddressStart, uint64_t HeapPhysicalAddress, uint64_t HeapSize, uint64_t HeapVirtualAddressStart,

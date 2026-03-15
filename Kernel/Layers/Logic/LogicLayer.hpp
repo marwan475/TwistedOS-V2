@@ -31,7 +31,7 @@ public:
     void           InitializeSynchronizationManager();
     uint8_t        CreateNullProcess();
     uint8_t        CreateKernelProcess(void (*EntryPoint)());
-    uint8_t        CreateUserProcess(void (*EntryPoint)(), VirtualAddressSpace* AddressSpace);
+    uint8_t        CreateUserProcess(uint64_t CodeAddr, uint64_t CodeSize);
     bool           RunProcess(uint8_t Id);
     void           KillProcess(uint8_t Id);
     void           SleepProcess(uint8_t Id, uint64_t WaitTicks);

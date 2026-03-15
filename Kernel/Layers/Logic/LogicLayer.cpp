@@ -111,13 +111,25 @@ uint8_t LogicLayer::CreateKernelProcess(void (*EntryPoint)())
     return Id;
 }
 
-uint8_t LogicLayer::CreateUserProcess(void (*EntryPoint)(), VirtualAddressSpace* AddressSpace)
+uint8_t LogicLayer::CreateUserProcess(uint64_t CodeAddr, uint64_t CodeSize)
 {
-    void*    ProcessStack = Resource->kmalloc(USER_PROCESS_STACK_SIZE);
-    uint64_t StackTop     = reinterpret_cast<uint64_t>(ProcessStack) + USER_PROCESS_STACK_SIZE;
+    (void) CodeSize;
+
+    void* ProcessStack = Resource->GetPMM()->AllocatePagesFromDescriptor(USER_PROCESS_STACK_SIZE / PAGE_SIZE);
+    void* ProcessHeap  = Resource->GetPMM()->AllocatePagesFromDescriptor(USER_PROCESS_HEAP_SIZE / PAGE_SIZE);
+
+    uint64_t ProcessHeapVirtualAddrStart = USER_PROCESS_VIRTUAL_BASE + CodeSize;
+    uint64_t ProcessStackVirtualAddrStart = USER_PROCESS_VIRTUAL_STACK_TOP - USER_PROCESS_STACK_SIZE + 1;
+
+    VirtualAddressSpace* AddressSpace = new VirtualAddressSpace(CodeAddr, CodeSize, USER_PROCESS_VIRTUAL_BASE, reinterpret_cast<uint64_t>(ProcessHeap), USER_PROCESS_HEAP_SIZE, ProcessHeapVirtualAddrStart,
+                                                                reinterpret_cast<uint64_t>(ProcessStack), USER_PROCESS_STACK_SIZE, ProcessStackVirtualAddrStart);
+
+    AddressSpace->Init(reinterpret_cast<uint64_t>(Resource->GetVMM()->CopyPageMapL4Table()), *Resource->GetPMM());
+
+    uint64_t StackTop = USER_PROCESS_VIRTUAL_STACK_TOP;
 
     CpuState State = {};
-    State.rip      = reinterpret_cast<uint64_t>(EntryPoint);
+    State.rip      = CodeAddr;
     State.rflags   = 0x202;                    // Bit1 always set, IF enabled
     State.rbp      = 0;                        // bottom of stack frame
     State.rsp      = (StackTop & ~0xFULL) - 8; // SysV entry alignment without a real CALL
