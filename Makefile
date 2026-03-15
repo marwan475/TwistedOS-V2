@@ -62,6 +62,7 @@ IMG = $(OUTPUT)
 DRIVE = TwistedDrive.img
 ROOTFS_DIR = initramfs/rootfs
 INIT_SRC = initramfs/init.asm
+INIT_LD = initramfs/init.ld
 INIT_OBJ = $(BUILD)initramfs_init.o
 INIT_ELF = $(BUILD)initramfs_init.elf
 INIT_BIN = $(ROOTFS_DIR)/init
@@ -131,9 +132,9 @@ $(KERNEL): Kernel/kernel.cpp Kernel/Layers/Dispatcher.cpp Kernel/Layers/Resource
 	objcopy -O binary --set-section-flags .bss=alloc,load,contents $(BUILD)kernel.elf $(BIN)$@
 
 
-$(INIT_BIN): $(INIT_SRC) | build
+$(INIT_BIN): $(INIT_SRC) $(INIT_LD) | build
 	$(KERNEL_AS) -f elf64 $(INIT_SRC) -o $(INIT_OBJ)
-	$(KERNEL_LD) -nostdlib -static -e _start $(INIT_OBJ) -o $(INIT_ELF)
+	$(KERNEL_LD) -nostdlib -static -T $(INIT_LD) $(INIT_OBJ) -o $(INIT_ELF)
 	objcopy -O binary $(INIT_ELF) $(INIT_BIN)
 
 $(INITRAMFS): $(INIT_BIN)

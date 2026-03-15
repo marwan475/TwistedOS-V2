@@ -67,15 +67,20 @@ uint64_t VirtualAddressSpace::GetStackVirtualAddressStart() const
 
 bool VirtualAddressSpace::Init(uint64_t PageMapL4TableAddr, PhysicalMemoryManager& PMM)
 {
+    if (PageMapL4TableAddr == 0)
+    {
+        return false;
+    }
+
     VirtualMemoryManager VMM(PageMapL4TableAddr, PMM);
 
     uint64_t CodePages  = (CodeSize + PAGE_SIZE - 1) / PAGE_SIZE;
     uint64_t HeapPages  = (HeapSize + PAGE_SIZE - 1) / PAGE_SIZE;
     uint64_t StackPages = (StackSize + PAGE_SIZE - 1) / PAGE_SIZE;
 
-    VMM.MapRange(CodePhysicalAddress, CodeVirtualAddressStart, CodePages);
-    VMM.MapRange(HeapPhysicalAddress, HeapVirtualAddressStart, HeapPages);
-    VMM.MapRange(StackPhysicalAddress, StackVirtualAddressStart, StackPages);
+    VMM.MapRange(CodePhysicalAddress, CodeVirtualAddressStart, CodePages, true);
+    VMM.MapRange(HeapPhysicalAddress, HeapVirtualAddressStart, HeapPages, true);
+    VMM.MapRange(StackPhysicalAddress, StackVirtualAddressStart, StackPages, true);
 
     this->PageMapL4TableAddr = PageMapL4TableAddr;
 

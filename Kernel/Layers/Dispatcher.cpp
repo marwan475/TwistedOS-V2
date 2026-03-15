@@ -74,6 +74,11 @@ void Dispatcher::InterruptHandler(uint64_t InterruptNumber)
             }
         }
         break;
+        case 128:
+        {
+            Resource.GetConsole()->printf_("User syscall interrupt received (int 0x80)\n");
+        }
+        break;
         default:
             Resource.GetConsole()->printf_("Unhandled interrupt: %lu\n", InterruptNumber);
             while (1)

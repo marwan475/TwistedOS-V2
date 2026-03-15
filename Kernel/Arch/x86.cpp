@@ -8,6 +8,7 @@ DiscriptorRegister KernelGDTR = {};
 
 static IDTentry       IDT[256]      = {};
 static IDTdescription IDTDescriptor = {sizeof(IDT) - 1, IDT};
+static uint8_t        KernelInterruptStack[16384] __attribute__((aligned(16))) = {};
 
 static inline void LoadIDT(const IDTdescription* idt_descriptor)
 {
@@ -71,6 +72,8 @@ static void ISR_init()
         SetIDTEntry(interrupt, ISRHandlers[interrupt], GDT_CODE_SEGMENT, IDT_DEFAULT_GATE_FLAGS);
         EnableIDTEntry(interrupt);
     }
+
+    SetIDTEntry(0x80, ISRHandlers[0x80], GDT_CODE_SEGMENT, IDT_FLAG_PRESENT | IDT_FLAG_RING3 | IDT_FLAG_GATE_32BIT_INT);
 }
 
 void InitTimer()
@@ -108,18 +111,32 @@ extern "C" void ISRHANDLER(Registers* reg)
 {
     if (reg->interrupt_number < 32)
     {
-        // panic
+        if (reg->interrupt_number == 14)
+        {
+            uint64_t FaultAddress = 0;
+            __asm__ __volatile__("mov %%cr2, %0" : "=r"(FaultAddress));
+
+            FrameBufferConsole* ActiveConsole = FrameBufferConsole::GetActive();
+            if (ActiveConsole != nullptr)
+            {
+                ActiveConsole->printf_("Page fault: cr2=%p rip=%p err=%p cs=%p rsp=%p\n", (void*) FaultAddress, (void*) reg->rip, (void*) reg->error_code, (void*) reg->cs, (void*) reg->rsp);
+            }
+
+            while (1)
+            {
+                __asm__ __volatile__("hlt");
+            }
+        }
     }
     else
     {
-        if (reg->interrupt_number >= 32 && reg->interrupt_number < 42)
+        if (reg->interrupt_number >= 32 && reg->interrupt_number <= 47)
         {
-        }
-
-        outb(PIC1_COMMAND_PORT, 0x20); // Send End of Interrupt (EOI) signal to master PIC
-        if (reg->interrupt_number >= 40)
-        {
-            outb(PIC2_COMMAND_PORT, 0x20); // Send End of Interrupt (EOI) signal to slave PIC
+            outb(PIC1_COMMAND_PORT, 0x20); // Send End of Interrupt (EOI) signal to master PIC
+            if (reg->interrupt_number >= 40)
+            {
+                outb(PIC2_COMMAND_PORT, 0x20); // Send End of Interrupt (EOI) signal to slave PIC
+            }
         }
     }
 
@@ -179,6 +196,11 @@ GDT BuildGDT(const TSSDescriptor& tss_descriptor)
 
 void InitGDT()
 {
+    uint64_t KernelInterruptStackTop = reinterpret_cast<uint64_t>(&KernelInterruptStack[sizeof(KernelInterruptStack)]);
+    KernelInterruptStackTop          = (KernelInterruptStackTop & ~0xFULL) - 8;
+
+    KernelTSS.RSP0_lower = static_cast<uint32_t>(KernelInterruptStackTop & 0xFFFFFFFF);
+    KernelTSS.RSP0_upper = static_cast<uint32_t>((KernelInterruptStackTop >> 32) & 0xFFFFFFFF);
     KernelTSS.io_map_base = sizeof(TSS); // No IO bitmap, so set base to end of TSS
 
     TSSDescriptor tss_descriptor = BuildTSSDescriptor(&KernelTSS);

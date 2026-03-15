@@ -2,6 +2,8 @@
 
 #include "Layers/Resource/ResourceLayer.hpp"
 
+#include <CommonUtils.hpp>
+
 namespace
 {
 void NullProcessEntry()
@@ -113,28 +115,61 @@ uint8_t LogicLayer::CreateKernelProcess(void (*EntryPoint)())
 
 uint8_t LogicLayer::CreateUserProcess(uint64_t CodeAddr, uint64_t CodeSize)
 {
-    (void) CodeSize;
+    if (CodeAddr == 0 || CodeSize == 0)
+    {
+        return 0xFF;
+    }
+
+    uint64_t CodeOffset = CodeAddr & (PAGE_SIZE - 1);
+    uint64_t CodeBytes  = CodeSize + CodeOffset;
+    uint64_t CodePages  = (CodeBytes + PAGE_SIZE - 1) / PAGE_SIZE;
+
+    void* ProcessCode = Resource->GetPMM()->AllocatePagesFromDescriptor(CodePages);
+    if (ProcessCode == nullptr)
+    {
+        return 0xFF;
+    }
+
+    kmemset(ProcessCode, 0, CodePages * PAGE_SIZE);
+    memcpy(reinterpret_cast<uint8_t*>(ProcessCode) + CodeOffset, reinterpret_cast<const void*>(CodeAddr), CodeSize);
 
     void* ProcessStack = Resource->GetPMM()->AllocatePagesFromDescriptor(USER_PROCESS_STACK_SIZE / PAGE_SIZE);
     void* ProcessHeap  = Resource->GetPMM()->AllocatePagesFromDescriptor(USER_PROCESS_HEAP_SIZE / PAGE_SIZE);
+    if (ProcessStack == nullptr || ProcessHeap == nullptr)
+    {
+        return 0xFF;
+    }
 
-    uint64_t ProcessHeapVirtualAddrStart = USER_PROCESS_VIRTUAL_BASE + CodeSize;
-    uint64_t ProcessStackVirtualAddrStart = USER_PROCESS_VIRTUAL_STACK_TOP - USER_PROCESS_STACK_SIZE + 1;
+    uint64_t ProcessHeapVirtualAddrStart  = USER_PROCESS_VIRTUAL_BASE + (CodePages * PAGE_SIZE);
+    uint64_t ProcessStackVirtualAddrStart = (USER_PROCESS_VIRTUAL_STACK_TOP + 1) - USER_PROCESS_STACK_SIZE;
 
-    VirtualAddressSpace* AddressSpace = new VirtualAddressSpace(CodeAddr, CodeSize, USER_PROCESS_VIRTUAL_BASE, reinterpret_cast<uint64_t>(ProcessHeap), USER_PROCESS_HEAP_SIZE, ProcessHeapVirtualAddrStart,
+    VirtualAddressSpace* AddressSpace = new VirtualAddressSpace(reinterpret_cast<uint64_t>(ProcessCode), CodeBytes, USER_PROCESS_VIRTUAL_BASE, reinterpret_cast<uint64_t>(ProcessHeap), USER_PROCESS_HEAP_SIZE,
+                                                                ProcessHeapVirtualAddrStart,
                                                                 reinterpret_cast<uint64_t>(ProcessStack), USER_PROCESS_STACK_SIZE, ProcessStackVirtualAddrStart);
 
-    AddressSpace->Init(reinterpret_cast<uint64_t>(Resource->GetVMM()->CopyPageMapL4Table()), *Resource->GetPMM());
+    if (AddressSpace == nullptr)
+    {
+        return 0xFF;
+    }
+
+    uint64_t ProcessPageMapL4TableAddr = reinterpret_cast<uint64_t>(Resource->GetVMM()->CopyPageMapL4Table());
+    if (ProcessPageMapL4TableAddr == 0)
+    {
+        return 0xFF;
+    }
+
+    if (!AddressSpace->Init(ProcessPageMapL4TableAddr, *Resource->GetPMM()))
+    {
+        return 0xFF;
+    }
 
     uint64_t StackTop = USER_PROCESS_VIRTUAL_STACK_TOP;
 
     CpuState State = {};
-    State.rip      = CodeAddr;
+    State.rip      = USER_PROCESS_VIRTUAL_BASE + CodeOffset;
     State.rflags   = 0x202;                    // Bit1 always set, IF enabled
     State.rbp      = 0;                        // bottom of stack frame
     State.rsp      = (StackTop & ~0xFULL) - 8; // SysV entry alignment without a real CALL
-
-    *reinterpret_cast<uint64_t*>(State.rsp) = 0;
 
     State.cs   = USER_CS;
     State.ss   = USER_SS;
