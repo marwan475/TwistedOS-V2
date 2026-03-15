@@ -120,18 +120,8 @@ uint8_t LogicLayer::CreateUserProcess(uint64_t CodeAddr, uint64_t CodeSize)
         return 0xFF;
     }
 
-    uint64_t CodeOffset = CodeAddr & (PAGE_SIZE - 1);
-    uint64_t CodeBytes  = CodeSize + CodeOffset;
-    uint64_t CodePages  = (CodeBytes + PAGE_SIZE - 1) / PAGE_SIZE;
-
-    void* ProcessCode = Resource->GetPMM()->AllocatePagesFromDescriptor(CodePages);
-    if (ProcessCode == nullptr)
-    {
-        return 0xFF;
-    }
-
-    kmemset(ProcessCode, 0, CodePages * PAGE_SIZE);
-    memcpy(reinterpret_cast<uint8_t*>(ProcessCode) + CodeOffset, reinterpret_cast<const void*>(CodeAddr), CodeSize);
+    // CodeAddr is a page-aligned physical address (from PMM) with CodeSize bytes copied in
+    uint64_t CodePages = (CodeSize + PAGE_SIZE - 1) / PAGE_SIZE;
 
     void* ProcessStack = Resource->GetPMM()->AllocatePagesFromDescriptor(USER_PROCESS_STACK_SIZE / PAGE_SIZE);
     void* ProcessHeap  = Resource->GetPMM()->AllocatePagesFromDescriptor(USER_PROCESS_HEAP_SIZE / PAGE_SIZE);
@@ -143,7 +133,7 @@ uint8_t LogicLayer::CreateUserProcess(uint64_t CodeAddr, uint64_t CodeSize)
     uint64_t ProcessHeapVirtualAddrStart  = USER_PROCESS_VIRTUAL_BASE + (CodePages * PAGE_SIZE);
     uint64_t ProcessStackVirtualAddrStart = (USER_PROCESS_VIRTUAL_STACK_TOP + 1) - USER_PROCESS_STACK_SIZE;
 
-    VirtualAddressSpace* AddressSpace = new VirtualAddressSpace(reinterpret_cast<uint64_t>(ProcessCode), CodeBytes, USER_PROCESS_VIRTUAL_BASE, reinterpret_cast<uint64_t>(ProcessHeap), USER_PROCESS_HEAP_SIZE,
+    VirtualAddressSpace* AddressSpace = new VirtualAddressSpace(CodeAddr, CodeSize, USER_PROCESS_VIRTUAL_BASE, reinterpret_cast<uint64_t>(ProcessHeap), USER_PROCESS_HEAP_SIZE,
                                                                 ProcessHeapVirtualAddrStart,
                                                                 reinterpret_cast<uint64_t>(ProcessStack), USER_PROCESS_STACK_SIZE, ProcessStackVirtualAddrStart);
 
@@ -166,7 +156,7 @@ uint8_t LogicLayer::CreateUserProcess(uint64_t CodeAddr, uint64_t CodeSize)
     uint64_t StackTop = USER_PROCESS_VIRTUAL_STACK_TOP;
 
     CpuState State = {};
-    State.rip      = USER_PROCESS_VIRTUAL_BASE + CodeOffset;
+    State.rip      = USER_PROCESS_VIRTUAL_BASE;
     State.rflags   = 0x202;                    // Bit1 always set, IF enabled
     State.rbp      = 0;                        // bottom of stack frame
     State.rsp      = (StackTop & ~0xFULL) - 8; // SysV entry alignment without a real CALL
@@ -185,11 +175,50 @@ uint8_t LogicLayer::CreateUserProcess(uint64_t CodeAddr, uint64_t CodeSize)
 
 void LogicLayer::KillProcess(uint8_t Id)
 {
-    void* StackToFree = PM->KillProcess(Id);
-    if (StackToFree != nullptr)
+    Process* TargetProcess = PM->GetProcessById(Id);
+
+    if (TargetProcess != nullptr && TargetProcess->Level == PROCESS_LEVEL_USER && TargetProcess->AddressSpace != nullptr)
     {
-        Resource->kfree(StackToFree);
+        VirtualAddressSpace* AddressSpace = TargetProcess->AddressSpace;
+
+        uint64_t CodePhysAddr = AddressSpace->GetCodePhysicalAddress();
+        uint64_t CodeSize     = AddressSpace->GetCodeSize();
+        uint64_t HeapPhysAddr = AddressSpace->GetHeapPhysicalAddress();
+        uint64_t HeapSize     = AddressSpace->GetHeapSize();
+        uint64_t StackPhysAddr = AddressSpace->GetStackPhysicalAddress();
+        uint64_t StackSize    = AddressSpace->GetStackSize();
+
+        PM->KillProcess(Id);
+
+        PhysicalMemoryManager* PMM = Resource->GetPMM();
+
+        if (CodePhysAddr != 0 && CodeSize != 0)
+        {
+            PMM->FreePagesFromDescriptor(reinterpret_cast<void*>(CodePhysAddr), (CodeSize + PAGE_SIZE - 1) / PAGE_SIZE);
+        }
+
+        if (HeapPhysAddr != 0 && HeapSize != 0)
+        {
+            PMM->FreePagesFromDescriptor(reinterpret_cast<void*>(HeapPhysAddr), HeapSize / PAGE_SIZE);
+        }
+
+        if (StackPhysAddr != 0 && StackSize != 0)
+        {
+            PMM->FreePagesFromDescriptor(reinterpret_cast<void*>(StackPhysAddr), StackSize / PAGE_SIZE);
+        }
+
+        delete AddressSpace;
+        TargetProcess->AddressSpace = nullptr;
     }
+    else
+    {
+        void* StackToFree = PM->KillProcess(Id);
+        if (StackToFree != nullptr)
+        {
+            Resource->kfree(StackToFree);
+        }
+    }
+
     Sched->RemoveFromReadyQueue(Id);
 }
 

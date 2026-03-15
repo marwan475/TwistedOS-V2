@@ -3,6 +3,7 @@
 #include "VirtualAddressSpace.hpp"
 
 #include <CommonUtils.hpp>
+#include <Memory/PhysicalMemoryManager.hpp>
 
 extern "C" void ResourceLayerTaskSwitchKernelAsm(CpuState* OldState, const CpuState* NewState);
 extern "C" void ResourceLayerTaskSwitchUserAsm(CpuState* OldState, const CpuState* NewState, uint64_t PageMapL4TableAddr);
@@ -71,7 +72,7 @@ void ResourceLayer::kfree(void* Ptr)
     KHM.kfree(Ptr);
 }
 
-// Loads file from initramfs into kernel heap
+// Loads file from initramfs into PMM-allocated physical pages
 void* ResourceLayer::LoadFileFromInitramfs(const char* Path, uint64_t* Size)
 {
     if (Path == nullptr || Size == nullptr)
@@ -86,12 +87,15 @@ void* ResourceLayer::LoadFileFromInitramfs(const char* Path, uint64_t* Size)
         return nullptr;
     }
 
-    void* AllocatedData = kmalloc(*Size);
+    UINTN Pages = (*Size + PAGE_SIZE - 1) / PAGE_SIZE;
+
+    void* AllocatedData = PMM->AllocatePagesFromDescriptor(Pages);
     if (AllocatedData == nullptr)
     {
         return nullptr;
     }
 
+    kmemset(AllocatedData, 0, Pages * PAGE_SIZE);
     memcpy(AllocatedData, Data, *Size);
 
     return AllocatedData;
