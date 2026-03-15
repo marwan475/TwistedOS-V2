@@ -17,6 +17,8 @@ struct DispatcherParameters
     FrameBufferConsole*    Console;
     uint64_t               KernelHeapVirtualAddrStart;
     uint64_t               KernelHeapVirtualAddrEnd;
+    uint64_t               InitramfsAddress;
+    uint64_t               InitramfsSize;
 };
 
 class Dispatcher

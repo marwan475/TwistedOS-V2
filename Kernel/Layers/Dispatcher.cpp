@@ -22,8 +22,9 @@ Dispatcher* Dispatcher::GetActive()
 void Dispatcher::InitResourceLayer(const DispatcherParameters& Params)
 {
     Resource.Initialize(Params.PMM, Params.VMM, Params.Console, Params.KernelHeapVirtualAddrStart,
-                        Params.KernelHeapVirtualAddrEnd);
+                        Params.KernelHeapVirtualAddrEnd, Params.InitramfsAddress, Params.InitramfsSize);
     Resource.InitializeKernelHeapManager();
+    Resource.InitializeRamFileSystemManager();
     KernelUseDispatcherAllocator();
 }
 

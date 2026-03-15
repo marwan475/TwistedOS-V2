@@ -45,7 +45,12 @@ Developed
 
 
 Build Dependencies:
-- base-devel mingw-w64-gcc mingw-w64-crt mingw-w64-headers mtools dosfstools parted qemu-full clang llvm gnu-efi nasm gdb
+- base-devel mingw-w64-gcc mingw-w64-crt mingw-w64-headers mtools dosfstools parted qemu-full clang llvm gnu-efi nasm gdb cpio
+
+Initramfs:
+- Root filesystem source is in `initramfs/rootfs/`
+- `make` builds `bin/initramfs.cpio` and places it in the EFI image as `/initramfs.cpio`
+- Bootloader loads `kernel.bin` and `initramfs.cpio` and passes initramfs address/size to the kernel
 
 GDB Helpers:
 - `make debug` now loads `scripts/twistedos_gdb.py` automatically.

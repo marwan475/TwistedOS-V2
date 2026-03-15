@@ -85,47 +85,96 @@ void PrintMemoryMap(MemoryMapInfo MemoryMap, Console* efiConsole)
                         usable_bytes / (1024 * 1024 * 1024));
 }
 
-EFI_STATUS FileSystem::SetupForKernel(EFI_FILE_PROTOCOL* Dir, EFI_FILE_INFO FileInfo)
+EFI_STATUS FileSystem::LoadFileToMemory(EFI_FILE_PROTOCOL* Dir, CHAR16* Path, EFI_MEMORY_TYPE MemoryType, void** Buffer,
+                                        UINTN* BufferSize)
+{
+    EFI_STATUS         status;
+    EFI_FILE_PROTOCOL* File;
+    status = Dir->Open(Dir, &File, Path, EFI_FILE_MODE_READ, 0);
+
+    if (EFI_ERROR(status))
+    {
+        efiConsole->printf_("Failed to open file\r\n");
+        return status;
+    }
+
+    EFI_GUID      FileInfoGuid = EFI_FILE_INFO_ID;
+    EFI_FILE_INFO FileInfo;
+    UINTN         FileInfoSize = sizeof(FileInfo);
+    status                     = File->GetInfo(File, &FileInfoGuid, &FileInfoSize, &FileInfo);
+
+    if (EFI_ERROR(status))
+    {
+        efiConsole->printf_("Failed to get file info\r\n");
+        File->Close(File);
+        return status;
+    }
+
+    UINTN                FileSize       = FileInfo.FileSize;
+    UINTN                FilePages      = (FileSize + PAGE_SIZE - 1) / PAGE_SIZE;
+    UINTN                FileAllocSize  = FilePages * PAGE_SIZE;
+    EFI_PHYSICAL_ADDRESS FileBufferAddr = 0;
+    void*                FileBuffer     = NULL;
+
+    status     = BootServices->AllocatePages(AllocateAnyPages, MemoryType, FilePages, &FileBufferAddr);
+    FileBuffer = (void*) FileBufferAddr;
+
+    if (EFI_ERROR(status))
+    {
+        efiConsole->printf_("Failed to allocate file buffer\r\n");
+        File->Close(File);
+        return status;
+    }
+
+    kmemset(FileBuffer, 0, FileAllocSize);
+
+    UINTN ReadSize = FileSize;
+
+    status = File->Read(File, &ReadSize, FileBuffer);
+
+    File->Close(File);
+
+    if (EFI_ERROR(status))
+    {
+        efiConsole->printf_("Failed to read file\r\n");
+        return status;
+    }
+
+    *Buffer     = FileBuffer;
+    *BufferSize = FileSize;
+
+    return EFI_SUCCESS;
+}
+
+EFI_STATUS FileSystem::SetupForKernel(EFI_FILE_PROTOCOL* Dir)
 {
     EFI_STATUS status;
 
-    EFI_FILE_PROTOCOL* KernelFile;
-    status = Dir->Open(Dir, &KernelFile, FileInfo.FileName, EFI_FILE_MODE_READ, 0);
+    void* KernelBuffer = NULL;
+    UINTN KernelSize   = 0;
+
+    status = LoadFileToMemory(Dir, (CHAR16*) u"kernel.bin", EfiLoaderCode, &KernelBuffer, &KernelSize);
 
     if (EFI_ERROR(status))
     {
-        efiConsole->printf_("Failed to open kernel file\r\n");
-        return status;
-    }
-
-    UINTN                KernelSize       = FileInfo.FileSize;
-    UINTN                KernelPages      = (KernelSize + PAGE_SIZE - 1) / PAGE_SIZE;
-    UINTN                KernelAllocSize  = KernelPages * PAGE_SIZE;
-    EFI_PHYSICAL_ADDRESS KernelBufferAddr = 0;
-    void*                KernelBuffer     = NULL;
-
-    status       = BootServices->AllocatePages(AllocateAnyPages, EfiLoaderCode, KernelPages, &KernelBufferAddr);
-    KernelBuffer = (void*) KernelBufferAddr;
-
-    if (EFI_ERROR(status))
-    {
-        efiConsole->printf_("Failed to allocate kernel buffer\r\n");
-        return status;
-    }
-
-    kmemset(KernelBuffer, 0, KernelAllocSize);
-
-    UINTN ReadSize = KernelSize;
-
-    status = KernelFile->Read(KernelFile, &ReadSize, KernelBuffer);
-
-    if (EFI_ERROR(status))
-    {
-        efiConsole->printf_("Failed to read kernel\r\n");
+        efiConsole->printf_("Failed to load kernel.bin\r\n");
         return status;
     }
 
     efiConsole->printf_("Kernel loaded at %p\r\n", KernelBuffer);
+
+    void* InitramfsBuffer = NULL;
+    UINTN InitramfsSize   = 0;
+
+    status = LoadFileToMemory(Dir, (CHAR16*) u"initramfs.cpio", EfiLoaderData, &InitramfsBuffer, &InitramfsSize);
+
+    if (EFI_ERROR(status))
+    {
+        efiConsole->printf_("Failed to load initramfs.cpio\r\n");
+        return status;
+    }
+
+    efiConsole->printf_("Initramfs loaded at %p (%u bytes)\r\n", InitramfsBuffer, InitramfsSize);
 
     // Get memory map
     MemoryMapInfo MemoryMap = {0};
@@ -135,6 +184,8 @@ EFI_STATUS FileSystem::SetupForKernel(EFI_FILE_PROTOCOL* Dir, EFI_FILE_INFO File
     KernelParameters KernelArgs = {0};
     KernelArgs.GopMode          = efiConsole->GetGopMode();
     KernelArgs.MemoryMap        = MemoryMap;
+    KernelArgs.InitramfsAddress = (UINTN) InitramfsBuffer;
+    KernelArgs.InitramfsSize    = InitramfsSize;
 
     status = BootServices->ExitBootServices(ImageHandle, MemoryMap.MapKey);
 
@@ -152,7 +203,7 @@ EFI_STATUS FileSystem::SetupForKernel(EFI_FILE_PROTOCOL* Dir, EFI_FILE_INFO File
     MemoryMgr.IdentityMapRange(KernelArgs.GopMode.FrameBufferBase, KernelArgs.GopMode.FrameBufferSize);
 
     UINTN kernel_virtual_addr = KERNEL_BASE_VIRTUAL_ADDR;
-    UINTN kernel_end_virtual  = MemoryMgr.MapKernelToHigherHalf((UINTN) KernelBuffer, KernelAllocSize);
+    UINTN kernel_end_virtual  = MemoryMgr.MapKernelToHigherHalf((UINTN) KernelBuffer, KernelSize);
 
     KernelArgs.KernelEndVirtual = kernel_end_virtual;
     KernelArgs.PageMapL4Table   = MemoryMgr.GetPageMapL4Table();
@@ -173,44 +224,6 @@ EFI_STATUS FileSystem::SetupForKernel(EFI_FILE_PROTOCOL* Dir, EFI_FILE_INFO File
     void EFIAPI (*EntryPoint)(KernelParameters) = (void EFIAPI (*)(KernelParameters)) kernel_virtual_addr;
 
     EntryPoint(KernelArgs);
-
-    return status;
-}
-
-EFI_STATUS FileSystem::SetDirectoryPosition(EFI_FILE_PROTOCOL* Dir, EFI_FILE_PROTOCOL** NewDir, int index)
-{
-    EFI_STATUS status;
-
-    Dir->SetPosition(Dir, 0);
-    int           NumEntries = 0;
-    EFI_FILE_INFO FileInfo;
-    UINTN         BuffSize;
-    do
-    {
-        BuffSize = sizeof(FileInfo);
-        Dir->Read(Dir, &BuffSize, &FileInfo);
-        NumEntries++;
-    } while (NumEntries < index);
-
-    if (FileInfo.Attribute & EFI_FILE_DIRECTORY)
-    {
-        status = Dir->Open(Dir, NewDir, FileInfo.FileName, EFI_FILE_MODE_READ, 0);
-
-        if (EFI_ERROR(status))
-        {
-            efiConsole->printf_("Failed to Open Dir\r\n");
-            return status;
-        }
-
-        OutputDirectoryInfo(*NewDir);
-    }
-    else
-    {
-        // Dirty Method Cause we know where the Kernel is in the filesystem
-        // Better way would be to dynamical search for it
-        // Basicly if not Dir then treat it as the kernel
-        status = SetupForKernel(Dir, FileInfo);
-    }
 
     return status;
 }
@@ -254,16 +267,6 @@ EFI_STATUS FileSystem::LoadKernel()
     }
 
     OutputDirectoryInfo(Root);
-    EFI_FILE_PROTOCOL* Dir = Root;
-    EFI_FILE_PROTOCOL* NewDir;
 
-    // Dirty Method Cause we know where the index of the Kernel in the filesystem
-    // Better way would be to dynamical search for it
-    // char key = efiConsole->GetKeyOnEvent();
-    char key  = '1';
-    int  ikey = (key - '0') + 1; // offset for somereason
-
-    SetDirectoryPosition(Dir, &NewDir, ikey);
-
-    return status;
+    return SetupForKernel(Root);
 }

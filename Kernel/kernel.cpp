@@ -133,6 +133,8 @@ extern "C"
         Console.printf_("Framebuffer console Initialized\n");
 
         Console.printf_("Kernel Loaded at %p to %p\n", KERNEL_BASE, KernelArgs.KernelEndVirtual);
+        Console.printf_("Initramfs loaded at %p (%llu bytes)\n", (void*) KernelArgs.InitramfsAddress,
+                        (unsigned long long) KernelArgs.InitramfsSize);
 
         // Initialize GDT and TSS
         InitGDT();
@@ -193,7 +195,7 @@ extern "C"
         kmemset((void*) KernelHeapVirtualAddrStart, 0, KERNEL_HEAP_PAGES * PAGE_SIZE);
 
         DispatcherParameters Params
-                = {&PMM, &VMM, &Console, (uint64_t) KernelHeapVirtualAddrStart, (uint64_t) KernelHeapVirtualAddrEnd};
+                = {&PMM, &VMM, &Console, (uint64_t) KernelHeapVirtualAddrStart, (uint64_t) KernelHeapVirtualAddrEnd, KernelArgs.InitramfsAddress, KernelArgs.InitramfsSize};
         DispatcherEntry(Params);
     }
 

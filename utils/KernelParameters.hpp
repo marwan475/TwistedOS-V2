@@ -15,6 +15,8 @@ typedef struct
 {
     MemoryMapInfo                     MemoryMap;
     EFI_GRAPHICS_OUTPUT_PROTOCOL_MODE GopMode;
+    UINTN                             InitramfsAddress;
+    UINTN                             InitramfsSize;
     UINTN                             KernelEndVirtual;
     UINTN                             PageMapL4Table;
     UINTN                             NextPageAddress;
