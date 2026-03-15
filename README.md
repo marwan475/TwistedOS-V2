@@ -47,6 +47,17 @@ Developed
 Build Dependencies:
 - base-devel mingw-w64-gcc mingw-w64-crt mingw-w64-headers mtools dosfstools parted qemu-full clang llvm gnu-efi nasm gdb
 
+GDB Helpers:
+- `make debug` now loads `scripts/twistedos_gdb.py` automatically.
+- `make debug` launches GDB in TUI mode.
+- Available commands:
+    - `twistedos-help`
+    - `twistedos-processes`
+    - `twistedos-ready-queue`
+    - `twistedos-sleep-queue`
+- These commands resolve the active kernel objects through `Dispatcher::ActiveDispatcher` by default.
+- Each command also accepts an optional explicit expression if you want to inspect a non-default instance.
+
 Resources:
 - https://uefi.org/sites/default/files/resources/UEFI_Spec_2_10_Aug29.pdf
 - https://wiki.osdev.org/UEFI

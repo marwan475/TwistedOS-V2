@@ -6,6 +6,7 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 port="${QEMU_GDB_PORT:-1234}"
 bootloader_efi="${repo_root}/bin/BOOTX64.EFI"
 kernel_elf="${repo_root}/build/kernel.elf"
+gdb_extension="${repo_root}/scripts/twistedos_gdb.py"
 qemu_log="${repo_root}/build/qemu-debug-launch.log"
 serial_log="${repo_root}/build/qemu-debug-serial.log"
 gdb_cmds="${repo_root}/build/gdb-debug-init.gdb"
@@ -108,6 +109,11 @@ if [[ ! -f "${kernel_elf}" ]]; then
     exit 1
 fi
 
+if [[ ! -f "${gdb_extension}" ]]; then
+    echo "GDB extension not found at ${gdb_extension}" >&2
+    exit 1
+fi
+
 bootloader_text_vma="${BOOTLOADER_TEXT_VMA:-}"
 if [[ -z "${bootloader_text_vma}" ]]; then
     bootloader_text_vma="$(detect_bootloader_text_vma || true)"
@@ -133,14 +139,16 @@ target remote localhost:${port}
 
 symbol-file ${kernel_elf}
 add-symbol-file ${bootloader_efi} ${bootloader_text_vma}
+source ${gdb_extension}
 
 hbreak efi_main
 hbreak FileSystem::SetupForKernel
 hbreak KernelEntry
 
 echo Connected. Use 'continue' to reach efi_main, then continue into kernel.\\n
+echo Run 'twistedos-help' to inspect kernel scheduler state.\\n
 EOF
 
-echo "Launching GDB with symbols from ${bootloader_efi} and ${kernel_elf}"
+echo "Launching GDB (TUI mode) with symbols from ${bootloader_efi} and ${kernel_elf}"
 echo "Bootloader .text assumed at ${bootloader_text_vma}"
-"${GDB:-gdb}" -x "${gdb_cmds}"
+"${GDB:-gdb}" -tui -x "${gdb_cmds}"
