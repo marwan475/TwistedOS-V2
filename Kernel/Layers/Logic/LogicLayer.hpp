@@ -35,6 +35,8 @@ public:
     void           KillProcess(uint8_t Id);
     void           SleepProcess(uint8_t Id, uint64_t WaitTicks);
     void           WakeProcess(uint8_t Id);
+    void           BlockProcess(uint8_t Id);
+    void           UnblockProcess(uint8_t Id);
     void           Tick();
     void           Schedule();
     bool           isScheduling();

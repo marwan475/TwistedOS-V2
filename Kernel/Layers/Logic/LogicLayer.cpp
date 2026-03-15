@@ -4,12 +4,12 @@
 
 namespace
 {
-    void NullProcessEntry()
-    {
-        while (1)
-            __asm__ __volatile__("hlt");
-    }
+void NullProcessEntry()
+{
+    while (1)
+        __asm__ __volatile__("hlt");
 }
+} // namespace
 
 LogicLayer::LogicLayer() : Resource(nullptr), PM(nullptr), Sched(nullptr)
 {
@@ -81,7 +81,7 @@ uint8_t LogicLayer::CreateNullProcess()
     uint8_t Id = CreateProcess(NullProcessEntry);
 
     Process* NullProcess = PM->GetProcessById(Id);
-    NullProcess->Status = PROCESS_RUNNING; // So RunProcess works on first schedule
+    NullProcess->Status  = PROCESS_RUNNING; // So RunProcess works on first schedule
 
     return Id;
 }
@@ -145,7 +145,7 @@ bool LogicLayer::RunProcess(uint8_t Id)
     {
         CurrentProcess->Status = PROCESS_READY;
     }
-    TargetProcess->Status  = PROCESS_RUNNING;
+    TargetProcess->Status = PROCESS_RUNNING;
     PM->UpdateCurrentProcessId(TargetProcess->Id);
     Resource->TaskSwitch(&CurrentProcess->State, TargetProcess->State);
 
@@ -170,8 +170,8 @@ void LogicLayer::SleepProcess(uint8_t Id, uint64_t WaitTicks)
     Sync->AddToSleepQueue(Id, WaitTicks);
     Sched->RemoveFromReadyQueue(Id);
 
-	Ticks = 0; // Reset ticks to ensure the sleeping process gets the correct sleep duration
-	Schedule();
+    Ticks = 0; // Reset ticks to ensure the sleeping process gets the correct sleep duration
+    Schedule();
 }
 
 void LogicLayer::WakeProcess(uint8_t Id)
@@ -184,6 +184,33 @@ void LogicLayer::WakeProcess(uint8_t Id)
 
     TargetProcess->Status = PROCESS_READY;
     Sync->RemoveFromSleepQueue(Id);
+    Sched->AddToReadyQueue(Id);
+}
+
+void LogicLayer::BlockProcess(uint8_t Id)
+{
+    Process* TargetProcess = PM->GetProcessById(Id);
+    if (TargetProcess == nullptr || TargetProcess->Status != PROCESS_RUNNING)
+    {
+        return;
+    }
+
+    TargetProcess->Status = PROCESS_BLOCKED;
+    Sched->RemoveFromReadyQueue(Id);
+
+    Ticks = 0; // Reset ticks
+    Schedule();
+}
+
+void LogicLayer::UnblockProcess(uint8_t Id)
+{
+    Process* TargetProcess = PM->GetProcessById(Id);
+    if (TargetProcess == nullptr || TargetProcess->Status != PROCESS_BLOCKED)
+    {
+        return;
+    }
+
+    TargetProcess->Status = PROCESS_READY;
     Sched->AddToReadyQueue(Id);
 }
 

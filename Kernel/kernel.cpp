@@ -16,10 +16,10 @@
 
 #define SCHEDULE_INTERVAL_TICKS 100
 
-#define TASK_A_SLEEP_TICKS 100
-#define TASK_B_SLEEP_TICKS 200
-#define TASK_C_SLEEP_TICKS 300
-#define TASK_D_SLEEP_TICKS 400
+#define TASK_A_SLEEP_TICKS SCHEDULE_INTERVAL_TICKS
+#define TASK_B_SLEEP_TICKS SCHEDULE_INTERVAL_TICKS * 2
+#define TASK_C_SLEEP_TICKS SCHEDULE_INTERVAL_TICKS * 3
+#define TASK_D_SLEEP_TICKS SCHEDULE_INTERVAL_TICKS * 4
 
 extern "C" void DispatcherEntry(DispatcherParameters Params);
 
@@ -44,8 +44,8 @@ static void KernelTaskA()
     while (1)
     {
         ++SleepCycle;
-        ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_(
-                "[Task A] cycle=%u sleeping for %u ticks\n", SleepCycle, TASK_A_SLEEP_TICKS);
+        ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("[Task A] cycle=%u sleeping for %u ticks\n",
+                                                                    SleepCycle, TASK_A_SLEEP_TICKS);
         ActiveDispatcher->GetLogicLayer()->SleepProcess(KernelTaskAId, TASK_A_SLEEP_TICKS);
     }
 
@@ -66,8 +66,8 @@ static void KernelTaskB()
     while (1)
     {
         ++SleepCycle;
-        ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_(
-                "[Task B] cycle=%u sleeping for %u ticks\n", SleepCycle, TASK_B_SLEEP_TICKS);
+        ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("[Task B] cycle=%u sleeping for %u ticks\n",
+                                                                    SleepCycle, TASK_B_SLEEP_TICKS);
         ActiveDispatcher->GetLogicLayer()->SleepProcess(KernelTaskBId, TASK_B_SLEEP_TICKS);
     }
 
@@ -88,8 +88,8 @@ static void KernelTaskC()
     while (1)
     {
         ++SleepCycle;
-        ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_(
-                "[Task C] cycle=%u sleeping for %u ticks\n", SleepCycle, TASK_C_SLEEP_TICKS);
+        ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("[Task C] cycle=%u sleeping for %u ticks\n",
+                                                                    SleepCycle, TASK_C_SLEEP_TICKS);
         ActiveDispatcher->GetLogicLayer()->SleepProcess(KernelTaskCId, TASK_C_SLEEP_TICKS);
     }
 
@@ -110,8 +110,8 @@ static void KernelTaskD()
     while (1)
     {
         ++SleepCycle;
-        ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_(
-                "[Task D] cycle=%u sleeping for %u ticks\n", SleepCycle, TASK_D_SLEEP_TICKS);
+        ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("[Task D] cycle=%u sleeping for %u ticks\n",
+                                                                    SleepCycle, TASK_D_SLEEP_TICKS);
         ActiveDispatcher->GetLogicLayer()->SleepProcess(KernelTaskDId, TASK_D_SLEEP_TICKS);
     }
 

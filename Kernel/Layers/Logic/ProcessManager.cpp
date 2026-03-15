@@ -10,15 +10,15 @@ ProcessManager::ProcessManager() : CurrentProcessId(0xFF)
         Processes[index].State        = {};
     }
 
-    CurrentProcessId    = 0;
+    CurrentProcessId = 0;
 }
 
 Process* ProcessManager::GetRunningProcess()
 {
-
-    if (GetProcessById(CurrentProcessId)->Status == PROCESS_BLOCKED){
-        return &Processes[CurrentProcessId]; 
-        // Means that the current process was just running but got blocked by LogicLayer::SleepProcess, 
+    if (GetProcessById(CurrentProcessId)->Status == PROCESS_BLOCKED)
+    {
+        return &Processes[CurrentProcessId];
+        // Means that the current process was just running but got blocked by LogicLayer::SleepProcess,
         // so we return it as the running process so that it can be scheduled out
     }
 

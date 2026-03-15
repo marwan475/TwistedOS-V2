@@ -36,7 +36,7 @@ public:
     size_t   GetMaxProcesses() const;
     Process* GetProcessById(uint8_t Id);
     Process* GetRunningProcess();
-    void UpdateCurrentProcessId(uint8_t Id);
+    void     UpdateCurrentProcessId(uint8_t Id);
     uint8_t  CreateProcess(void* StackPointer, CpuState InitialState);
     void*    KillProcess(uint8_t Id);
 };
