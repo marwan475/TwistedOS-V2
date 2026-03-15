@@ -211,6 +211,9 @@ extern "C"
 
         ActiveDispatcher->InitializeLayers(Params);
 
+        // Create Null Process (idle process)
+        ActiveDispatcher->GetLogicLayer()->CreateNullProcess();
+
         ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("Creating kernel sleep test processes\n");
         KernelTaskAId = ActiveDispatcher->GetLogicLayer()->CreateProcess(KernelTaskA);
         KernelTaskBId = ActiveDispatcher->GetLogicLayer()->CreateProcess(KernelTaskB);

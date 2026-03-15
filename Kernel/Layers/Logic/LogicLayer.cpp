@@ -2,6 +2,15 @@
 
 #include "Layers/Resource/ResourceLayer.hpp"
 
+namespace
+{
+    void NullProcessEntry()
+    {
+        while (1)
+            __asm__ __volatile__("hlt");
+    }
+}
+
 LogicLayer::LogicLayer() : Resource(nullptr), PM(nullptr), Sched(nullptr)
 {
 }
@@ -67,6 +76,16 @@ void LogicLayer::InitializeSynchronizationManager()
     Resource->GetConsole()->printf_("Synchronization Manager Initialized\n");
 }
 
+uint8_t LogicLayer::CreateNullProcess()
+{
+    uint8_t Id = CreateProcess(NullProcessEntry);
+
+    Process* NullProcess = PM->GetProcessById(Id);
+    NullProcess->Status = PROCESS_RUNNING; // So RunProcess works on first schedule
+
+    return Id;
+}
+
 uint8_t LogicLayer::CreateProcess(void (*EntryPoint)())
 {
     void*    ProcessStack = Resource->kmalloc(PROCESS_STACK_SIZE);
@@ -122,8 +141,12 @@ bool LogicLayer::RunProcess(uint8_t Id)
         return true;
     }
 
-    CurrentProcess->Status = PROCESS_READY;
+    if (CurrentProcess->Status == PROCESS_RUNNING)
+    {
+        CurrentProcess->Status = PROCESS_READY;
+    }
     TargetProcess->Status  = PROCESS_RUNNING;
+    PM->UpdateCurrentProcessId(TargetProcess->Id);
     Resource->TaskSwitch(&CurrentProcess->State, TargetProcess->State);
 
     if (TargetProcess->Status == PROCESS_RUNNING)

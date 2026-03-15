@@ -29,6 +29,7 @@ public:
     void           InitializeProcessManager();
     void           InitializeScheduler();
     void           InitializeSynchronizationManager();
+    uint8_t        CreateNullProcess();
     uint8_t        CreateProcess(void (*EntryPoint)());
     bool           RunProcess(uint8_t Id);
     void           KillProcess(uint8_t Id);
