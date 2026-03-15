@@ -40,7 +40,7 @@ bool Scheduler::RemoveFromReadyQueue(uint8_t ProcessId)
 
     if (CurrentProcess == Node)
     {
-        CurrentProcess = (Next != nullptr) ? Next : ReadyQueue.Head();
+        CurrentProcess = (Next != nullptr) ? nullptr : ReadyQueue.Head();
     }
 
     delete Node;

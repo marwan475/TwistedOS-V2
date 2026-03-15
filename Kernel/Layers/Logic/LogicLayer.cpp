@@ -195,13 +195,7 @@ void LogicLayer::Tick()
         uint8_t IdToWake = Sync->GetNextProcessToWake();
         if (IdToWake != 0xFF)
         {
-            Sync->RemoveFromSleepQueue(IdToWake);
-
-            if (PM->GetProcessById(IdToWake)->Status == PROCESS_BLOCKED)
-            {
-                PM->GetProcessById(IdToWake)->Status = PROCESS_READY;
-                Sched->AddToReadyQueue(IdToWake);
-            }
+            WakeProcess(IdToWake);
         }
     }
 }
