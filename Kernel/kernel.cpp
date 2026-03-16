@@ -245,6 +245,27 @@ extern "C"
             }
         }
 
+        uint64_t Init2FileSize = 0;
+        void*    Init2FileData = ActiveDispatcher->GetResourceLayer()->LoadFileFromInitramfs("/init2", &Init2FileSize);
+        if (Init2FileData == nullptr || Init2FileSize == 0)
+        {
+            ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("Failed to load /init2 from initramfs\n");
+        }
+        else
+        {
+            ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("/init2 loaded from initramfs at %p (%llu bytes)\n", Init2FileData, (unsigned long long) Init2FileSize);
+
+            uint8_t Init2ProcessId = ActiveDispatcher->GetLogicLayer()->CreateUserProcess(reinterpret_cast<uint64_t>(Init2FileData), static_cast<uint64_t>(Init2FileSize));
+            if (Init2ProcessId == 0xFF)
+            {
+                ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("Failed to create user process for /init2\n");
+            }
+            else
+            {
+                ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("Created /init2 user process (id=%u)\n", Init2ProcessId);
+            }
+        }
+
         ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("Switching to Task A (id=%u), Task B (id=%u), Task C (id=%u), Task D (id=%u)\n", KernelTaskAId, KernelTaskBId, KernelTaskCId,
                                                                     KernelTaskDId);
         ActiveDispatcher->GetLogicLayer()->EnableScheduling();

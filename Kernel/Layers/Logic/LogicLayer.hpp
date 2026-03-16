@@ -38,6 +38,7 @@ public:
     void           WakeProcess(uint8_t Id);
     void           BlockProcess(uint8_t Id);
     void           UnblockProcess(uint8_t Id);
+    void           CaptureCurrentInterruptState(const Registers* Regs);
     void           Tick();
     void           Schedule();
     bool           isScheduling();

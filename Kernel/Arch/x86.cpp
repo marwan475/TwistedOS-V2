@@ -169,6 +169,12 @@ extern "C" void ISRHANDLER(Registers* reg)
     Dispatcher* ActiveDispatcher = Dispatcher::GetActive();
     if (ActiveDispatcher != nullptr)
     {
+        LogicLayer* ActiveLogicLayer = ActiveDispatcher->GetLogicLayer();
+        if (ActiveLogicLayer != nullptr)
+        {
+            ActiveLogicLayer->CaptureCurrentInterruptState(reg);
+        }
+
         ActiveDispatcher->InterruptHandler(reg->interrupt_number);
     }
 }

@@ -26,11 +26,18 @@ global ResourceLayerTaskSwitchUserAsm
 %define CPUSTATE_RSP     136
 %define CPUSTATE_CS      144
 %define CPUSTATE_SS      152
+%define USER_DPL_MASK    0x3
 
 ResourceLayerTaskSwitchKernelAsm:
     ; SysV ABI:
     ; rdi = CpuState* old_state
     ; rsi = const CpuState* new_state
+
+    pushfq
+    cli
+
+    test byte [rdi + CPUSTATE_CS], USER_DPL_MASK
+    jnz .skip_save_old_state_discard_flags
 
     mov [rdi + CPUSTATE_RAX], rax
     mov [rdi + CPUSTATE_RCX], rcx
@@ -51,7 +58,6 @@ ResourceLayerTaskSwitchKernelAsm:
     lea rax, [rel TaskSwitchKernelResume]
     mov [rdi + CPUSTATE_RIP], rax
 
-    pushfq
     pop qword [rdi + CPUSTATE_RFLAGS]
 
     mov ax, cs
@@ -63,6 +69,14 @@ ResourceLayerTaskSwitchKernelAsm:
     mov [rdi + CPUSTATE_SS], rax
 
     mov [rdi + CPUSTATE_RSP], rsp
+
+    jmp .skip_save_old_state
+
+.skip_save_old_state_discard_flags:
+
+    add rsp, 8
+
+.skip_save_old_state:
 
     mov r11, rsi
     mov rsp, [r11 + CPUSTATE_RSP]
@@ -95,6 +109,12 @@ ResourceLayerTaskSwitchUserAsm:
     ; rsi = const CpuState* new_state
     ; rdx = uint64_t page_map_l4_table_addr
 
+    pushfq
+    cli
+
+    test byte [rdi + CPUSTATE_CS], USER_DPL_MASK
+    jnz .skip_save_old_state_discard_flags
+
     mov [rdi + CPUSTATE_RAX], rax
     mov [rdi + CPUSTATE_RCX], rcx
     mov [rdi + CPUSTATE_RDX], rdx
@@ -114,7 +134,6 @@ ResourceLayerTaskSwitchUserAsm:
     lea rax, [rel TaskSwitchUserResume]
     mov [rdi + CPUSTATE_RIP], rax
 
-    pushfq
     pop qword [rdi + CPUSTATE_RFLAGS]
 
     mov ax, cs
@@ -126,6 +145,14 @@ ResourceLayerTaskSwitchUserAsm:
     mov [rdi + CPUSTATE_SS], rax
 
     mov [rdi + CPUSTATE_RSP], rsp
+
+    jmp .skip_save_old_state
+
+.skip_save_old_state_discard_flags:
+
+    add rsp, 8
+
+.skip_save_old_state:
 
     test rdx, rdx
     jz .skip_user_cr3

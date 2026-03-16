@@ -325,6 +325,46 @@ void LogicLayer::UnblockProcess(uint8_t Id)
     Sched->AddToReadyQueue(Id);
 }
 
+void LogicLayer::CaptureCurrentInterruptState(const Registers* Regs)
+{
+    if (Regs == nullptr || PM == nullptr)
+    {
+        return;
+    }
+
+    if ((Regs->cs & 0x3) != 0x3)
+    {
+        return;
+    }
+
+    Process* CurrentProcess = PM->GetRunningProcess();
+    if (CurrentProcess == nullptr || CurrentProcess->Level != PROCESS_LEVEL_USER)
+    {
+        return;
+    }
+
+    CurrentProcess->State.rax    = Regs->rax;
+    CurrentProcess->State.rcx    = Regs->rcx;
+    CurrentProcess->State.rdx    = Regs->rdx;
+    CurrentProcess->State.rbx    = Regs->rbx;
+    CurrentProcess->State.rbp    = Regs->rbp;
+    CurrentProcess->State.rsi    = Regs->rsi;
+    CurrentProcess->State.rdi    = Regs->rdi;
+    CurrentProcess->State.r8     = Regs->r8;
+    CurrentProcess->State.r9     = Regs->r9;
+    CurrentProcess->State.r10    = Regs->r10;
+    CurrentProcess->State.r11    = Regs->r11;
+    CurrentProcess->State.r12    = Regs->r12;
+    CurrentProcess->State.r13    = Regs->r13;
+    CurrentProcess->State.r14    = Regs->r14;
+    CurrentProcess->State.r15    = Regs->r15;
+    CurrentProcess->State.rip    = Regs->rip;
+    CurrentProcess->State.rflags = Regs->rflags;
+    CurrentProcess->State.rsp    = Regs->rsp;
+    CurrentProcess->State.cs     = Regs->cs;
+    CurrentProcess->State.ss     = Regs->ss;
+}
+
 void LogicLayer::Tick()
 {
     if (Sync != nullptr)

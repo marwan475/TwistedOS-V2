@@ -66,6 +66,10 @@ INIT_LD = initramfs/init.ld
 INIT_OBJ = $(BUILD)initramfs_init.o
 INIT_ELF = $(BUILD)initramfs_init.elf
 INIT_BIN = $(ROOTFS_DIR)/init
+INIT2_SRC = initramfs/init2.c
+INIT2_OBJ = $(BUILD)initramfs_init2.o
+INIT2_ELF = $(BUILD)initramfs_init2.elf
+INIT2_BIN = $(ROOTFS_DIR)/init2
 INIT_CFLAGS = \
 	-ffreestanding \
 	-fno-pic \
@@ -106,7 +110,7 @@ QEMU_FULL = \
 all: bin build $(EFI) $(KERNEL) $(INITRAMFS) $(IMG) $(DRIVE)
 
 clean:
-	rm -rf $(BIN) $(BUILD) $(OUTPUT) *.pcap $(INIT_BIN)
+	rm -rf $(BIN) $(BUILD) $(OUTPUT) *.pcap $(INIT_BIN) $(INIT2_BIN)
 
 build:
 	mkdir $(BUILD)
@@ -149,8 +153,13 @@ $(INIT_BIN): $(INIT_SRC) $(INIT_LD) | build
 	$(KERNEL_LD) -nostdlib -static -T $(INIT_LD) $(INIT_OBJ) -o $(INIT_ELF)
 	objcopy -O binary $(INIT_ELF) $(INIT_BIN)
 
-$(INITRAMFS): $(INIT_BIN)
-	chmod +x $(INIT_BIN)
+$(INIT2_BIN): $(INIT2_SRC) $(INIT_LD) | build
+	$(KERNEL_CC) $(INIT_CFLAGS) -x c -c $(INIT2_SRC) -o $(INIT2_OBJ)
+	$(KERNEL_LD) -nostdlib -static -T $(INIT_LD) $(INIT2_OBJ) -o $(INIT2_ELF)
+	objcopy -O binary $(INIT2_ELF) $(INIT2_BIN)
+
+$(INITRAMFS): $(INIT_BIN) $(INIT2_BIN)
+	chmod +x $(INIT_BIN) $(INIT2_BIN)
 	(cd $(ROOTFS_DIR) && find . -print | cpio -o -H newc) > $(BIN)$@
 
 $(IMG): $(EFI) $(KERNEL) $(INITRAMFS)
