@@ -117,9 +117,9 @@ extern "C"
         // Create Null Process (idle process)
         ActiveDispatcher->GetLogicLayer()->CreateNullProcess();
 
-        if (!KernelMultiTaskingTest(ActiveDispatcher))
+        if (!KernelSelfTestStart(ActiveDispatcher))
         {
-            ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("KernelMultiTaskingTest setup failed\n");
+            ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("KernelSelfTestStart setup failed\n");
             while (1)
                 __asm__ __volatile__("hlt");
         }

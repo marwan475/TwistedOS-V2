@@ -1,8 +1,7 @@
 #include "Dispatcher.hpp"
 
-#include <Testing/KernelSelfTests.hpp>
-
 #include <Memory/KernelHeapAllocations.hpp>
+#include <Testing/KernelSelfTests.hpp>
 
 Dispatcher* Dispatcher::ActiveDispatcher = nullptr;
 uint64_t    Ticks                        = 0;
