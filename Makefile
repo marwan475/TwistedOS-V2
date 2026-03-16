@@ -118,7 +118,7 @@ $(EFI): Bootloader/bootloader.cpp utils/printf.cpp utils/CommonUtils.cpp Bootloa
 	$(CC) $(CFLAGS) -I. -I./Bootloader -I./utils -o $(BIN)$@ $^ \
 		-L /usr/lib -l:libefi.a -l:libgnuefi.a
 
-$(KERNEL): Kernel/kernel.cpp Kernel/Layers/Dispatcher.cpp Kernel/Layers/Resource/ResourceLayer.cpp Kernel/Layers/Resource/KernelHeapManager.cpp Kernel/Layers/Resource/RamFileSystemManager.cpp Kernel/Layers/Resource/VirtualAddressSpace.cpp Kernel/Layers/Logic/LogicLayer.cpp Kernel/Layers/Logic/ProcessManager.cpp Kernel/Layers/Logic/Scheduler.cpp Kernel/Layers/Logic/SynchronizationManager.cpp Kernel/Layers/Translation/TranslationLayer.cpp Kernel/Memory/KernelHeapAllocations.cpp Kernel/Memory/PhysicalMemoryManager.cpp Kernel/Memory/VirtualMemoryManager.cpp Kernel/Logging/FrameBufferConsole.cpp Kernel/Arch/x86.cpp Kernel/Arch/Interrupts.asm Kernel/Arch/task.asm utils/printf.cpp utils/CommonUtils.cpp Kernel/linker.ld
+$(KERNEL): Kernel/kernel.cpp Kernel/Layers/Dispatcher.cpp Kernel/Layers/Resource/ResourceLayer.cpp Kernel/Layers/Resource/KernelHeapManager.cpp Kernel/Layers/Resource/RamFileSystemManager.cpp Kernel/Layers/Resource/VirtualAddressSpace.cpp Kernel/Layers/Logic/LogicLayer.cpp Kernel/Layers/Logic/ProcessManager.cpp Kernel/Layers/Logic/Scheduler.cpp Kernel/Layers/Logic/SynchronizationManager.cpp Kernel/Layers/Translation/TranslationLayer.cpp Kernel/Memory/KernelHeapAllocations.cpp Kernel/Memory/PhysicalMemoryManager.cpp Kernel/Memory/VirtualMemoryManager.cpp Kernel/Logging/FrameBufferConsole.cpp Kernel/Arch/x86.cpp Kernel/Arch/Interrupts.asm Kernel/Arch/task.asm Kernel/Arch/syscall.asm utils/printf.cpp utils/CommonUtils.cpp Kernel/linker.ld
 	$(KERNEL_CC) $(KERNEL_CFLAGS) -I./Kernel -I./Bootloader -I./utils -c Kernel/kernel.cpp -o $(BUILD)kernel.o
 	$(KERNEL_CC) $(KERNEL_CFLAGS) -I./Kernel -I./Bootloader -I./utils -c Kernel/Layers/Dispatcher.cpp -o $(BUILD)dispatcher.o
 	$(KERNEL_CC) $(KERNEL_CFLAGS) -I./Kernel -I./Bootloader -I./utils -c Kernel/Layers/Resource/ResourceLayer.cpp -o $(BUILD)resource_layer.o
@@ -137,9 +137,10 @@ $(KERNEL): Kernel/kernel.cpp Kernel/Layers/Dispatcher.cpp Kernel/Layers/Resource
 	$(KERNEL_CC) $(KERNEL_CFLAGS) -I./Kernel -I./Bootloader -I./utils -c Kernel/Arch/x86.cpp -o $(BUILD)x86.o
 	$(KERNEL_AS) $(KERNEL_ASFLAGS) Kernel/Arch/Interrupts.asm -o $(BUILD)interrupts.o
 	$(KERNEL_AS) $(KERNEL_ASFLAGS) Kernel/Arch/task.asm -o $(BUILD)task_switch.o
+	$(KERNEL_AS) $(KERNEL_ASFLAGS) Kernel/Arch/syscall.asm -o $(BUILD)syscall.o
 	$(KERNEL_CC) $(KERNEL_CFLAGS) -I./Kernel -I./Bootloader -I./utils -c utils/printf.cpp -o $(BUILD)printf.o
 	$(KERNEL_CC) $(KERNEL_CFLAGS) -I./Kernel -I./Bootloader -I./utils -c utils/CommonUtils.cpp -o $(BUILD)common_utils.o
-	$(KERNEL_LD) $(KERNEL_LDFLAGS) $(BUILD)kernel.o $(BUILD)dispatcher.o $(BUILD)resource_layer.o $(BUILD)kernel_heap_manager.o $(BUILD)ram_file_system_manager.o $(BUILD)virtual_address_space.o $(BUILD)logic_layer.o $(BUILD)process_manager.o $(BUILD)scheduler.o $(BUILD)synchronization_manager.o $(BUILD)translation_layer.o $(BUILD)kernel_heap_allocations.o $(BUILD)physical_memory_manager.o $(BUILD)virtual_memory_manager.o $(BUILD)framebuffer_console.o $(BUILD)x86.o $(BUILD)interrupts.o $(BUILD)task_switch.o $(BUILD)printf.o $(BUILD)common_utils.o -o $(BUILD)kernel.elf
+	$(KERNEL_LD) $(KERNEL_LDFLAGS) $(BUILD)kernel.o $(BUILD)dispatcher.o $(BUILD)resource_layer.o $(BUILD)kernel_heap_manager.o $(BUILD)ram_file_system_manager.o $(BUILD)virtual_address_space.o $(BUILD)logic_layer.o $(BUILD)process_manager.o $(BUILD)scheduler.o $(BUILD)synchronization_manager.o $(BUILD)translation_layer.o $(BUILD)kernel_heap_allocations.o $(BUILD)physical_memory_manager.o $(BUILD)virtual_memory_manager.o $(BUILD)framebuffer_console.o $(BUILD)x86.o $(BUILD)interrupts.o $(BUILD)task_switch.o $(BUILD)syscall.o $(BUILD)printf.o $(BUILD)common_utils.o -o $(BUILD)kernel.elf
 	objcopy -O binary --set-section-flags .bss=alloc,load,contents $(BUILD)kernel.elf $(BIN)$@
 
 
