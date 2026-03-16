@@ -9,19 +9,19 @@ namespace
 {
 constexpr uint8_t INVALID_PROCESS_ID = 0xFF;
 
-constexpr uint64_t KERNEL_SLEEP_FAST_TICKS   = 4;
-constexpr uint64_t KERNEL_SLEEP_MEDIUM_TICKS = 10;
-constexpr uint64_t KERNEL_SLEEP_SLOW_TICKS   = 22;
+constexpr uint64_t KERNEL_SLEEP_FAST_TICKS   = 10;
+constexpr uint64_t KERNEL_SLEEP_MEDIUM_TICKS = 300;
+constexpr uint64_t KERNEL_SLEEP_SLOW_TICKS   = 800;
 constexpr uint64_t KERNEL_BURST_SLEEP_TICKS  = 1;
-constexpr uint64_t VALIDATOR_SLEEP_TICKS     = 6;
+constexpr uint64_t VALIDATOR_SLEEP_TICKS     = 10;
 
 constexpr uint32_t USER_PROCESS_INSTANCE_COUNT = 1;
 constexpr uint32_t TEST_MAX_PROCESS_COUNT      = 32;
 
-constexpr uint64_t FAST_MIN_CYCLES   = 1;
-constexpr uint64_t MEDIUM_MIN_CYCLES = 1;
-constexpr uint64_t SLOW_MIN_CYCLES   = 1;
-constexpr uint64_t BURST_MIN_LOOPS   = 600;
+constexpr uint64_t FAST_MIN_CYCLES   = 4;
+constexpr uint64_t MEDIUM_MIN_CYCLES = 3;
+constexpr uint64_t SLOW_MIN_CYCLES   = 2;
+constexpr uint64_t BURST_MIN_LOOPS   = 500;
 
 enum SelfTestPhase
 {
@@ -57,10 +57,15 @@ struct KernelSelfTestState
 
     uint64_t SyscallOneCount;
     uint64_t SyscallTwoCount;
+    uint64_t NextMultitaskProgressBurstLoops;
 
     bool MemoryVirtualOk;
     bool MemoryPhysicalOk;
     bool MemoryHeapOk;
+
+    uint32_t TestsPassed;
+    uint32_t TestsFailed;
+    bool     SummaryPrinted;
 
     SelfTestPhase Phase;
     bool          Initialized;
@@ -68,7 +73,8 @@ struct KernelSelfTestState
 };
 
 KernelSelfTestState State = {
-        nullptr, {}, 0, INVALID_PROCESS_ID, INVALID_PROCESS_ID, INVALID_PROCESS_ID, INVALID_PROCESS_ID, INVALID_PROCESS_ID, 0, 0, 0, 0, 0, 0, false, false, false, SELF_TEST_PHASE_MEMORY, false, false,
+    nullptr, {}, 0, INVALID_PROCESS_ID, INVALID_PROCESS_ID, INVALID_PROCESS_ID, INVALID_PROCESS_ID, INVALID_PROCESS_ID, 0, 0, 0, 0, 0, 0, 0, false, false, false, 0, 0, false, SELF_TEST_PHASE_MEMORY,
+    false, false,
 };
 
 uint8_t CreateUserProcessFromInitramfs(Dispatcher* ActiveDispatcher, const char* Path);
@@ -116,6 +122,7 @@ void ResetMultitaskCounters()
     State.BurstLoops      = 0;
     State.SyscallOneCount = 0;
     State.SyscallTwoCount = 0;
+    State.NextMultitaskProgressBurstLoops = 200;
 }
 
 void KernelSleepFastTask()
@@ -125,11 +132,6 @@ void KernelSleepFastTask()
     while (1)
     {
         ++State.FastCycles;
-
-        if ((State.FastCycles % 8) == 0)
-        {
-            ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("[SelfTest/KFast] cycle=%llu\n", (unsigned long long) State.FastCycles);
-        }
 
         ActiveDispatcher->GetLogicLayer()->SleepProcess(State.KernelSleepFastId, KERNEL_SLEEP_FAST_TICKS);
     }
@@ -143,11 +145,6 @@ void KernelSleepMediumTask()
     {
         ++State.MediumCycles;
 
-        if ((State.MediumCycles % 5) == 0)
-        {
-            ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("[SelfTest/KMedium] cycle=%llu\n", (unsigned long long) State.MediumCycles);
-        }
-
         ActiveDispatcher->GetLogicLayer()->SleepProcess(State.KernelSleepMediumId, KERNEL_SLEEP_MEDIUM_TICKS);
     }
 }
@@ -160,8 +157,6 @@ void KernelSleepSlowTask()
     {
         ++State.SlowCycles;
 
-        ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("[SelfTest/KSlow] cycle=%llu\n", (unsigned long long) State.SlowCycles);
-
         ActiveDispatcher->GetLogicLayer()->SleepProcess(State.KernelSleepSlowId, KERNEL_SLEEP_SLOW_TICKS);
     }
 }
@@ -173,11 +168,6 @@ void KernelBurstTask()
     while (1)
     {
         ++State.BurstLoops;
-
-        if ((State.BurstLoops % 300) == 0)
-        {
-            ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("[SelfTest/KBurst] loops=%llu\n", (unsigned long long) State.BurstLoops);
-        }
 
         if ((State.BurstLoops % 150) == 0)
         {
@@ -198,10 +188,34 @@ bool UserChecksPassed()
     return State.SyscallOneCount >= USER_PROCESS_INSTANCE_COUNT && State.SyscallTwoCount >= USER_PROCESS_INSTANCE_COUNT;
 }
 
+void LogTestResult(Dispatcher* ActiveDispatcher, const char* TestName, bool Passed)
+{
+    if (Passed)
+    {
+        ++State.TestsPassed;
+    }
+    else
+    {
+        ++State.TestsFailed;
+    }
+
+    ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("[SelfTest] [%s] test result=%s\n", TestName, Passed ? "PASS" : "FAIL");
+}
+
+void PrintSummaryIfNeeded(Dispatcher* ActiveDispatcher)
+{
+    if (State.SummaryPrinted)
+    {
+        return;
+    }
+
+    State.SummaryPrinted = true;
+    ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("[SelfTest] summary: passed=%u failed=%u\n", State.TestsPassed, State.TestsFailed);
+}
+
 void PrintMemoryTestResult(Dispatcher* ActiveDispatcher)
 {
-    ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("[SelfTest/Memory] physical=%s virtual=%s heap=%s\n", State.MemoryPhysicalOk ? "ok" : "fail", State.MemoryVirtualOk ? "ok" : "fail",
-                                                                State.MemoryHeapOk ? "ok" : "fail");
+    (void) ActiveDispatcher;
 }
 
 bool RunMemoryTest(Dispatcher* ActiveDispatcher)
@@ -237,13 +251,6 @@ bool RunMemoryTest(Dispatcher* ActiveDispatcher)
         {
             bool Unmapped         = Resource->GetVMM()->UnmapPage(TestVirtualAddr);
             State.MemoryVirtualOk = Unmapped;
-
-            ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("[SelfTest/Memory] map/unmap va=%p pa=%p mapped=%s unmapped=%s\n", (void*) TestVirtualAddr, PhysicalForVirtualTest,
-                                                                        Mapped ? "ok" : "fail", Unmapped ? "ok" : "fail");
-        }
-        else
-        {
-            ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("[SelfTest/Memory] map failed va=%p pa=%p\n", (void*) TestVirtualAddr, PhysicalForVirtualTest);
         }
 
         Resource->GetPMM()->FreePagesFromDescriptor(PhysicalForVirtualTest, 1);
@@ -277,7 +284,6 @@ void KillAllTestProcessesExceptValidator(Dispatcher* ActiveDispatcher)
         }
 
         ActiveDispatcher->GetLogicLayer()->KillProcess(ProcessId);
-        ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("[SelfTest/Validator] killed process id=%u\n", ProcessId);
     }
 
     State.TestProcessCount = 0;
@@ -299,7 +305,6 @@ bool SetupMultitaskingTest(Dispatcher* ActiveDispatcher)
 
     if (State.KernelSleepFastId == INVALID_PROCESS_ID || State.KernelSleepMediumId == INVALID_PROCESS_ID || State.KernelSleepSlowId == INVALID_PROCESS_ID || State.KernelBurstId == INVALID_PROCESS_ID)
     {
-        ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("[SelfTest] failed to create kernel multitask test processes\n");
         return false;
     }
 
@@ -319,11 +324,7 @@ bool SetupMultitaskingTest(Dispatcher* ActiveDispatcher)
         {
             return false;
         }
-
-        ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("[SelfTest] created user pair %u/%u\n", (unsigned) (index + 1), (unsigned) USER_PROCESS_INSTANCE_COUNT);
     }
-
-    ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("[SelfTest] multitasking test armed\n");
     return true;
 }
 
@@ -334,27 +335,21 @@ uint8_t CreateUserProcessFromInitramfs(Dispatcher* ActiveDispatcher, const char*
 
     if (FileData == nullptr || FileSize == 0)
     {
-        ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("[SelfTest] failed to load %s\n", Path);
         return INVALID_PROCESS_ID;
     }
-
-    ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("[SelfTest] %s loaded at %p (%llu bytes)\n", Path, FileData, (unsigned long long) FileSize);
 
     uint8_t UserProcessId = ActiveDispatcher->GetLogicLayer()->CreateUserProcess(reinterpret_cast<uint64_t>(FileData), static_cast<uint64_t>(FileSize));
     if (UserProcessId == INVALID_PROCESS_ID)
     {
-        ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("[SelfTest] failed to create process for %s\n", Path);
         return INVALID_PROCESS_ID;
     }
-
-    ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("[SelfTest] created process for %s id=%u\n", Path, UserProcessId);
 
     RegisterTestProcess(UserProcessId);
 
     return UserProcessId;
 }
 
-} // namespace
+} 
 
 bool KernelSelfTestStart(Dispatcher* ActiveDispatcher)
 {
@@ -363,23 +358,25 @@ bool KernelSelfTestStart(Dispatcher* ActiveDispatcher)
         return false;
     }
 
-    State = {
-            ActiveDispatcher,       {},   0,     INVALID_PROCESS_ID, INVALID_PROCESS_ID, INVALID_PROCESS_ID, INVALID_PROCESS_ID, INVALID_PROCESS_ID, 0, 0, 0, 0, 0, 0, false, false, false,
-            SELF_TEST_PHASE_MEMORY, true, false,
-    };
-
-    ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("[SelfTest] starting validator-managed test suite\n");
+    State = {};
+    State.DispatcherRef       = ActiveDispatcher;
+    State.KernelSleepFastId   = INVALID_PROCESS_ID;
+    State.KernelSleepMediumId = INVALID_PROCESS_ID;
+    State.KernelSleepSlowId   = INVALID_PROCESS_ID;
+    State.KernelBurstId       = INVALID_PROCESS_ID;
+    State.KernelValidatorId   = INVALID_PROCESS_ID;
+    State.Phase               = SELF_TEST_PHASE_MEMORY;
+    State.Initialized         = true;
+    State.Passed              = false;
 
     State.KernelValidatorId = ActiveDispatcher->GetLogicLayer()->CreateKernelProcess(KernelValidatorTask);
 
     if (State.KernelValidatorId == INVALID_PROCESS_ID)
     {
-        ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("[SelfTest] failed to create validator process\n");
         return false;
     }
 
     RegisterTestProcess(State.KernelValidatorId);
-    ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("[SelfTest] validator created: id=%u\n", State.KernelValidatorId);
 
     return true;
 }
@@ -406,6 +403,7 @@ void KernelValidatorTask()
     // Validator owns the test lifecycle and can be extended to run more suites
     // in sequence. It intentionally drives setup/monitor/teardown centrally.
     Dispatcher* ActiveDispatcher = RequireDispatcher();
+    ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("[SelfTest] start\n");
 
     while (1)
     {
@@ -414,15 +412,17 @@ void KernelValidatorTask()
             case SELF_TEST_PHASE_MEMORY:
             {
                 // Run memory suite first; multitasking suite is skipped on failure.
-                ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("[SelfTest/Validator] phase=memory\n");
+                ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("[SelfTest] [Memory] test started\n");
                 if (!RunMemoryTest(ActiveDispatcher))
                 {
-                    ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("[SelfTest/Validator] FAIL: memory test\n");
+                    LogTestResult(ActiveDispatcher, "Memory", false);
+                    ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("[SelfTest] memory details: physical=%s virtual=%s heap=%s\n", State.MemoryPhysicalOk ? "ok" : "fail",
+                                                                                State.MemoryVirtualOk ? "ok" : "fail", State.MemoryHeapOk ? "ok" : "fail");
                     State.Phase = SELF_TEST_PHASE_FAILED;
                     break;
                 }
 
-                ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("[SelfTest/Validator] PASS: memory test\n");
+                LogTestResult(ActiveDispatcher, "Memory", true);
                 State.Phase = SELF_TEST_PHASE_MULTITASK_SETUP;
             }
             break;
@@ -430,13 +430,15 @@ void KernelValidatorTask()
             case SELF_TEST_PHASE_MULTITASK_SETUP:
             {
                 // Spawn all runtime actors needed to stress scheduler behavior.
-                ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("[SelfTest/Validator] phase=multitask-setup\n");
+                ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("[SelfTest] [Multitask] test started\n");
                 if (!SetupMultitaskingTest(ActiveDispatcher))
                 {
-                    ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("[SelfTest/Validator] FAIL: multitask setup\n");
+                    LogTestResult(ActiveDispatcher, "Multitask", false);
                     State.Phase = SELF_TEST_PHASE_FAILED;
                     break;
                 }
+
+                ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("[SelfTest] [Multitask] monitoring: burst target=%llu\n", (unsigned long long) BURST_MIN_LOOPS);
 
                 State.Phase = SELF_TEST_PHASE_MULTITASK_MONITOR;
             }
@@ -445,15 +447,24 @@ void KernelValidatorTask()
             case SELF_TEST_PHASE_MULTITASK_MONITOR:
             {
                 // Observe counters from kernel sleepers, burst task, and user syscalls.
-                ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_(
-                        "[SelfTest/Validator] fast=%llu medium=%llu slow=%llu burst=%llu syscall1=%llu syscall2=%llu\n", (unsigned long long) State.FastCycles, (unsigned long long) State.MediumCycles,
-                        (unsigned long long) State.SlowCycles, (unsigned long long) State.BurstLoops, (unsigned long long) State.SyscallOneCount, (unsigned long long) State.SyscallTwoCount);
+                if (State.BurstLoops >= State.NextMultitaskProgressBurstLoops)
+                {
+                    ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_(
+                        "[SelfTest] [Multitask] progress: fast=%llu medium=%llu slow=%llu burst=%llu/%llu syscall1=%llu/%u syscall2=%llu/%u\n", (unsigned long long) State.FastCycles,
+                        (unsigned long long) State.MediumCycles, (unsigned long long) State.SlowCycles, (unsigned long long) State.BurstLoops, (unsigned long long) BURST_MIN_LOOPS,
+                        (unsigned long long) State.SyscallOneCount, (unsigned) USER_PROCESS_INSTANCE_COUNT, (unsigned long long) State.SyscallTwoCount, (unsigned) USER_PROCESS_INSTANCE_COUNT);
+
+                    State.NextMultitaskProgressBurstLoops += 200;
+                }
 
                 if (KernelChecksPassed() && UserChecksPassed())
                 {
-                    ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("[SelfTest/Validator] PASS: kernel/user/sleep checks satisfied\n");
+                    LogTestResult(ActiveDispatcher, "Multitask", true);
+                    ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_(
+                        "[SelfTest] multitask details: fast=%llu medium=%llu slow=%llu burst=%llu syscall1=%llu syscall2=%llu\n", (unsigned long long) State.FastCycles,
+                        (unsigned long long) State.MediumCycles, (unsigned long long) State.SlowCycles, (unsigned long long) State.BurstLoops, (unsigned long long) State.SyscallOneCount,
+                        (unsigned long long) State.SyscallTwoCount);
                     KillAllTestProcessesExceptValidator(ActiveDispatcher);
-                    ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("[SelfTest/Validator] all test processes terminated\n");
                     State.Passed = true;
                     State.Phase  = SELF_TEST_PHASE_COMPLETE;
                 }
@@ -463,7 +474,7 @@ void KernelValidatorTask()
             case SELF_TEST_PHASE_COMPLETE:
             {
                 // Place-holder transition point for future suites after multitasking.
-                ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("[SelfTest/Validator] all enabled tests complete, ready for next test\n");
+                PrintSummaryIfNeeded(ActiveDispatcher);
                 State.Phase = SELF_TEST_PHASE_FAILED;
             }
             break;
@@ -471,7 +482,7 @@ void KernelValidatorTask()
             case SELF_TEST_PHASE_FAILED:
             default:
             {
-                ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("[SelfTest/Validator] idle\n");
+                PrintSummaryIfNeeded(ActiveDispatcher);
             }
             break;
         }

@@ -93,8 +93,15 @@ void Dispatcher::InterruptHandler(uint64_t InterruptNumber)
 
 void Dispatcher::HandleSystemCall(uint64_t SystemCallNumber, uint64_t Arg1, uint64_t Arg2, uint64_t Arg3, uint64_t Arg4, uint64_t Arg5, uint64_t Arg6)
 {
+    (void) Arg1;
+    (void) Arg2;
+    (void) Arg3;
+    (void) Arg4;
+    (void) Arg5;
+    (void) Arg6;
+
     KernelSelfTestsOnSystemCall(SystemCallNumber);
-    Resource.GetConsole()->printf_("User syscall instruction received (syscall=%lu, a1=%lu, a2=%lu, a3=%lu, a4=%lu, a5=%lu, a6=%lu)\n", SystemCallNumber, Arg1, Arg2, Arg3, Arg4, Arg5, Arg6);
+    //Resource.GetConsole()->printf_("User syscall instruction received (syscall=%lu, a1=%lu, a2=%lu, a3=%lu, a4=%lu, a5=%lu, a6=%lu)\n", SystemCallNumber, Arg1, Arg2, Arg3, Arg4, Arg5, Arg6);
 }
 
 ResourceLayer* Dispatcher::GetResourceLayer()
