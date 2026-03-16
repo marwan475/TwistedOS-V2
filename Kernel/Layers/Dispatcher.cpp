@@ -90,6 +90,11 @@ void Dispatcher::InterruptHandler(uint64_t InterruptNumber)
     }
 }
 
+void Dispatcher::HandleSystemCall(uint64_t SystemCallNumber)
+{
+    Resource.GetConsole()->printf_("User syscall instruction received (syscall=%lu)\n", SystemCallNumber);
+}
+
 ResourceLayer* Dispatcher::GetResourceLayer()
 {
     return &Resource;

@@ -2,6 +2,20 @@
 #include <Layers/Dispatcher.hpp>
 #include <Logging/FrameBufferConsole.hpp>
 
+#define IA32_EFER_MSR 0xC0000080
+#define IA32_STAR_MSR 0xC0000081
+#define IA32_LSTAR_MSR 0xC0000082
+#define IA32_FMASK_MSR 0xC0000084
+
+#define IA32_EFER_SCE (1ULL << 0)
+#define RFLAGS_IF (1ULL << 9)
+
+#define SYSCALL_STAR_USER_CS_SHIFT 48
+#define SYSCALL_STAR_KERNEL_CS_SHIFT 32
+
+#define TSS_RSP0_LOWER_OFFSET offsetof(TSS, RSP0_lower)
+#define TSS_RSP0_UPPER_OFFSET offsetof(TSS, RSP0_upper)
+
 TSS                KernelTSS  = {};
 GDT                KernelGDT  = {};
 DiscriptorRegister KernelGDTR = {};
@@ -25,6 +39,21 @@ static inline uint8_t inb(uint16_t port)
     uint8_t value = 0;
     __asm__ __volatile__("inb %1, %0" : "=a"(value) : "Nd"(port));
     return value;
+}
+
+static inline void WriteMSR(uint32_t msr, uint64_t value)
+{
+    uint32_t low  = (uint32_t) (value & 0xFFFFFFFF);
+    uint32_t high = (uint32_t) ((value >> 32) & 0xFFFFFFFF);
+    __asm__ __volatile__("wrmsr" : : "c"(msr), "a"(low), "d"(high));
+}
+
+static inline uint64_t ReadMSR(uint32_t msr)
+{
+    uint32_t low  = 0;
+    uint32_t high = 0;
+    __asm__ __volatile__("rdmsr" : "=a"(low), "=d"(high) : "c"(msr));
+    return ((uint64_t) high << 32) | low;
 }
 
 static void SetIDTEntry(int interrupt, void (*base)(), uint16_t segment, uint8_t flags)
@@ -236,3 +265,55 @@ void InitGDT()
 static_assert(sizeof(DiscriptorRegister) == 10, "GDTR must be 10 bytes in long mode");
 static_assert(sizeof(TSSDescriptor) == 16, "TSS descriptor must be 16 bytes");
 static_assert(offsetof(GDT, tss) == 0x28, "TSS selector offset must be 0x28");
+
+extern "C" void HandleSystemCallFromEntry(uint64_t SystemCallNumber)
+{
+    Dispatcher* ActiveDispatcher = Dispatcher::GetActive();
+    if (ActiveDispatcher != nullptr)
+    {
+        ActiveDispatcher->HandleSystemCall(SystemCallNumber);
+    }
+}
+
+__attribute__((naked)) void SystemCallEntry()
+{
+    __asm__ __volatile__("mov %%rax, %%r9\n"
+                         "mov %%rsp, %%r10\n"
+                         "movl KernelTSS + %c0(%%rip), %%eax\n"
+                         "movl KernelTSS + %c1(%%rip), %%edx\n"
+                         "shl $32, %%rdx\n"
+                         "or %%rdx, %%rax\n"
+                         "mov %%rax, %%rsp\n"
+
+                         "push %%r10\n"
+                         "push %%rcx\n"
+                         "push %%r11\n"
+
+                         "mov %%r9, %%rdi\n"
+                         "call HandleSystemCallFromEntry\n"
+
+                         "pop %%r11\n"
+                         "pop %%rcx\n"
+                         "pop %%r10\n"
+
+                         "pushq $%c2\n"
+                         "push %%r10\n"
+                         "push %%r11\n"
+                         "pushq $%c3\n"
+                         "push %%rcx\n"
+                         "iretq\n"
+                         :
+                         : "i"(TSS_RSP0_LOWER_OFFSET), "i"(TSS_RSP0_UPPER_OFFSET), "i"(USER_SS), "i"(USER_CS)
+                         : "rax", "rdx", "rdi", "r9", "r10", "memory");
+}
+
+void InitSystemCalls()
+{
+    uint64_t star = ((uint64_t) USER_CS << SYSCALL_STAR_USER_CS_SHIFT) | ((uint64_t) KERNEL_CS << SYSCALL_STAR_KERNEL_CS_SHIFT);
+    WriteMSR(IA32_STAR_MSR, star);
+    WriteMSR(IA32_LSTAR_MSR, reinterpret_cast<uint64_t>(&SystemCallEntry));
+    WriteMSR(IA32_FMASK_MSR, RFLAGS_IF);
+
+    uint64_t efer = ReadMSR(IA32_EFER_MSR);
+    WriteMSR(IA32_EFER_MSR, efer | IA32_EFER_SCE);
+}

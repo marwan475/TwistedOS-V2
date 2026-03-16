@@ -38,6 +38,7 @@ public:
     void               InitTranslationLayer();
     void               InitializeLayers(const DispatcherParameters& Params);
     void               InterruptHandler(uint64_t InterruptNumber);
+    void               HandleSystemCall(uint64_t SystemCallNumber);
 
     ResourceLayer*    GetResourceLayer();
     LogicLayer*       GetLogicLayer();

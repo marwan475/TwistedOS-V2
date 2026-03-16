@@ -138,6 +138,9 @@ extern "C"
         InitInterrupts();
         Console.printf_("Interrupts Initialized\n");
 
+        InitSystemCalls();
+        Console.printf_("System calls Initialized\n");
+
         InitTimer();
         Console.printf_("Timer Initialized\n");
 

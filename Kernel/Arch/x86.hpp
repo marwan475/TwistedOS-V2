@@ -214,6 +214,7 @@ TSSDescriptor BuildTSSDescriptor(const TSS* tss);
 GDT           BuildGDT(const TSSDescriptor& tss_descriptor);
 void          InitGDT();
 void          InitInterrupts();
+void          InitSystemCalls();
 void          InitTimer();
 void          RemapPIC();
 

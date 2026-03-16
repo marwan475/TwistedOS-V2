@@ -4,8 +4,8 @@ section .text
 global _start
 
 _start:
-    xor rax, rax
-    int 0x80
+    mov rax, 1
+    syscall
 
 .loop:
     pause
