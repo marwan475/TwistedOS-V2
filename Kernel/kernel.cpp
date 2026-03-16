@@ -16,22 +16,25 @@
 
 #define SCHEDULE_INTERVAL_TICKS 100
 
-#define TASK_A_SLEEP_TICKS SCHEDULE_INTERVAL_TICKS
-#define TASK_B_SLEEP_TICKS SCHEDULE_INTERVAL_TICKS * 2
-#define TASK_C_SLEEP_TICKS SCHEDULE_INTERVAL_TICKS * 3
-#define TASK_D_SLEEP_TICKS SCHEDULE_INTERVAL_TICKS * 4
+#define KERNEL_SLEEP_FAST_TICKS 40
+#define KERNEL_SLEEP_MEDIUM_TICKS 130
+#define KERNEL_SLEEP_SLOW_TICKS 310
+#define KERNEL_BURST_SLEEP_TICKS 15
+#define KERNEL_MONITOR_TICKS 500
+#define USER_PROCESS_INSTANCE_COUNT 2
 
 extern "C" void DispatcherEntry(DispatcherParameters Params);
 
 extern "C" void EFIAPI KernelEntry(KernelParameters KernelArgs) __attribute__((section(".text.entry")));
 
 static Dispatcher KernelDispatcher;
-static uint8_t    KernelTaskAId = 0xFF;
-static uint8_t    KernelTaskBId = 0xFF;
-static uint8_t    KernelTaskCId = 0xFF;
-static uint8_t    KernelTaskDId = 0xFF;
+static uint8_t    KernelSleepFastId = 0xFF;
+static uint8_t    KernelSleepMediumId = 0xFF;
+static uint8_t    KernelSleepSlowId = 0xFF;
+static uint8_t    KernelBurstId = 0xFF;
+static uint8_t    KernelMonitorId = 0xFF;
 
-static void KernelTaskA()
+static Dispatcher* RequireActiveDispatcher()
 {
     Dispatcher* ActiveDispatcher = Dispatcher::GetActive();
     if (ActiveDispatcher == nullptr)
@@ -40,79 +43,109 @@ static void KernelTaskA()
             __asm__ __volatile__("hlt");
     }
 
-    uint32_t SleepCycle = 0;
-    while (1)
-    {
-        ++SleepCycle;
-        ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("[Task A] cycle=%u sleeping for %u ticks\n", SleepCycle, TASK_A_SLEEP_TICKS);
-        ActiveDispatcher->GetLogicLayer()->SleepProcess(KernelTaskAId, TASK_A_SLEEP_TICKS);
-    }
-
-    while (1)
-        __asm__ __volatile__("hlt");
+    return ActiveDispatcher;
 }
 
-static void KernelTaskB()
+static void KernelSleepFastTask()
 {
-    Dispatcher* ActiveDispatcher = Dispatcher::GetActive();
-    if (ActiveDispatcher == nullptr)
-    {
-        while (1)
-            __asm__ __volatile__("hlt");
-    }
+    Dispatcher* ActiveDispatcher = RequireActiveDispatcher();
 
-    uint32_t SleepCycle = 0;
+    uint64_t Cycle = 0;
     while (1)
     {
-        ++SleepCycle;
-        ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("[Task B] cycle=%u sleeping for %u ticks\n", SleepCycle, TASK_B_SLEEP_TICKS);
-        ActiveDispatcher->GetLogicLayer()->SleepProcess(KernelTaskBId, TASK_B_SLEEP_TICKS);
+        ++Cycle;
+        ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("[KernelFastSleep] cycle=%llu sleep=%u\n", (unsigned long long) Cycle, (unsigned) KERNEL_SLEEP_FAST_TICKS);
+        ActiveDispatcher->GetLogicLayer()->SleepProcess(KernelSleepFastId, KERNEL_SLEEP_FAST_TICKS);
     }
-
-    while (1)
-        __asm__ __volatile__("hlt");
 }
 
-static void KernelTaskC()
+static void KernelSleepMediumTask()
 {
-    Dispatcher* ActiveDispatcher = Dispatcher::GetActive();
-    if (ActiveDispatcher == nullptr)
-    {
-        while (1)
-            __asm__ __volatile__("hlt");
-    }
+    Dispatcher* ActiveDispatcher = RequireActiveDispatcher();
 
-    uint32_t SleepCycle = 0;
+    uint64_t Cycle = 0;
     while (1)
     {
-        ++SleepCycle;
-        ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("[Task C] cycle=%u sleeping for %u ticks\n", SleepCycle, TASK_C_SLEEP_TICKS);
-        ActiveDispatcher->GetLogicLayer()->SleepProcess(KernelTaskCId, TASK_C_SLEEP_TICKS);
+        ++Cycle;
+        ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("[KernelMediumSleep] cycle=%llu sleep=%u\n", (unsigned long long) Cycle, (unsigned) KERNEL_SLEEP_MEDIUM_TICKS);
+        ActiveDispatcher->GetLogicLayer()->SleepProcess(KernelSleepMediumId, KERNEL_SLEEP_MEDIUM_TICKS);
     }
-
-    while (1)
-        __asm__ __volatile__("hlt");
 }
 
-static void KernelTaskD()
+static void KernelSleepSlowTask()
 {
-    Dispatcher* ActiveDispatcher = Dispatcher::GetActive();
-    if (ActiveDispatcher == nullptr)
-    {
-        while (1)
-            __asm__ __volatile__("hlt");
-    }
+    Dispatcher* ActiveDispatcher = RequireActiveDispatcher();
 
-    uint32_t SleepCycle = 0;
+    uint64_t Cycle = 0;
     while (1)
     {
-        ++SleepCycle;
-        ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("[Task D] cycle=%u sleeping for %u ticks\n", SleepCycle, TASK_D_SLEEP_TICKS);
-        ActiveDispatcher->GetLogicLayer()->SleepProcess(KernelTaskDId, TASK_D_SLEEP_TICKS);
+        ++Cycle;
+        ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("[KernelSlowSleep] cycle=%llu sleep=%u\n", (unsigned long long) Cycle, (unsigned) KERNEL_SLEEP_SLOW_TICKS);
+        ActiveDispatcher->GetLogicLayer()->SleepProcess(KernelSleepSlowId, KERNEL_SLEEP_SLOW_TICKS);
+    }
+}
+
+static void KernelBurstTask()
+{
+    Dispatcher* ActiveDispatcher = RequireActiveDispatcher();
+
+    uint64_t Iteration = 0;
+    while (1)
+    {
+        ++Iteration;
+
+        if ((Iteration % 1000) == 0)
+        {
+            ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("[KernelBurst] iteration=%llu\n", (unsigned long long) Iteration);
+        }
+
+        if ((Iteration % 1500) == 0)
+        {
+            ActiveDispatcher->GetLogicLayer()->SleepProcess(KernelBurstId, KERNEL_BURST_SLEEP_TICKS);
+        }
+
+        __asm__ __volatile__("pause");
+    }
+}
+
+static void KernelMonitorTask()
+{
+    Dispatcher* ActiveDispatcher = RequireActiveDispatcher();
+
+    uint64_t Cycle = 0;
+    while (1)
+    {
+        ++Cycle;
+        ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_(
+                "[KernelMonitor] cycle=%llu ids{fast=%u medium=%u slow=%u burst=%u monitor=%u} ticks=%llu\n", (unsigned long long) Cycle, KernelSleepFastId,
+                KernelSleepMediumId, KernelSleepSlowId, KernelBurstId, KernelMonitorId, (unsigned long long) Ticks);
+        ActiveDispatcher->GetLogicLayer()->SleepProcess(KernelMonitorId, KERNEL_MONITOR_TICKS);
+    }
+}
+
+static uint8_t CreateUserProcessFromInitramfs(Dispatcher* ActiveDispatcher, const char* Path)
+{
+    uint64_t FileSize = 0;
+    void*    FileData = ActiveDispatcher->GetResourceLayer()->LoadFileFromInitramfs(Path, &FileSize);
+    if (FileData == nullptr || FileSize == 0)
+    {
+        ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("Failed to load %s from initramfs\n", Path);
+        return 0xFF;
     }
 
-    while (1)
-        __asm__ __volatile__("hlt");
+    ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("%s loaded from initramfs at %p (%llu bytes)\n", Path, FileData, (unsigned long long) FileSize);
+
+    uint8_t UserProcessId = ActiveDispatcher->GetLogicLayer()->CreateUserProcess(reinterpret_cast<uint64_t>(FileData), static_cast<uint64_t>(FileSize));
+    if (UserProcessId == 0xFF)
+    {
+        ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("Failed to create user process for %s\n", Path);
+    }
+    else
+    {
+        ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("Created %s user process (id=%u)\n", Path, UserProcessId);
+    }
+
+    return UserProcessId;
 }
 
 // Uefi sets us up in 64bit long mode with identity mapped pages
@@ -211,63 +244,43 @@ extern "C"
         // Create Null Process (idle process)
         ActiveDispatcher->GetLogicLayer()->CreateNullProcess();
 
-        ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("Creating kernel sleep test processes\n");
-        KernelTaskAId = ActiveDispatcher->GetLogicLayer()->CreateKernelProcess(KernelTaskA);
-        KernelTaskBId = ActiveDispatcher->GetLogicLayer()->CreateKernelProcess(KernelTaskB);
-        KernelTaskCId = ActiveDispatcher->GetLogicLayer()->CreateKernelProcess(KernelTaskC);
-        KernelTaskDId = ActiveDispatcher->GetLogicLayer()->CreateKernelProcess(KernelTaskD);
+        ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("Creating scheduler stress test processes\n");
 
-        if (KernelTaskAId == 0xFF || KernelTaskBId == 0xFF || KernelTaskCId == 0xFF || KernelTaskDId == 0xFF)
+        KernelSleepFastId   = ActiveDispatcher->GetLogicLayer()->CreateKernelProcess(KernelSleepFastTask);
+        KernelSleepMediumId = ActiveDispatcher->GetLogicLayer()->CreateKernelProcess(KernelSleepMediumTask);
+        KernelSleepSlowId   = ActiveDispatcher->GetLogicLayer()->CreateKernelProcess(KernelSleepSlowTask);
+        KernelBurstId       = ActiveDispatcher->GetLogicLayer()->CreateKernelProcess(KernelBurstTask);
+        KernelMonitorId     = ActiveDispatcher->GetLogicLayer()->CreateKernelProcess(KernelMonitorTask);
+
+        if (KernelSleepFastId == 0xFF || KernelSleepMediumId == 0xFF || KernelSleepSlowId == 0xFF || KernelBurstId == 0xFF || KernelMonitorId == 0xFF)
         {
             ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("Failed to create kernel test processes\n");
             while (1)
                 __asm__ __volatile__("hlt");
         }
 
-        uint64_t InitFileSize = 0;
-        void*    InitFileData = ActiveDispatcher->GetResourceLayer()->LoadFileFromInitramfs("/init", &InitFileSize);
-        if (InitFileData == nullptr || InitFileSize == 0)
-        {
-            ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("Failed to load /init from initramfs\n");
-        }
-        else
-        {
-            ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("/init loaded from initramfs at %p (%llu bytes)\n", InitFileData, (unsigned long long) InitFileSize);
+        ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("Creating %u instances of /init and /init2 user processes\n", (unsigned) USER_PROCESS_INSTANCE_COUNT);
 
-            uint8_t InitProcessId = ActiveDispatcher->GetLogicLayer()->CreateUserProcess(reinterpret_cast<uint64_t>(InitFileData), static_cast<uint64_t>(InitFileSize));
-            if (InitProcessId == 0xFF)
+        for (uint32_t Index = 0; Index < USER_PROCESS_INSTANCE_COUNT; ++Index)
+        {
+            if (CreateUserProcessFromInitramfs(ActiveDispatcher, "/init") == 0xFF)
             {
-                ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("Failed to create user process for /init\n");
+                while (1)
+                    __asm__ __volatile__("hlt");
             }
-            else
+
+            if (CreateUserProcessFromInitramfs(ActiveDispatcher, "/init2") == 0xFF)
             {
-                ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("Created /init user process (id=%u)\n", InitProcessId);
+                while (1)
+                    __asm__ __volatile__("hlt");
             }
+
+            ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("Created user process pair %u/%u\n", (unsigned) (Index + 1), (unsigned) USER_PROCESS_INSTANCE_COUNT);
         }
 
-        uint64_t Init2FileSize = 0;
-        void*    Init2FileData = ActiveDispatcher->GetResourceLayer()->LoadFileFromInitramfs("/init2", &Init2FileSize);
-        if (Init2FileData == nullptr || Init2FileSize == 0)
-        {
-            ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("Failed to load /init2 from initramfs\n");
-        }
-        else
-        {
-            ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("/init2 loaded from initramfs at %p (%llu bytes)\n", Init2FileData, (unsigned long long) Init2FileSize);
-
-            uint8_t Init2ProcessId = ActiveDispatcher->GetLogicLayer()->CreateUserProcess(reinterpret_cast<uint64_t>(Init2FileData), static_cast<uint64_t>(Init2FileSize));
-            if (Init2ProcessId == 0xFF)
-            {
-                ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("Failed to create user process for /init2\n");
-            }
-            else
-            {
-                ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("Created /init2 user process (id=%u)\n", Init2ProcessId);
-            }
-        }
-
-        ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("Switching to Task A (id=%u), Task B (id=%u), Task C (id=%u), Task D (id=%u)\n", KernelTaskAId, KernelTaskBId, KernelTaskCId,
-                                                                    KernelTaskDId);
+        ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_(
+                "Scheduler stress suite ready: kernel ids {fast=%u medium=%u slow=%u burst=%u monitor=%u}\n", KernelSleepFastId, KernelSleepMediumId, KernelSleepSlowId, KernelBurstId,
+                KernelMonitorId);
         ActiveDispatcher->GetLogicLayer()->EnableScheduling();
 
         while (1)
