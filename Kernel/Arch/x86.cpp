@@ -15,6 +15,10 @@
 
 #define TSS_RSP0_LOWER_OFFSET offsetof(TSS, RSP0_lower)
 #define TSS_RSP0_UPPER_OFFSET offsetof(TSS, RSP0_upper)
+#define TSS_RSP0_LOWER_OFFSET_BYTES 4
+
+#define STRINGIFY_IMPL(x) #x
+#define STRINGIFY(x) STRINGIFY_IMPL(x)
 
 TSS                KernelTSS  = {};
 GDT                KernelGDT  = {};
@@ -23,6 +27,12 @@ DiscriptorRegister KernelGDTR = {};
 static IDTentry       IDT[256]                                                 = {};
 static IDTdescription IDTDescriptor                                            = {sizeof(IDT) - 1, IDT};
 static uint8_t        KernelInterruptStack[16384] __attribute__((aligned(16))) = {};
+extern "C"
+{
+volatile uint64_t SavedSystemCallUserRSP    = 0;
+volatile uint64_t SavedSystemCallUserRIP    = 0;
+volatile uint64_t SavedSystemCallUserRFLAGS = 0;
+}
 
 static inline void LoadIDT(const IDTdescription* idt_descriptor)
 {
@@ -266,46 +276,48 @@ static_assert(sizeof(DiscriptorRegister) == 10, "GDTR must be 10 bytes in long m
 static_assert(sizeof(TSSDescriptor) == 16, "TSS descriptor must be 16 bytes");
 static_assert(offsetof(GDT, tss) == 0x28, "TSS selector offset must be 0x28");
 
-extern "C" void HandleSystemCallFromEntry(uint64_t SystemCallNumber)
+extern "C" void HandleSystemCallFromEntry(uint64_t Arg1,
+                                            uint64_t Arg2,
+                                            uint64_t Arg3,
+                                            uint64_t Arg4,
+                                            uint64_t Arg5,
+                                            uint64_t Arg6,
+                                            uint64_t SystemCallNumber)
 {
     Dispatcher* ActiveDispatcher = Dispatcher::GetActive();
     if (ActiveDispatcher != nullptr)
     {
-        ActiveDispatcher->HandleSystemCall(SystemCallNumber);
+        ActiveDispatcher->HandleSystemCall(SystemCallNumber, Arg1, Arg2, Arg3, Arg4, Arg5, Arg6);
     }
 }
 
-__attribute__((naked)) void SystemCallEntry()
-{
-    __asm__ __volatile__("mov %%rax, %%r9\n"
-                         "mov %%rsp, %%r10\n"
-                         "movl KernelTSS + %c0(%%rip), %%eax\n"
-                         "movl KernelTSS + %c1(%%rip), %%edx\n"
-                         "shl $32, %%rdx\n"
-                         "or %%rdx, %%rax\n"
-                         "mov %%rax, %%rsp\n"
+extern "C" void SystemCallEntry();
 
-                         "push %%r10\n"
-                         "push %%rcx\n"
-                         "push %%r11\n"
+__asm__(".global SystemCallEntry\n"
+                "SystemCallEntry:\n"
+                "mov %rsp, SavedSystemCallUserRSP(%rip)\n"
+                "mov %rcx, SavedSystemCallUserRIP(%rip)\n"
+                "mov %r11, SavedSystemCallUserRFLAGS(%rip)\n"
 
-                         "mov %%r9, %%rdi\n"
-                         "call HandleSystemCallFromEntry\n"
+    "movq KernelTSS + " STRINGIFY(TSS_RSP0_LOWER_OFFSET_BYTES) "(%rip), %rsp\n"
 
-                         "pop %%r11\n"
-                         "pop %%rcx\n"
-                         "pop %%r10\n"
+                "mov %r10, %rcx\n"
+                "push %rax\n"
+                "call HandleSystemCallFromEntry\n"
+                "add $8, %rsp\n"
 
-                         "pushq $%c2\n"
-                         "push %%r10\n"
-                         "push %%r11\n"
-                         "pushq $%c3\n"
-                         "push %%rcx\n"
-                         "iretq\n"
-                         :
-                         : "i"(TSS_RSP0_LOWER_OFFSET), "i"(TSS_RSP0_UPPER_OFFSET), "i"(USER_SS), "i"(USER_CS)
-                         : "rax", "rdx", "rdi", "r9", "r10", "memory");
-}
+                "mov SavedSystemCallUserRIP(%rip), %rcx\n"
+                "mov SavedSystemCallUserRFLAGS(%rip), %r11\n"
+                "mov SavedSystemCallUserRSP(%rip), %r10\n"
+
+                "pushq $" STRINGIFY(USER_SS) "\n"
+                "push %r10\n"
+                "push %r11\n"
+                "pushq $" STRINGIFY(USER_CS) "\n"
+                "push %rcx\n"
+                "iretq\n");
+
+            static_assert(TSS_RSP0_LOWER_OFFSET == TSS_RSP0_LOWER_OFFSET_BYTES, "Unexpected TSS::RSP0_lower offset");
 
 void InitSystemCalls()
 {

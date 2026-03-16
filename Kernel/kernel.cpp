@@ -138,6 +138,7 @@ extern "C"
         InitInterrupts();
         Console.printf_("Interrupts Initialized\n");
 
+        // Set up MSRs for syscall/sysret
         InitSystemCalls();
         Console.printf_("System calls Initialized\n");
 
