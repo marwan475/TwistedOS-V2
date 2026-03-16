@@ -387,7 +387,7 @@ void LogicLayer::Schedule()
 
     uint8_t NextProcessId = Sched->SelectNextProcess();
 
-    Resource->GetConsole()->printf_("Scheduling: Next process ID = %u\n", NextProcessId);
+    //Resource->GetConsole()->printf_("Scheduling: Next process ID = %u\n", NextProcessId);
 
     if (NextProcessId == 0xFF)
     {
