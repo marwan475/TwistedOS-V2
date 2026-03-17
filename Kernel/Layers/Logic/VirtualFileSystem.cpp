@@ -7,24 +7,24 @@
 #include "VirtualFileSystem.hpp"
 
 #include "../Resource/RamFileSystemManager.hpp"
-#include <Logging/FrameBufferConsole.hpp>
 
 #include <CommonUtils.hpp>
+#include <Logging/FrameBufferConsole.hpp>
 
 namespace
 {
-constexpr char PATH_SEPARATOR          = '/';
-constexpr char PATH_DOT                = '.';
-constexpr char STRING_TERMINATOR       = '\0';
-constexpr uint64_t CHILDREN_GROWTH_ONE = 1;
-constexpr uint64_t ROOT_FILE_SIZE       = 0;
-constexpr uint64_t ROOT_TREE_DEPTH      = 0;
+constexpr char     PATH_SEPARATOR          = '/';
+constexpr char     PATH_DOT                = '.';
+constexpr char     STRING_TERMINATOR       = '\0';
+constexpr uint64_t CHILDREN_GROWTH_ONE     = 1;
+constexpr uint64_t ROOT_FILE_SIZE          = 0;
+constexpr uint64_t ROOT_TREE_DEPTH         = 0;
 constexpr uint64_t INDENT_SPACES_PER_LEVEL = 2;
 
 typedef struct
 {
-	Dentry* RootDentry;
-	bool    IsSuccessful;
+    Dentry* RootDentry;
+    bool    IsSuccessful;
 } MountInitRamFileSystemContext;
 
 /**
@@ -37,18 +37,18 @@ typedef struct
  */
 uint64_t GetStringLength(const char* Text)
 {
-	if (Text == nullptr)
-	{
-		return 0;
-	}
+    if (Text == nullptr)
+    {
+        return 0;
+    }
 
-	uint64_t Length = 0;
-	while (Text[Length] != STRING_TERMINATOR)
-	{
-		++Length;
-	}
+    uint64_t Length = 0;
+    while (Text[Length] != STRING_TERMINATOR)
+    {
+        ++Length;
+    }
 
-	return Length;
+    return Length;
 }
 
 /**
@@ -61,16 +61,16 @@ uint64_t GetStringLength(const char* Text)
  */
 char* DuplicateString(const char* Source)
 {
-	if (Source == nullptr)
-	{
-		return nullptr;
-	}
+    if (Source == nullptr)
+    {
+        return nullptr;
+    }
 
-	uint64_t Length      = GetStringLength(Source);
-	uint64_t BufferBytes = Length + CHILDREN_GROWTH_ONE;
-	char*    Copy        = new char[BufferBytes];
-	strcpy(Copy, Source);
-	return Copy;
+    uint64_t Length      = GetStringLength(Source);
+    uint64_t BufferBytes = Length + CHILDREN_GROWTH_ONE;
+    char*    Copy        = new char[BufferBytes];
+    strcpy(Copy, Source);
+    return Copy;
 }
 
 /**
@@ -84,16 +84,16 @@ char* DuplicateString(const char* Source)
  */
 char* DuplicateSegment(const char* SegmentStart, uint64_t SegmentLength)
 {
-	uint64_t BufferBytes = SegmentLength + CHILDREN_GROWTH_ONE;
-	char*    Copy        = new char[BufferBytes];
+    uint64_t BufferBytes = SegmentLength + CHILDREN_GROWTH_ONE;
+    char*    Copy        = new char[BufferBytes];
 
-	for (uint64_t Index = 0; Index < SegmentLength; ++Index)
-	{
-		Copy[Index] = SegmentStart[Index];
-	}
+    for (uint64_t Index = 0; Index < SegmentLength; ++Index)
+    {
+        Copy[Index] = SegmentStart[Index];
+    }
 
-	Copy[SegmentLength] = STRING_TERMINATOR;
-	return Copy;
+    Copy[SegmentLength] = STRING_TERMINATOR;
+    return Copy;
 }
 
 /**
@@ -108,20 +108,20 @@ char* DuplicateSegment(const char* SegmentStart, uint64_t SegmentLength)
  */
 bool MatchSegmentName(const char* Name, const char* SegmentStart, uint64_t SegmentLength)
 {
-	if (Name == nullptr || SegmentStart == nullptr)
-	{
-		return false;
-	}
+    if (Name == nullptr || SegmentStart == nullptr)
+    {
+        return false;
+    }
 
-	for (uint64_t Index = 0; Index < SegmentLength; ++Index)
-	{
-		if (Name[Index] == STRING_TERMINATOR || Name[Index] != SegmentStart[Index])
-		{
-			return false;
-		}
-	}
+    for (uint64_t Index = 0; Index < SegmentLength; ++Index)
+    {
+        if (Name[Index] == STRING_TERMINATOR || Name[Index] != SegmentStart[Index])
+        {
+            return false;
+        }
+    }
 
-	return Name[SegmentLength] == STRING_TERMINATOR;
+    return Name[SegmentLength] == STRING_TERMINATOR;
 }
 
 /**
@@ -134,22 +134,22 @@ bool MatchSegmentName(const char* Name, const char* SegmentStart, uint64_t Segme
  */
 const char* NormalizePathStart(const char* Path)
 {
-	if (Path == nullptr)
-	{
-		return nullptr;
-	}
+    if (Path == nullptr)
+    {
+        return nullptr;
+    }
 
-	while (*Path == PATH_SEPARATOR)
-	{
-		++Path;
-	}
+    while (*Path == PATH_SEPARATOR)
+    {
+        ++Path;
+    }
 
-	while (Path[0] == PATH_DOT && Path[1] == PATH_SEPARATOR)
-	{
-		Path += 2;
-	}
+    while (Path[0] == PATH_DOT && Path[1] == PATH_SEPARATOR)
+    {
+        Path += 2;
+    }
 
-	return Path;
+    return Path;
 }
 
 /**
@@ -162,17 +162,17 @@ const char* NormalizePathStart(const char* Path)
  */
 FileType DecodeNodeType(RamFileSystemEntryType EntryType)
 {
-	if (EntryType == RamFileSystemEntryTypeDirectory)
-	{
-		return INODE_DIR;
-	}
+    if (EntryType == RamFileSystemEntryTypeDirectory)
+    {
+        return INODE_DIR;
+    }
 
-	if (EntryType == RamFileSystemEntryTypeRegularFile)
-	{
-		return INODE_FILE;
-	}
+    if (EntryType == RamFileSystemEntryTypeRegularFile)
+    {
+        return INODE_FILE;
+    }
 
-	return INODE_DEV;
+    return INODE_DEV;
 }
 
 /**
@@ -187,13 +187,13 @@ FileType DecodeNodeType(RamFileSystemEntryType EntryType)
  */
 INode* CreateINode(FileType Type, uint64_t Size, void* Data)
 {
-	INode* Node    = new INode;
-	Node->NodeType = Type;
-	Node->NodeSize = Size;
-	Node->NodeData = Data;
-	Node->INodeOps = nullptr;
-	Node->FileOps  = nullptr;
-	return Node;
+    INode* Node    = new INode;
+    Node->NodeType = Type;
+    Node->NodeSize = Size;
+    Node->NodeData = Data;
+    Node->INodeOps = nullptr;
+    Node->FileOps  = nullptr;
+    return Node;
 }
 
 /**
@@ -208,13 +208,13 @@ INode* CreateINode(FileType Type, uint64_t Size, void* Data)
  */
 Dentry* CreateDentry(const char* Name, Dentry* Parent, INode* Node)
 {
-	Dentry* NewDentry    = new Dentry;
-	NewDentry->name      = DuplicateString(Name);
-	NewDentry->inode     = Node;
-	NewDentry->parent    = Parent;
-	NewDentry->children  = nullptr;
-	NewDentry->child_count = 0;
-	return NewDentry;
+    Dentry* NewDentry      = new Dentry;
+    NewDentry->name        = DuplicateString(Name);
+    NewDentry->inode       = Node;
+    NewDentry->parent      = Parent;
+    NewDentry->children    = nullptr;
+    NewDentry->child_count = 0;
+    return NewDentry;
 }
 
 /**
@@ -229,21 +229,21 @@ Dentry* CreateDentry(const char* Name, Dentry* Parent, INode* Node)
  */
 Dentry* FindChildBySegment(Dentry* Parent, const char* SegmentStart, uint64_t SegmentLength)
 {
-	if (Parent == nullptr)
-	{
-		return nullptr;
-	}
+    if (Parent == nullptr)
+    {
+        return nullptr;
+    }
 
-	for (uint64_t ChildIndex = 0; ChildIndex < Parent->child_count; ++ChildIndex)
-	{
-		Dentry* Child = Parent->children[ChildIndex];
-		if (Child != nullptr && MatchSegmentName(Child->name, SegmentStart, SegmentLength))
-		{
-			return Child;
-		}
-	}
+    for (uint64_t ChildIndex = 0; ChildIndex < Parent->child_count; ++ChildIndex)
+    {
+        Dentry* Child = Parent->children[ChildIndex];
+        if (Child != nullptr && MatchSegmentName(Child->name, SegmentStart, SegmentLength))
+        {
+            return Child;
+        }
+    }
 
-	return nullptr;
+    return nullptr;
 }
 
 /**
@@ -257,27 +257,27 @@ Dentry* FindChildBySegment(Dentry* Parent, const char* SegmentStart, uint64_t Se
  */
 bool AppendChild(Dentry* Parent, Dentry* Child)
 {
-	if (Parent == nullptr || Child == nullptr)
-	{
-		return false;
-	}
+    if (Parent == nullptr || Child == nullptr)
+    {
+        return false;
+    }
 
-	uint64_t NewCount       = Parent->child_count + CHILDREN_GROWTH_ONE;
-	Dentry** NewChildBuffer = new Dentry*[NewCount];
+    uint64_t NewCount       = Parent->child_count + CHILDREN_GROWTH_ONE;
+    Dentry** NewChildBuffer = new Dentry*[NewCount];
 
-	for (uint64_t ChildIndex = 0; ChildIndex < Parent->child_count; ++ChildIndex)
-	{
-		NewChildBuffer[ChildIndex] = Parent->children[ChildIndex];
-	}
+    for (uint64_t ChildIndex = 0; ChildIndex < Parent->child_count; ++ChildIndex)
+    {
+        NewChildBuffer[ChildIndex] = Parent->children[ChildIndex];
+    }
 
-	NewChildBuffer[Parent->child_count] = Child;
+    NewChildBuffer[Parent->child_count] = Child;
 
-	delete[] Parent->children;
-	Parent->children   = NewChildBuffer;
-	Parent->child_count = NewCount;
-	Child->parent      = Parent;
+    delete[] Parent->children;
+    Parent->children    = NewChildBuffer;
+    Parent->child_count = NewCount;
+    Child->parent       = Parent;
 
-	return true;
+    return true;
 }
 
 /**
@@ -290,20 +290,20 @@ bool AppendChild(Dentry* Parent, Dentry* Child)
  */
 void FreeDentryTree(Dentry* Node)
 {
-	if (Node == nullptr)
-	{
-		return;
-	}
+    if (Node == nullptr)
+    {
+        return;
+    }
 
-	for (uint64_t ChildIndex = 0; ChildIndex < Node->child_count; ++ChildIndex)
-	{
-		FreeDentryTree(Node->children[ChildIndex]);
-	}
+    for (uint64_t ChildIndex = 0; ChildIndex < Node->child_count; ++ChildIndex)
+    {
+        FreeDentryTree(Node->children[ChildIndex]);
+    }
 
-	delete[] Node->children;
-	delete Node->inode;
-	delete[] const_cast<char*>(Node->name);
-	delete Node;
+    delete[] Node->children;
+    delete Node->inode;
+    delete[] const_cast<char*>(Node->name);
+    delete Node;
 }
 
 /**
@@ -316,17 +316,17 @@ void FreeDentryTree(Dentry* Node)
  */
 bool IsRootAliasPath(const char* NormalizedPath)
 {
-	if (NormalizedPath == nullptr)
-	{
-		return false;
-	}
+    if (NormalizedPath == nullptr)
+    {
+        return false;
+    }
 
-	if (NormalizedPath[0] == STRING_TERMINATOR)
-	{
-		return true;
-	}
+    if (NormalizedPath[0] == STRING_TERMINATOR)
+    {
+        return true;
+    }
 
-	return NormalizedPath[0] == PATH_DOT && NormalizedPath[1] == STRING_TERMINATOR;
+    return NormalizedPath[0] == PATH_DOT && NormalizedPath[1] == STRING_TERMINATOR;
 }
 
 /**
@@ -343,80 +343,80 @@ bool IsRootAliasPath(const char* NormalizedPath)
  */
 bool EnsurePathDentry(Dentry* RootDentry, const char* Path, FileType FinalNodeType, uint64_t FinalNodeSize, void* FinalNodeData)
 {
-	if (RootDentry == nullptr || Path == nullptr)
-	{
-		return false;
-	}
+    if (RootDentry == nullptr || Path == nullptr)
+    {
+        return false;
+    }
 
-	const char* NormalizedPath = NormalizePathStart(Path);
-	if (IsRootAliasPath(NormalizedPath))
-	{
-		RootDentry->inode->NodeType = INODE_DIR;
-		RootDentry->inode->NodeSize = 0;
-		RootDentry->inode->NodeData = nullptr;
-		return true;
-	}
+    const char* NormalizedPath = NormalizePathStart(Path);
+    if (IsRootAliasPath(NormalizedPath))
+    {
+        RootDentry->inode->NodeType = INODE_DIR;
+        RootDentry->inode->NodeSize = 0;
+        RootDentry->inode->NodeData = nullptr;
+        return true;
+    }
 
-	Dentry* Current = RootDentry;
-	const char* SegmentStart = NormalizedPath;
+    Dentry*     Current      = RootDentry;
+    const char* SegmentStart = NormalizedPath;
 
-	while (*SegmentStart != STRING_TERMINATOR)
-	{
-		while (*SegmentStart == PATH_SEPARATOR)
-		{
-			++SegmentStart;
-		}
+    while (*SegmentStart != STRING_TERMINATOR)
+    {
+        while (*SegmentStart == PATH_SEPARATOR)
+        {
+            ++SegmentStart;
+        }
 
-		if (*SegmentStart == STRING_TERMINATOR)
-		{
-			break;
-		}
+        if (*SegmentStart == STRING_TERMINATOR)
+        {
+            break;
+        }
 
-		const char* SegmentEnd = SegmentStart;
-		while (*SegmentEnd != STRING_TERMINATOR && *SegmentEnd != PATH_SEPARATOR)
-		{
-			++SegmentEnd;
-		}
+        const char* SegmentEnd = SegmentStart;
+        while (*SegmentEnd != STRING_TERMINATOR && *SegmentEnd != PATH_SEPARATOR)
+        {
+            ++SegmentEnd;
+        }
 
-		uint64_t SegmentLength = static_cast<uint64_t>(SegmentEnd - SegmentStart);
-		bool     IsFinalSegment = (*SegmentEnd == STRING_TERMINATOR);
+        uint64_t SegmentLength  = static_cast<uint64_t>(SegmentEnd - SegmentStart);
+        bool     IsFinalSegment = (*SegmentEnd == STRING_TERMINATOR);
 
-		Dentry* Child = FindChildBySegment(Current, SegmentStart, SegmentLength);
-		if (Child == nullptr)
-		{
-			char* SegmentName = DuplicateSegment(SegmentStart, SegmentLength);
-			INode* ChildNode  = nullptr;
+        Dentry* Child = FindChildBySegment(Current, SegmentStart, SegmentLength);
+        if (Child == nullptr)
+        {
+            char*  SegmentName = DuplicateSegment(SegmentStart, SegmentLength);
+            INode* ChildNode   = nullptr;
 
-			if (IsFinalSegment)
-			{
-				ChildNode = CreateINode(FinalNodeType, FinalNodeSize, FinalNodeData);
-			}
-			else
-			{
-				ChildNode = CreateINode(INODE_DIR, 0, nullptr);
-			}
+            if (IsFinalSegment)
+            {
+                ChildNode = CreateINode(FinalNodeType, FinalNodeSize, FinalNodeData);
+            }
+            else
+            {
+                ChildNode = CreateINode(INODE_DIR, 0, nullptr);
+            }
 
-			Child = CreateDentry(SegmentName, Current, ChildNode);
-			delete[] SegmentName;
+            Child = CreateDentry(SegmentName, Current, ChildNode);
+            delete[] SegmentName;
 
-			if (!AppendChild(Current, Child))
-			{
-				FreeDentryTree(Child);
-				return false;
-			}
-		}
-		else if (IsFinalSegment)
-		{
-			Child->inode->NodeType = FinalNodeType;
-			Child->inode->NodeSize = FinalNodeSize;
-			Child->inode->NodeData = FinalNodeData;
-		}
+            if (!AppendChild(Current, Child))
+            {
+                FreeDentryTree(Child);
+                return false;
+            }
+        }
+        else if (IsFinalSegment)
+        {
+            Child->inode->NodeType = FinalNodeType;
+            Child->inode->NodeSize = FinalNodeSize;
+            Child->inode->NodeData = FinalNodeData;
+        }
 
-		Current = Child;
-		SegmentStart = SegmentEnd;
-	}
+        Current      = Child;
+        SegmentStart = SegmentEnd;
+    }
 
-	return true;
+    return true;
 }
 
 /**
@@ -430,16 +430,16 @@ bool EnsurePathDentry(Dentry* RootDentry, const char* Path, FileType FinalNodeTy
  */
 bool MountEntryCallback(const RamFileSystemEntry& Entry, void* Context)
 {
-	MountInitRamFileSystemContext* MountContext = reinterpret_cast<MountInitRamFileSystemContext*>(Context);
-	if (MountContext == nullptr || MountContext->RootDentry == nullptr)
-	{
-		return false;
-	}
+    MountInitRamFileSystemContext* MountContext = reinterpret_cast<MountInitRamFileSystemContext*>(Context);
+    if (MountContext == nullptr || MountContext->RootDentry == nullptr)
+    {
+        return false;
+    }
 
-	FileType NodeType = DecodeNodeType(Entry.Type);
-	bool     Added    = EnsurePathDentry(MountContext->RootDentry, Entry.Name, NodeType, Entry.Size, const_cast<void*>(Entry.Data));
-	MountContext->IsSuccessful = MountContext->IsSuccessful && Added;
-	return MountContext->IsSuccessful;
+    FileType NodeType          = DecodeNodeType(Entry.Type);
+    bool     Added             = EnsurePathDentry(MountContext->RootDentry, Entry.Name, NodeType, Entry.Size, const_cast<void*>(Entry.Data));
+    MountContext->IsSuccessful = MountContext->IsSuccessful && Added;
+    return MountContext->IsSuccessful;
 }
 
 /**
@@ -452,17 +452,17 @@ bool MountEntryCallback(const RamFileSystemEntry& Entry, void* Context)
  */
 const char* FileTypeToString(FileType Type)
 {
-	if (Type == INODE_DIR)
-	{
-		return "dir";
-	}
+    if (Type == INODE_DIR)
+    {
+        return "dir";
+    }
 
-	if (Type == INODE_FILE)
-	{
-		return "file";
-	}
+    if (Type == INODE_FILE)
+    {
+        return "file";
+    }
 
-	return "dev";
+    return "dev";
 }
 
 /**
@@ -477,37 +477,37 @@ const char* FileTypeToString(FileType Type)
  */
 void PrintDentryTree(const Dentry* Entry, FrameBufferConsole* Console, uint64_t Depth)
 {
-	if (Entry == nullptr || Console == nullptr)
-	{
-		return;
-	}
+    if (Entry == nullptr || Console == nullptr)
+    {
+        return;
+    }
 
-	uint64_t IndentSpaces = Depth * INDENT_SPACES_PER_LEVEL;
-	for (uint64_t SpaceIndex = 0; SpaceIndex < IndentSpaces; ++SpaceIndex)
-	{
-		Console->printf_(" ");
-	}
+    uint64_t IndentSpaces = Depth * INDENT_SPACES_PER_LEVEL;
+    for (uint64_t SpaceIndex = 0; SpaceIndex < IndentSpaces; ++SpaceIndex)
+    {
+        Console->printf_(" ");
+    }
 
-	const char* EntryName = Entry->name;
-	if (EntryName == nullptr)
-	{
-		EntryName = "(null)";
-	}
+    const char* EntryName = Entry->name;
+    if (EntryName == nullptr)
+    {
+        EntryName = "(null)";
+    }
 
-	const char* TypeText = "none";
-	uint64_t    NodeSize = 0;
-	if (Entry->inode != nullptr)
-	{
-		TypeText = FileTypeToString(Entry->inode->NodeType);
-		NodeSize = Entry->inode->NodeSize;
-	}
+    const char* TypeText = "none";
+    uint64_t    NodeSize = 0;
+    if (Entry->inode != nullptr)
+    {
+        TypeText = FileTypeToString(Entry->inode->NodeType);
+        NodeSize = Entry->inode->NodeSize;
+    }
 
-	Console->printf_("%s [%s] size=%llu\n", EntryName, TypeText, static_cast<unsigned long long>(NodeSize));
+    Console->printf_("%s [%s] size=%llu\n", EntryName, TypeText, static_cast<unsigned long long>(NodeSize));
 
-	for (uint64_t ChildIndex = 0; ChildIndex < Entry->child_count; ++ChildIndex)
-	{
-		PrintDentryTree(Entry->children[ChildIndex], Console, Depth + 1);
-	}
+    for (uint64_t ChildIndex = 0; ChildIndex < Entry->child_count; ++ChildIndex)
+    {
+        PrintDentryTree(Entry->children[ChildIndex], Console, Depth + 1);
+    }
 }
 } // namespace
 
@@ -519,8 +519,7 @@ void PrintDentryTree(const Dentry* Entry, FrameBufferConsole* Console, uint64_t 
  * Returns:
  *   void - Does not return a value.
  */
-VirtualFileSystem::VirtualFileSystem()
-	: Root(nullptr)
+VirtualFileSystem::VirtualFileSystem() : Root(nullptr)
 {
 }
 
@@ -534,8 +533,8 @@ VirtualFileSystem::VirtualFileSystem()
  */
 VirtualFileSystem::~VirtualFileSystem()
 {
-	FreeDentryTree(Root);
-	Root = nullptr;
+    FreeDentryTree(Root);
+    Root = nullptr;
 }
 
 /**
@@ -548,29 +547,29 @@ VirtualFileSystem::~VirtualFileSystem()
  */
 void VirtualFileSystem::MountInitRamFileSystem(RamFileSystemManager* ramFileSystemManager)
 {
-	if (Root != nullptr)
-	{
-		FreeDentryTree(Root);
-		Root = nullptr;
-	}
+    if (Root != nullptr)
+    {
+        FreeDentryTree(Root);
+        Root = nullptr;
+    }
 
-	INode* RootNode = CreateINode(INODE_DIR, 0, nullptr);
-	Root            = CreateDentry("/", nullptr, RootNode);
+    INode* RootNode = CreateINode(INODE_DIR, 0, nullptr);
+    Root            = CreateDentry("/", nullptr, RootNode);
 
-	if (ramFileSystemManager == nullptr)
-	{
-		return;
-	}
+    if (ramFileSystemManager == nullptr)
+    {
+        return;
+    }
 
-	MountInitRamFileSystemContext MountContext = {};
-	MountContext.RootDentry                    = Root;
-	MountContext.IsSuccessful                  = true;
+    MountInitRamFileSystemContext MountContext = {};
+    MountContext.RootDentry                    = Root;
+    MountContext.IsSuccessful                  = true;
 
-	bool EnumerationSuccess = ramFileSystemManager->EnumerateEntries(&MountEntryCallback, &MountContext, nullptr);
-	if (!EnumerationSuccess || !MountContext.IsSuccessful)
-	{
-		return;
-	}
+    bool EnumerationSuccess = ramFileSystemManager->EnumerateEntries(&MountEntryCallback, &MountContext, nullptr);
+    if (!EnumerationSuccess || !MountContext.IsSuccessful)
+    {
+        return;
+    }
 }
 
 /**
@@ -583,49 +582,49 @@ void VirtualFileSystem::MountInitRamFileSystem(RamFileSystemManager* ramFileSyst
  */
 Dentry* VirtualFileSystem::Lookup(const char* path)
 {
-	if (Root == nullptr || path == nullptr)
-	{
-		return nullptr;
-	}
+    if (Root == nullptr || path == nullptr)
+    {
+        return nullptr;
+    }
 
-	const char* NormalizedPath = NormalizePathStart(path);
-	if (IsRootAliasPath(NormalizedPath))
-	{
-		return Root;
-	}
+    const char* NormalizedPath = NormalizePathStart(path);
+    if (IsRootAliasPath(NormalizedPath))
+    {
+        return Root;
+    }
 
-	Dentry* Current             = Root;
-	const char* SegmentStart    = NormalizedPath;
+    Dentry*     Current      = Root;
+    const char* SegmentStart = NormalizedPath;
 
-	while (*SegmentStart != STRING_TERMINATOR)
-	{
-		while (*SegmentStart == PATH_SEPARATOR)
-		{
-			++SegmentStart;
-		}
+    while (*SegmentStart != STRING_TERMINATOR)
+    {
+        while (*SegmentStart == PATH_SEPARATOR)
+        {
+            ++SegmentStart;
+        }
 
-		if (*SegmentStart == STRING_TERMINATOR)
-		{
-			break;
-		}
+        if (*SegmentStart == STRING_TERMINATOR)
+        {
+            break;
+        }
 
-		const char* SegmentEnd = SegmentStart;
-		while (*SegmentEnd != STRING_TERMINATOR && *SegmentEnd != PATH_SEPARATOR)
-		{
-			++SegmentEnd;
-		}
+        const char* SegmentEnd = SegmentStart;
+        while (*SegmentEnd != STRING_TERMINATOR && *SegmentEnd != PATH_SEPARATOR)
+        {
+            ++SegmentEnd;
+        }
 
-		uint64_t SegmentLength = static_cast<uint64_t>(SegmentEnd - SegmentStart);
-		Current                = FindChildBySegment(Current, SegmentStart, SegmentLength);
-		if (Current == nullptr)
-		{
-			return nullptr;
-		}
+        uint64_t SegmentLength = static_cast<uint64_t>(SegmentEnd - SegmentStart);
+        Current                = FindChildBySegment(Current, SegmentStart, SegmentLength);
+        if (Current == nullptr)
+        {
+            return nullptr;
+        }
 
-		SegmentStart = SegmentEnd;
-	}
+        SegmentStart = SegmentEnd;
+    }
 
-	return Current;
+    return Current;
 }
 
 /**
@@ -638,17 +637,17 @@ Dentry* VirtualFileSystem::Lookup(const char* path)
  */
 void VirtualFileSystem::PrintVFS(FrameBufferConsole* Console)
 {
-	if (Console == nullptr)
-	{
-		return;
-	}
+    if (Console == nullptr)
+    {
+        return;
+    }
 
-	if (Root == nullptr)
-	{
-		Console->printf_("VFS is empty\n");
-		return;
-	}
+    if (Root == nullptr)
+    {
+        Console->printf_("VFS is empty\n");
+        return;
+    }
 
-	Console->printf_("VFS tree:\n");
-	PrintDentryTree(Root, Console, ROOT_TREE_DEPTH);
+    Console->printf_("VFS tree:\n");
+    PrintDentryTree(Root, Console, ROOT_TREE_DEPTH);
 }

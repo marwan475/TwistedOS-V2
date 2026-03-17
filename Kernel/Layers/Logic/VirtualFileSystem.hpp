@@ -35,9 +35,9 @@ struct INodeOperations
 
 struct INode
 {
-    FileType NodeType;
-    uint64_t NodeSize;
-    void*    NodeData;
+    FileType         NodeType;
+    uint64_t         NodeSize;
+    void*            NodeData;
     INodeOperations* INodeOps;
     FileOperations*  FileOps;
 };
@@ -54,11 +54,11 @@ struct Dentry
 {
     const char* name;
 
-    INode* inode;
+    INode*         inode;
     struct Dentry* parent;
 
     struct Dentry** children;
-    uint64_t child_count;
+    uint64_t        child_count;
 };
 
 class VirtualFileSystem
@@ -69,7 +69,7 @@ private:
 public:
     VirtualFileSystem();
     ~VirtualFileSystem();
-    void MountInitRamFileSystem(RamFileSystemManager* ramFileSystemManager);
+    void    MountInitRamFileSystem(RamFileSystemManager* ramFileSystemManager);
     Dentry* Lookup(const char* path);
-    void PrintVFS(FrameBufferConsole* Console);
+    void    PrintVFS(FrameBufferConsole* Console);
 };

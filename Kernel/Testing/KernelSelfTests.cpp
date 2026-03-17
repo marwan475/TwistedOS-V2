@@ -624,10 +624,10 @@ void KernelValidatorTask()
                 if (State.BurstLoops >= State.NextMultitaskProgressBurstLoops)
                 {
                     ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_(
-                            "[SelfTest] [Multitasking and Sleep] progress: fast=%llu medium=%llu slow=%llu burst=%llu/%llu syscall1=%llu/%u syscall2=%llu/%u syscallOther=%llu/%u\n", (unsigned long long) State.FastCycles,
-                            (unsigned long long) State.MediumCycles, (unsigned long long) State.SlowCycles, (unsigned long long) State.BurstLoops, (unsigned long long) BURST_MIN_LOOPS,
-                            (unsigned long long) State.SyscallOneCount, (unsigned) USER_PROCESS_INSTANCE_COUNT, (unsigned long long) State.SyscallTwoCount, (unsigned) USER_PROCESS_INSTANCE_COUNT,
-                            (unsigned long long) State.SyscallOtherCount, (unsigned) USER_PROCESS_INSTANCE_COUNT);
+                            "[SelfTest] [Multitasking and Sleep] progress: fast=%llu medium=%llu slow=%llu burst=%llu/%llu syscall1=%llu/%u syscall2=%llu/%u syscallOther=%llu/%u\n",
+                            (unsigned long long) State.FastCycles, (unsigned long long) State.MediumCycles, (unsigned long long) State.SlowCycles, (unsigned long long) State.BurstLoops,
+                            (unsigned long long) BURST_MIN_LOOPS, (unsigned long long) State.SyscallOneCount, (unsigned) USER_PROCESS_INSTANCE_COUNT, (unsigned long long) State.SyscallTwoCount,
+                            (unsigned) USER_PROCESS_INSTANCE_COUNT, (unsigned long long) State.SyscallOtherCount, (unsigned) USER_PROCESS_INSTANCE_COUNT);
 
                     State.NextMultitaskProgressBurstLoops += 200;
                 }
@@ -635,9 +635,9 @@ void KernelValidatorTask()
                 if (UserChecksPassed() && !State.UserCreationResultLogged)
                 {
                     LogTestResult(ActiveDispatcher, "ELF and Raw Binary User creation", true);
-                        ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_(
-                            "[SelfTest] syscall instruction validation: syscall1=%llu syscall2=%llu syscallOther=%llu\n", (unsigned long long) State.SyscallOneCount,
-                            (unsigned long long) State.SyscallTwoCount, (unsigned long long) State.SyscallOtherCount);
+                    ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("[SelfTest] syscall instruction validation: syscall1=%llu syscall2=%llu syscallOther=%llu\n",
+                                                                                (unsigned long long) State.SyscallOneCount, (unsigned long long) State.SyscallTwoCount,
+                                                                                (unsigned long long) State.SyscallOtherCount);
                     State.UserCreationResultLogged = true;
                 }
 

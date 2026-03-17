@@ -354,6 +354,13 @@ uint8_t LogicLayer::CreateUserProcessFromVFS(const char* FilePath)
     if (ProcessId == PROCESS_ID_INVALID)
     {
         Resource->GetPMM()->FreePagesFromDescriptor(CopiedImage, Pages);
+        return ProcessId;
+    }
+
+    Process* CreatedProcess = PM->GetProcessById(ProcessId);
+    if (CreatedProcess != nullptr)
+    {
+        CreatedProcess->CurrentFileSystemLocation = (Entry->parent != nullptr) ? Entry->parent : Entry;
     }
 
     return ProcessId;

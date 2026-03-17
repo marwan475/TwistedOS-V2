@@ -6,6 +6,8 @@
 
 #pragma once
 
+#include "VirtualFileSystem.hpp"
+
 #include <Arch/x86.hpp>
 #include <Layers/Resource/VirtualAddressSpace.hpp>
 #include <stddef.h>
@@ -18,6 +20,7 @@ static constexpr size_t   USER_PROCESS_STACK_SIZE        = 8192;
 static constexpr size_t   USER_PROCESS_HEAP_SIZE         = 8192;
 static constexpr uint64_t USER_PROCESS_VIRTUAL_BASE      = 0x400000;
 static constexpr uint64_t USER_PROCESS_VIRTUAL_STACK_TOP = 0x00007FFFFFFFFFFF;
+static constexpr size_t   MAX_OPEN_FILES_PER_PROCESS     = 16;
 
 enum ProcessState
 {
@@ -47,7 +50,9 @@ struct Process
     ProcessLevel         Level;
     FILE_TYPE            FileType;
     void*                StackPointer;
-    VirtualAddressSpace* AddressSpace = nullptr;
+    VirtualAddressSpace* AddressSpace              = nullptr;
+    Dentry*              CurrentFileSystemLocation = nullptr;
+    File*                FileTable[MAX_OPEN_FILES_PER_PROCESS];
 };
 
 class ProcessManager

@@ -12,6 +12,16 @@ PROCESS_STATE_NAMES = {
     3: "TERMINATED",
 }
 
+PROCESS_LEVEL_NAMES = {
+    0: "KERNEL",
+    1: "USER",
+}
+
+FILE_TYPE_NAMES = {
+    0: "RAW",
+    1: "ELF",
+}
+
 
 def _strip_typedefs(gdb_type):
     while True:
@@ -116,6 +126,27 @@ def _as_int(value):
     return int(_dereference(value)) if _strip_typedefs(value.type).code == gdb.TYPE_CODE_REF else int(value)
 
 
+def _dentry_label(dentry_ptr):
+    if int(dentry_ptr) == 0:
+        return "<null>"
+
+    try:
+        dentry = _dereference(dentry_ptr)
+        name = str(_field(dentry, "name"))
+        return "{} ({})".format(name, _pointer_string(dentry_ptr))
+    except Exception:
+        return _pointer_string(dentry_ptr)
+
+
+def _count_open_files(file_table):
+    open_count = 0
+    file_count = file_table.type.range()[1] + 1
+    for slot in range(file_count):
+        if int(file_table[slot]) != 0:
+            open_count += 1
+    return open_count
+
+
 class ArxCommand(gdb.Command):
     def __init__(self, name):
         super().__init__(name, gdb.COMMAND_USER)
@@ -144,18 +175,29 @@ class ArxProcessesCommand(ArxCommand):
             process = processes[index]
             process_id = int(_field(process, "Id"))
             status = int(_field(process, "Status"))
+            level = int(_field(process, "Level"))
+            file_type = int(_field(process, "FileType"))
             state = _field(process, "State")
             stack_pointer = _field(process, "StackPointer")
+            address_space = _field(process, "AddressSpace")
+            cwd = _field(process, "CurrentFileSystemLocation")
+            file_table = _field(process, "FileTable")
+            open_files = _count_open_files(file_table)
             marker = "*" if process_id == current_process_id else " "
 
             gdb.write(
-                "{} id={} status={} rip=0x{:x} rsp=0x{:x} stack={}\n".format(
+                "{} id={} status={} level={} filetype={} rip=0x{:x} rsp=0x{:x} stack={} as={} cwd={} open_files={}\n".format(
                     marker,
                     process_id,
                     PROCESS_STATE_NAMES.get(status, str(status)),
+                    PROCESS_LEVEL_NAMES.get(level, str(level)),
+                    FILE_TYPE_NAMES.get(file_type, str(file_type)),
                     int(_field(state, "rip")),
                     int(_field(state, "rsp")),
                     _pointer_string(stack_pointer),
+                    _pointer_string(address_space),
+                    _dentry_label(cwd),
+                    open_files,
                 )
             )
 
