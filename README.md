@@ -82,6 +82,8 @@ GDB:
     - `twistedos-processes`
     - `twistedos-ready-queue`
     - `twistedos-sleep-queue`
+    - `twistedos-address-space`
+    - `twistedos-physical-memory`
 
 
 Resources:
