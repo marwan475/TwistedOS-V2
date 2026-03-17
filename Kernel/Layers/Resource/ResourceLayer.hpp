@@ -7,7 +7,9 @@
 #pragma once
 
 #include "KernelHeapManager.hpp"
+#include "Keyboard.hpp"
 #include "RamFileSystemManager.hpp"
+#include "TTY.hpp"
 
 #include <Arch/x86.hpp>
 #include <Logging/FrameBufferConsole.hpp>
@@ -30,6 +32,8 @@ private:
     uint64_t               InitramfsSize;
     KernelHeapManager      KHM;
     RamFileSystemManager   RFS;
+    TTY*                   Terminal;
+    Keyboard*              InputKeyboard;
 
 public:
     ResourceLayer();
@@ -42,8 +46,12 @@ public:
     uint64_t               GetKernelHeapVirtualAddrStart() const;
     uint64_t               GetKernelHeapVirtualAddrEnd() const;
     RamFileSystemManager*  GetRamFileSystemManager();
+    TTY*                   GetTTY() const;
+    Keyboard*              GetKeyboard() const;
     void                   InitializeKernelHeapManager();
     void                   InitializeRamFileSystemManager();
+    void                   InitializeTTY();
+    void                   InitializeKeyboard();
     void*                  kmalloc(size_t Size);
     void                   kfree(void* Ptr);
     uint64_t               ReadCurrentPageTable() const;

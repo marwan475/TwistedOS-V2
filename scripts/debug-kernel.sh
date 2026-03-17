@@ -98,10 +98,8 @@ trap cleanup EXIT INT TERM
 mkdir -p "${repo_root}/build"
 rm -f "${qemu_log}" "${serial_log}" "${gdb_cmds}"
 
-if [[ ! -f "${bootloader_efi}" || ! -f "${kernel_elf}" ]]; then
-    echo "Building OS image to ensure bootloader and kernel symbols are present"
-    make -C "${repo_root}" all
-fi
+echo "Building OS image (DEBUG=1) to ensure symbols and kernel are up to date"
+make -C "${repo_root}" DEBUG=1 all
 
 if [[ ! -f "${bootloader_efi}" ]]; then
     echo "Bootloader image not found at ${bootloader_efi}" >&2

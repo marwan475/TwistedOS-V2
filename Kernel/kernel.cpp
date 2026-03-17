@@ -7,6 +7,7 @@
 #include "../utils/KernelParameters.hpp"
 #include "Layers/Dispatcher.hpp"
 #include "Layers/Resource/ResourceLayer.hpp"
+#include "Layers/Resource/TTY.hpp"
 #include "Testing/KernelSelfTests.hpp"
 
 #include <Arch/x86.hpp>
@@ -138,6 +139,13 @@ extern "C"
         ActiveDispatcher->GetLogicLayer()->CreateNullProcess();
 
         ActiveDispatcher->GetLogicLayer()->GetVirtualFileSystem()->MountInitRamFileSystem(ActiveDispatcher->GetResourceLayer()->GetRamFileSystemManager());
+
+        TTY* Terminal = ActiveDispatcher->GetResourceLayer()->GetTTY();
+        if (Terminal != nullptr)
+        {
+            ActiveDispatcher->GetLogicLayer()->GetVirtualFileSystem()->RegisterDevice("/dev/tty", Terminal, Terminal->GetFileOperations());
+        }
+
         ActiveDispatcher->GetLogicLayer()->GetVirtualFileSystem()->PrintVFS(ActiveDispatcher->GetResourceLayer()->GetConsole());
 
         if (!KernelSelfTestStart(ActiveDispatcher))

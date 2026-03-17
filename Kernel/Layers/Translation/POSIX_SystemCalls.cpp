@@ -45,6 +45,7 @@ int64_t TranslationLayer::HandlePosixSystemCallNumber(uint64_t SystemCallNumber,
         case 3: // close
             return HandleCloseSystemCall(Arg1);
             break;
+/*
         case 4: // stat
             break;
         case 5: // fstat
@@ -941,6 +942,7 @@ int64_t TranslationLayer::HandlePosixSystemCallNumber(uint64_t SystemCallNumber,
             break;
         case 451: // cachestat
             break;
+*/
 
         default:
             break;

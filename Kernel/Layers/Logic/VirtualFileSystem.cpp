@@ -668,6 +668,32 @@ void VirtualFileSystem::MountInitRamFileSystem(RamFileSystemManager* ramFileSyst
     }
 }
 
+bool VirtualFileSystem::RegisterDevice(const char* path, void* deviceData, FileOperations* fileOperations)
+{
+    if (Root == nullptr || path == nullptr || fileOperations == nullptr)
+    {
+        return false;
+    }
+
+    if (!EnsurePathDentry(Root, path, INODE_DEV, 0, deviceData))
+    {
+        return false;
+    }
+
+    Dentry* DeviceDentry = Lookup(path);
+    if (DeviceDentry == nullptr || DeviceDentry->inode == nullptr)
+    {
+        return false;
+    }
+
+    DeviceDentry->inode->NodeType = INODE_DEV;
+    DeviceDentry->inode->NodeSize = 0;
+    DeviceDentry->inode->NodeData = deviceData;
+    DeviceDentry->inode->FileOps  = fileOperations;
+
+    return true;
+}
+
 /**
  * Function: Lookup
  * Description: Resolves a path to its corresponding dentry in the mounted VFS tree.

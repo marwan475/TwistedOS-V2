@@ -22,7 +22,7 @@ extern "C" void ResourceLayerTaskSwitchUserAsm(CpuState* OldState, const CpuStat
  * Returns:
  *   ResourceLayer - Constructed resource layer instance.
  */
-ResourceLayer::ResourceLayer() : PMM(nullptr), VMM(nullptr), Console(nullptr), KernelHeapVirtualAddrStart(0), KernelHeapVirtualAddrEnd(0), KHM(0, 0), RFS(0, 0)
+ResourceLayer::ResourceLayer() : PMM(nullptr), VMM(nullptr), Console(nullptr), KernelHeapVirtualAddrStart(0), KernelHeapVirtualAddrEnd(0), KHM(0, 0), RFS(0, 0), Terminal(nullptr), InputKeyboard(nullptr)
 {
 }
 
@@ -130,6 +130,16 @@ RamFileSystemManager* ResourceLayer::GetRamFileSystemManager()
     return &RFS;
 }
 
+TTY* ResourceLayer::GetTTY() const
+{
+    return Terminal;
+}
+
+Keyboard* ResourceLayer::GetKeyboard() const
+{
+    return InputKeyboard;
+}
+
 /**
  * Function: ResourceLayer::InitializeKernelHeapManager
  * Description: Initializes the kernel heap manager with the configured virtual heap range.
@@ -157,6 +167,37 @@ void ResourceLayer::InitializeRamFileSystemManager()
     RFS = RamFileSystemManager(InitramfsAddress, InitramfsSize);
     Console->printf_("RAM File System Manager Initialized\n");
     RFS.ParseAndPrintInitramfs(Console);
+}
+
+void ResourceLayer::InitializeTTY()
+{
+    if (Terminal != nullptr)
+    {
+        delete Terminal;
+        Terminal = nullptr;
+    }
+
+    Terminal = new TTY(Console);
+
+    if (InputKeyboard != nullptr)
+    {
+        InputKeyboard->SetTTY(Terminal);
+    }
+
+    Console->printf_("TTY Initialized\n");
+}
+
+void ResourceLayer::InitializeKeyboard()
+{
+    if (InputKeyboard != nullptr)
+    {
+        delete InputKeyboard;
+        InputKeyboard = nullptr;
+    }
+
+    InputKeyboard = new Keyboard();
+    InputKeyboard->Initialize(Terminal);
+    Console->printf_("Keyboard Initialized\n");
 }
 
 /**
