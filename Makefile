@@ -158,7 +158,7 @@ $(INIT_BIN): $(INIT_SRC) $(INIT_LD) | build
 $(INIT2_BIN): $(INIT2_SRC) $(INIT_LD) | build
 	$(KERNEL_CC) $(INIT_CFLAGS) -x c -c $(INIT2_SRC) -o $(INIT2_OBJ)
 	$(KERNEL_LD) -nostdlib -static -T $(INIT_LD) $(INIT2_OBJ) -o $(INIT2_ELF)
-	objcopy -O binary $(INIT2_ELF) $(INIT2_BIN)
+	cp $(INIT2_ELF) $(INIT2_BIN)
 
 $(INITRAMFS): $(INIT_BIN) $(INIT2_BIN)
 	chmod +x $(INIT_BIN) $(INIT2_BIN)

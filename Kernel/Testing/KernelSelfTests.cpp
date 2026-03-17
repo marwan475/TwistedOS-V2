@@ -2,6 +2,7 @@
 
 #include <CommonUtils.hpp>
 #include <Layers/Dispatcher.hpp>
+#include <Layers/Logic/ELFManager.hpp>
 
 void KernelValidatorTask();
 
@@ -99,7 +100,19 @@ KernelSelfTestState State = {
         false,
 };
 
-uint8_t CreateUserProcessFromInitramfs(Dispatcher* ActiveDispatcher, const char* Path);
+uint8_t CreateUserProcessFromInitramfs(Dispatcher* ActiveDispatcher, const char* Path, bool RequireElfImage);
+
+bool ValidateImageAsElf(const void* Data, uint64_t Size)
+{
+    if (Data == nullptr || Size < sizeof(ELFHeader))
+    {
+        return false;
+    }
+
+    ELFManager ElfManager = {};
+    ELFHeader  Header     = ElfManager.ParseELF(reinterpret_cast<uint64_t>(Data));
+    return ElfManager.ValidateELF(Header);
+}
 
 Dispatcher* RequireDispatcher()
 {
@@ -337,12 +350,12 @@ bool SetupMultitaskingTest(Dispatcher* ActiveDispatcher)
 
     for (uint32_t index = 0; index < USER_PROCESS_INSTANCE_COUNT; ++index)
     {
-        if (CreateUserProcessFromInitramfs(ActiveDispatcher, "/init") == INVALID_PROCESS_ID)
+        if (CreateUserProcessFromInitramfs(ActiveDispatcher, "/init", false) == INVALID_PROCESS_ID)
         {
             return false;
         }
 
-        if (CreateUserProcessFromInitramfs(ActiveDispatcher, "/init2") == INVALID_PROCESS_ID)
+        if (CreateUserProcessFromInitramfs(ActiveDispatcher, "/init2", true) == INVALID_PROCESS_ID)
         {
             return false;
         }
@@ -350,21 +363,35 @@ bool SetupMultitaskingTest(Dispatcher* ActiveDispatcher)
     return true;
 }
 
-uint8_t CreateUserProcessFromInitramfs(Dispatcher* ActiveDispatcher, const char* Path)
+uint8_t CreateUserProcessFromInitramfs(Dispatcher* ActiveDispatcher, const char* Path, bool RequireElfImage)
 {
     uint64_t FileSize = 0;
     void*    FileData = ActiveDispatcher->GetResourceLayer()->LoadFileFromInitramfs(Path, &FileSize);
 
     if (FileData == nullptr || FileSize == 0)
     {
+        ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("[SelfTest] [ELF] load failed path=%s size=%llu\n", Path, (unsigned long long) FileSize);
+        return INVALID_PROCESS_ID;
+    }
+
+    bool ElfImage = ValidateImageAsElf(FileData, FileSize);
+    ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("[SelfTest] [ELF] image path=%s size=%llu magic=%s expected=%s\n", Path, (unsigned long long) FileSize,
+                                                                ElfImage ? "elf" : "non-elf", RequireElfImage ? "elf" : "any");
+
+    if (RequireElfImage && !ElfImage)
+    {
+        ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("[SelfTest] [ELF] rejected non-elf image path=%s\n", Path);
         return INVALID_PROCESS_ID;
     }
 
     uint8_t UserProcessId = ActiveDispatcher->GetLogicLayer()->CreateUserProcess(reinterpret_cast<uint64_t>(FileData), static_cast<uint64_t>(FileSize));
     if (UserProcessId == INVALID_PROCESS_ID)
     {
+        ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("[SelfTest] [ELF] create user process failed path=%s\n", Path);
         return INVALID_PROCESS_ID;
     }
+
+    ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("[SelfTest] [ELF] created user process path=%s pid=%u\n", Path, (unsigned) UserProcessId);
 
     RegisterTestProcess(UserProcessId);
 
