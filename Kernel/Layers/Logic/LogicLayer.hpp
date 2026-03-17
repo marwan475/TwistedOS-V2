@@ -24,6 +24,8 @@ private:
 
     VirtualAddressSpace* MapRawBinary(uint64_t CodeAddr, uint64_t CodeSize);
     VirtualAddressSpace* MapELF(uint64_t CodeAddr, uint64_t CodeSize, const ELFHeader& Header);
+    void                 CleanUpELF(VirtualAddressSpace* AddressSpace);
+    void                 CleanUpRawBinary(VirtualAddressSpace* AddressSpace);
 
 public:
     LogicLayer();

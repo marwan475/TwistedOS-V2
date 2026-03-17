@@ -7,6 +7,7 @@ ProcessManager::ProcessManager() : CurrentProcessId(0xFF)
         Processes[index].Id           = static_cast<uint8_t>(index);
         Processes[index].Status       = PROCESS_TERMINATED;
         Processes[index].Level        = PROCESS_LEVEL_KERNEL;
+        Processes[index].FileType     = FILE_TYPE_RAW_BINARY;
         Processes[index].StackPointer = nullptr;
         Processes[index].State        = {};
     }
@@ -63,7 +64,9 @@ uint8_t ProcessManager::CreateKernelProcess(void* StackPointer, CpuState Initial
         {
             Processes[index].Status       = PROCESS_READY;
             Processes[index].Level        = PROCESS_LEVEL_KERNEL;
+            Processes[index].FileType     = FILE_TYPE_RAW_BINARY;
             Processes[index].StackPointer = StackPointer;
+            Processes[index].AddressSpace = nullptr;
             Processes[index].State        = InitialState;
             return Processes[index].Id;
         }
@@ -71,7 +74,7 @@ uint8_t ProcessManager::CreateKernelProcess(void* StackPointer, CpuState Initial
     return 0xFF; // Indicate failure to create process
 }
 
-uint8_t ProcessManager::CreateUserProcess(void* StackPointer, CpuState InitialState, VirtualAddressSpace* AddressSpace)
+uint8_t ProcessManager::CreateUserProcess(void* StackPointer, CpuState InitialState, VirtualAddressSpace* AddressSpace, FILE_TYPE FileType)
 {
     for (size_t index = 0; index < MaxProcesses; ++index)
     {
@@ -79,6 +82,7 @@ uint8_t ProcessManager::CreateUserProcess(void* StackPointer, CpuState InitialSt
         {
             Processes[index].Status       = PROCESS_READY;
             Processes[index].Level        = PROCESS_LEVEL_USER;
+            Processes[index].FileType     = FileType;
             Processes[index].StackPointer = StackPointer;
             Processes[index].AddressSpace = AddressSpace;
             Processes[index].State        = InitialState;
@@ -96,5 +100,6 @@ void* ProcessManager::KillProcess(uint8_t Id)
         return nullptr; // Invalid process ID
     }
     Processes[Id].Status = PROCESS_TERMINATED;
+    Processes[Id].FileType = FILE_TYPE_RAW_BINARY;
     return Processes[Id].StackPointer;
 }

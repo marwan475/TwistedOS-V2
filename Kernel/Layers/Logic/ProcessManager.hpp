@@ -26,12 +26,19 @@ enum ProcessLevel
     PROCESS_LEVEL_USER
 };
 
+enum FILE_TYPE
+{
+    FILE_TYPE_RAW_BINARY,
+    FILE_TYPE_ELF
+};
+
 struct Process
 {
     uint8_t              Id;
     CpuState             State;
     ProcessState         Status;
     ProcessLevel         Level;
+    FILE_TYPE            FileType;
     void*                StackPointer;
     VirtualAddressSpace* AddressSpace = nullptr;
 };
@@ -51,6 +58,6 @@ public:
     Process* GetRunningProcess();
     void     UpdateCurrentProcessId(uint8_t Id);
     uint8_t  CreateKernelProcess(void* StackPointer, CpuState InitialState);
-    uint8_t  CreateUserProcess(void* StackPointer, CpuState InitialState, VirtualAddressSpace* AddressSpace);
+    uint8_t  CreateUserProcess(void* StackPointer, CpuState InitialState, VirtualAddressSpace* AddressSpace, FILE_TYPE FileType);
     void*    KillProcess(uint8_t Id);
 };

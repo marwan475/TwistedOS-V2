@@ -10,6 +10,11 @@ uint64_t AlignUpToPage(uint64_t Value)
 {
     return (Value + PAGE_SIZE - 1) & ~(static_cast<uint64_t>(PAGE_SIZE) - 1);
 }
+
+uint64_t AlignDownToPage(uint64_t Value)
+{
+    return Value & ~(static_cast<uint64_t>(PAGE_SIZE) - 1);
+}
 } // namespace
 
 namespace
@@ -187,7 +192,12 @@ uint8_t LogicLayer::CreateUserProcess(uint64_t CodeAddr, uint64_t CodeSize)
 
     State.cs   = USER_CS;
     State.ss   = USER_SS;
-    uint8_t Id = PM->CreateUserProcess(reinterpret_cast<void*>(AddressSpace->GetStackVirtualAddressStart()), State, AddressSpace);
+    uint8_t Id = PM->CreateUserProcess(
+        reinterpret_cast<void*>(AddressSpace->GetStackVirtualAddressStart()),
+        State,
+        AddressSpace,
+        IsELF ? FILE_TYPE_ELF : FILE_TYPE_RAW_BINARY
+    );
 
     if (Id != 0xFF)
     {
@@ -348,6 +358,155 @@ VirtualAddressSpace* LogicLayer::MapELF(uint64_t CodeAddr, uint64_t CodeSize, co
     return AddressSpace;
 }
 
+void LogicLayer::CleanUpRawBinary(VirtualAddressSpace* AddressSpace)
+{
+    if (AddressSpace == nullptr || Resource == nullptr)
+    {
+        return;
+    }
+
+    PhysicalMemoryManager* PMM = Resource->GetPMM();
+    if (PMM == nullptr)
+    {
+        return;
+    }
+
+    uint64_t CodePhysAddr       = AddressSpace->GetCodePhysicalAddress();
+    uint64_t CodeSize           = AddressSpace->GetCodeSize();
+    uint64_t HeapPhysAddr       = AddressSpace->GetHeapPhysicalAddress();
+    uint64_t HeapSize           = AddressSpace->GetHeapSize();
+    uint64_t StackPhysAddr      = AddressSpace->GetStackPhysicalAddress();
+    uint64_t StackSize          = AddressSpace->GetStackSize();
+    uint64_t ProcessPageMapL4   = AddressSpace->GetPageMapL4TableAddr();
+
+    if (CodePhysAddr != 0 && CodeSize != 0)
+    {
+        PMM->FreePagesFromDescriptor(reinterpret_cast<void*>(CodePhysAddr), (CodeSize + PAGE_SIZE - 1) / PAGE_SIZE);
+    }
+
+    if (HeapPhysAddr != 0 && HeapSize != 0)
+    {
+        PMM->FreePagesFromDescriptor(reinterpret_cast<void*>(HeapPhysAddr), (HeapSize + PAGE_SIZE - 1) / PAGE_SIZE);
+    }
+
+    if (StackPhysAddr != 0 && StackSize != 0)
+    {
+        PMM->FreePagesFromDescriptor(reinterpret_cast<void*>(StackPhysAddr), (StackSize + PAGE_SIZE - 1) / PAGE_SIZE);
+    }
+
+    if (ProcessPageMapL4 != 0)
+    {
+        PMM->FreePagesFromDescriptor(reinterpret_cast<void*>(ProcessPageMapL4), 1);
+    }
+}
+
+void LogicLayer::CleanUpELF(VirtualAddressSpace* AddressSpace)
+{
+    if (AddressSpace == nullptr || Resource == nullptr)
+    {
+        return;
+    }
+
+    PhysicalMemoryManager* PMM = Resource->GetPMM();
+    if (PMM == nullptr)
+    {
+        return;
+    }
+
+    VirtualAddressSpaceELF* ELFAddressSpace = static_cast<VirtualAddressSpaceELF*>(AddressSpace);
+    const ELFMemoryRegion*  Regions         = ELFAddressSpace->GetMemoryRegions();
+    size_t                  RegionCount      = ELFAddressSpace->GetMemoryRegionCount();
+
+    uint64_t RangeStarts[16] = {};
+    uint64_t RangeEnds[16]   = {};
+    size_t   RangeCount      = 0;
+
+    for (size_t RegionIndex = 0; RegionIndex < RegionCount; ++RegionIndex)
+    {
+        uint64_t RegionPhysicalAddress = Regions[RegionIndex].PhysicalAddress;
+        uint64_t RegionSize            = Regions[RegionIndex].Size;
+        if (RegionPhysicalAddress == 0 || RegionSize == 0)
+        {
+            continue;
+        }
+
+        uint64_t Start      = AlignDownToPage(RegionPhysicalAddress);
+        uint64_t PageOffset = Regions[RegionIndex].VirtualAddress & (PAGE_SIZE - 1);
+        uint64_t PageCount  = (PageOffset + RegionSize + PAGE_SIZE - 1) / PAGE_SIZE;
+        if (PageCount == 0)
+        {
+            continue;
+        }
+        uint64_t End = Start + (PageCount * PAGE_SIZE);
+
+        bool Merged = true;
+        while (Merged)
+        {
+            Merged = false;
+            for (size_t RangeIndex = 0; RangeIndex < RangeCount; ++RangeIndex)
+            {
+                if (End < RangeStarts[RangeIndex] || Start > RangeEnds[RangeIndex])
+                {
+                    continue;
+                }
+
+                if (RangeStarts[RangeIndex] < Start)
+                {
+                    Start = RangeStarts[RangeIndex];
+                }
+                if (RangeEnds[RangeIndex] > End)
+                {
+                    End = RangeEnds[RangeIndex];
+                }
+
+                RangeStarts[RangeIndex] = RangeStarts[RangeCount - 1];
+                RangeEnds[RangeIndex]   = RangeEnds[RangeCount - 1];
+                --RangeCount;
+                Merged = true;
+                break;
+            }
+        }
+
+        if (RangeCount < 16)
+        {
+            RangeStarts[RangeCount] = Start;
+            RangeEnds[RangeCount]   = End;
+            ++RangeCount;
+        }
+    }
+
+    for (size_t RangeIndex = 0; RangeIndex < RangeCount; ++RangeIndex)
+    {
+        uint64_t Start = RangeStarts[RangeIndex];
+        uint64_t End   = RangeEnds[RangeIndex];
+        if (End > Start)
+        {
+            PMM->FreePagesFromDescriptor(reinterpret_cast<void*>(Start), (End - Start) / PAGE_SIZE);
+        }
+    }
+
+    uint64_t HeapPhysAddr     = AddressSpace->GetHeapPhysicalAddress();
+    uint64_t HeapSize         = AddressSpace->GetHeapSize();
+    uint64_t StackPhysAddr    = AddressSpace->GetStackPhysicalAddress();
+    uint64_t StackSize        = AddressSpace->GetStackSize();
+    uint64_t ProcessPageMapL4 = AddressSpace->GetPageMapL4TableAddr();
+
+    if (HeapPhysAddr != 0 && HeapSize != 0)
+    {
+        PMM->FreePagesFromDescriptor(reinterpret_cast<void*>(HeapPhysAddr), (HeapSize + PAGE_SIZE - 1) / PAGE_SIZE);
+    }
+
+    if (StackPhysAddr != 0 && StackSize != 0)
+    {
+        PMM->FreePagesFromDescriptor(reinterpret_cast<void*>(StackPhysAddr), (StackSize + PAGE_SIZE - 1) / PAGE_SIZE);
+    }
+
+    if (ProcessPageMapL4 != 0)
+    {
+        PMM->FreePagesFromDescriptor(reinterpret_cast<void*>(ProcessPageMapL4), 1);
+    }
+}
+
 void LogicLayer::KillProcess(uint8_t Id)
 {
     Process* TargetProcess = PM->GetProcessById(Id);
@@ -356,30 +515,17 @@ void LogicLayer::KillProcess(uint8_t Id)
     {
         VirtualAddressSpace* AddressSpace = TargetProcess->AddressSpace;
 
-        uint64_t CodePhysAddr  = AddressSpace->GetCodePhysicalAddress();
-        uint64_t CodeSize      = AddressSpace->GetCodeSize();
-        uint64_t HeapPhysAddr  = AddressSpace->GetHeapPhysicalAddress();
-        uint64_t HeapSize      = AddressSpace->GetHeapSize();
-        uint64_t StackPhysAddr = AddressSpace->GetStackPhysicalAddress();
-        uint64_t StackSize     = AddressSpace->GetStackSize();
+        bool IsELFProcess = TargetProcess->FileType == FILE_TYPE_ELF;
 
         PM->KillProcess(Id);
 
-        PhysicalMemoryManager* PMM = Resource->GetPMM();
-
-        if (CodePhysAddr != 0 && CodeSize != 0)
+        if (IsELFProcess)
         {
-            PMM->FreePagesFromDescriptor(reinterpret_cast<void*>(CodePhysAddr), (CodeSize + PAGE_SIZE - 1) / PAGE_SIZE);
+            CleanUpELF(AddressSpace);
         }
-
-        if (HeapPhysAddr != 0 && HeapSize != 0)
+        else
         {
-            PMM->FreePagesFromDescriptor(reinterpret_cast<void*>(HeapPhysAddr), HeapSize / PAGE_SIZE);
-        }
-
-        if (StackPhysAddr != 0 && StackSize != 0)
-        {
-            PMM->FreePagesFromDescriptor(reinterpret_cast<void*>(StackPhysAddr), StackSize / PAGE_SIZE);
+            CleanUpRawBinary(AddressSpace);
         }
 
         delete AddressSpace;
