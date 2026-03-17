@@ -8,6 +8,9 @@
 
 #include <stdint.h>
 
+class RamFileSystemManager;
+class FrameBufferConsole;
+
 enum FileType
 {
     INODE_FILE,
@@ -60,7 +63,12 @@ struct Dentry
 
 class VirtualFileSystem
 {
+private:
+    Dentry* Root;
+
 public:
     VirtualFileSystem();
     ~VirtualFileSystem();
+    void MountInitRamFileSystem(RamFileSystemManager* ramFileSystemManager);
+    void PrintVFS(FrameBufferConsole* Console);
 };

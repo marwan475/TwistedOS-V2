@@ -41,6 +41,7 @@ public:
     FrameBufferConsole*    GetConsole() const;
     uint64_t               GetKernelHeapVirtualAddrStart() const;
     uint64_t               GetKernelHeapVirtualAddrEnd() const;
+    RamFileSystemManager*  GetRamFileSystemManager();
     void                   InitializeKernelHeapManager();
     void                   InitializeRamFileSystemManager();
     void*                  kmalloc(size_t Size);

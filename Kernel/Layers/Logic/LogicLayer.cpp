@@ -102,6 +102,11 @@ LogicLayer::~LogicLayer()
     {
         delete ELF;
     }
+
+    if (VFS != nullptr)
+    {
+        delete VFS;
+    }
 }
 
 /**
@@ -131,16 +136,29 @@ ResourceLayer* LogicLayer::GetResourceLayer() const
 }
 
 /**
- * Function: LogicLayer::GetELFManger
+ * Function: LogicLayer::GetELFManager
  * Description: Returns ELF manager instance.
  * Parameters:
  *   None
  * Returns:
  *   ELFManager* - Pointer to ELF manager.
  */
-ELFManager* LogicLayer::GetELFManger() const
+ELFManager* LogicLayer::GetELFManager() const
 {
     return ELF;
+}
+
+/**
+ * Function: LogicLayer::GetVirtualFileSystem
+ * Description: Returns virtual file system instance.
+ * Parameters:
+ *   None
+ * Returns:
+ *   VirtualFileSystem* - Pointer to virtual file system.
+ */
+VirtualFileSystem* LogicLayer::GetVirtualFileSystem() const
+{
+    return VFS;
 }
 
 /**
@@ -217,6 +235,25 @@ void LogicLayer::InitializeELFManager()
 
     ELF = new ELFManager();
     Resource->GetConsole()->printf_("ELF Manager Initialized\n");
+}
+
+/**
+ * Function: LogicLayer::InitializeVirtualFileSystem
+ * Description: Creates virtual file system if it has not been initialized.
+ * Parameters:
+ *   None
+ * Returns:
+ *   void - No return value.
+ */
+void LogicLayer::InitializeVirtualFileSystem()
+{
+    if (VFS != nullptr)
+    {
+        return;
+    }
+
+    VFS = new VirtualFileSystem();
+    Resource->GetConsole()->printf_("Virtual File System Initialized\n");
 }
 
 /**

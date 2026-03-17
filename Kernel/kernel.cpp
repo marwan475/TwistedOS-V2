@@ -137,6 +137,9 @@ extern "C"
 
         ActiveDispatcher->GetLogicLayer()->CreateNullProcess();
 
+        ActiveDispatcher->GetLogicLayer()->GetVirtualFileSystem()->MountInitRamFileSystem(ActiveDispatcher->GetResourceLayer()->GetRamFileSystemManager());
+        ActiveDispatcher->GetLogicLayer()->GetVirtualFileSystem()->PrintVFS(ActiveDispatcher->GetResourceLayer()->GetConsole());
+
         if (!KernelSelfTestStart(ActiveDispatcher))
         {
             ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("KernelSelfTestStart setup failed\n");

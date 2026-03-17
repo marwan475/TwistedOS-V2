@@ -118,6 +118,19 @@ uint64_t ResourceLayer::GetKernelHeapVirtualAddrEnd() const
 }
 
 /**
+ * Function: ResourceLayer::GetRamFileSystemManager
+ * Description: Returns the RAM file system manager.
+ * Parameters:
+ *   None
+ * Returns:
+ *   RamFileSystemManager* - Pointer to the RAM file system manager.
+ */
+RamFileSystemManager* ResourceLayer::GetRamFileSystemManager()
+{
+    return &RFS;
+}
+
+/**
  * Function: ResourceLayer::InitializeKernelHeapManager
  * Description: Initializes the kernel heap manager with the configured virtual heap range.
  * Parameters:

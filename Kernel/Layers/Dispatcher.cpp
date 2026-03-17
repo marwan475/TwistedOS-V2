@@ -88,6 +88,7 @@ void Dispatcher::InitLogicLayer()
     Logic.InitializeScheduler();
     Logic.InitializeSynchronizationManager();
     Logic.InitializeELFManager();
+    Logic.InitializeVirtualFileSystem();
 }
 
 /**

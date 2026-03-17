@@ -10,6 +10,7 @@
 #include "ProcessManager.hpp"
 #include "Scheduler.hpp"
 #include "SynchronizationManager.hpp"
+#include "VirtualFileSystem.hpp"
 
 #include <Arch/x86.hpp>
 #include <stdint.h>
@@ -26,6 +27,7 @@ private:
     Scheduler*              Sched;
     SynchronizationManager* Sync;
     ELFManager*             ELF;
+    VirtualFileSystem*      VFS;
     bool                    IsScheduling = false;
 
     VirtualAddressSpace* MapRawBinary(uint64_t CodeAddr, uint64_t CodeSize);
@@ -39,11 +41,13 @@ public:
     void Initialize(ResourceLayer* Resource);
 
     ResourceLayer* GetResourceLayer() const;
-    ELFManager*    GetELFManger() const;
+    ELFManager*    GetELFManager() const;
+    VirtualFileSystem* GetVirtualFileSystem() const;
     void           InitializeProcessManager();
     void           InitializeScheduler();
     void           InitializeSynchronizationManager();
     void           InitializeELFManager();
+    void           InitializeVirtualFileSystem();
     uint8_t        CreateNullProcess();
     uint8_t        CreateKernelProcess(void (*EntryPoint)());
     uint8_t        CreateUserProcess(uint64_t CodeAddr, uint64_t CodeSize);
