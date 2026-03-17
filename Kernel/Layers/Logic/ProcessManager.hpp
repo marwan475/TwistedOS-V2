@@ -11,12 +11,13 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define MAX_PROCESSES 32
-#define KERNEL_PROCESS_STACK_SIZE 4096
-#define USER_PROCESS_STACK_SIZE 8192
-#define USER_PROCESS_HEAP_SIZE 8192
-#define USER_PROCESS_VIRTUAL_BASE 0x400000
-#define USER_PROCESS_VIRTUAL_STACK_TOP 0x00007FFFFFFFFFFF
+static constexpr size_t   MAX_PROCESSES                 = 32;
+static constexpr uint8_t  PROCESS_ID_INVALID            = 0xFF;
+static constexpr size_t   KERNEL_PROCESS_STACK_SIZE     = 4096;
+static constexpr size_t   USER_PROCESS_STACK_SIZE       = 8192;
+static constexpr size_t   USER_PROCESS_HEAP_SIZE        = 8192;
+static constexpr uint64_t USER_PROCESS_VIRTUAL_BASE     = 0x400000;
+static constexpr uint64_t USER_PROCESS_VIRTUAL_STACK_TOP = 0x00007FFFFFFFFFFF;
 
 enum ProcessState
 {

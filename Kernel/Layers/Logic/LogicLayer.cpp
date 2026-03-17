@@ -12,6 +12,11 @@
 
 namespace
 {
+constexpr uint64_t INITIAL_PROCESS_RFLAGS = 0x202;
+constexpr uint64_t USER_MODE_FLAG_MASK    = 0x3;
+constexpr uint64_t STACK_ALIGNMENT_MASK   = 0xFULL;
+constexpr uint64_t STACK_RETURN_SLOT_SIZE = 8;
+
 /**
  * Function: AlignUpToPage
  * Description: Rounds a value up to the next page boundary.
@@ -248,9 +253,9 @@ uint8_t LogicLayer::CreateKernelProcess(void (*EntryPoint)())
 
     CpuState State = {};
     State.rip      = reinterpret_cast<uint64_t>(EntryPoint);
-    State.rflags   = 0x202;                    // Bit1 always set, IF enabled
+    State.rflags   = INITIAL_PROCESS_RFLAGS;   // Bit1 always set, IF enabled
     State.rbp      = 0;                        // bottom of stack frame
-    State.rsp      = (StackTop & ~0xFULL) - 8; // SysV entry alignment without a real CALL
+    State.rsp      = (StackTop & ~STACK_ALIGNMENT_MASK) - STACK_RETURN_SLOT_SIZE; // SysV entry alignment without a real CALL
 
     *reinterpret_cast<uint64_t*>(State.rsp) = 0;
 
@@ -258,7 +263,7 @@ uint8_t LogicLayer::CreateKernelProcess(void (*EntryPoint)())
     State.ss   = KERNEL_SS;
     uint8_t Id = PM->CreateKernelProcess(ProcessStack, State);
 
-    if (Id != 0xFF)
+    if (Id != PROCESS_ID_INVALID)
     {
         Sched->AddToReadyQueue(Id);
     }
@@ -279,7 +284,7 @@ uint8_t LogicLayer::CreateUserProcess(uint64_t CodeAddr, uint64_t CodeSize)
 {
     if (CodeAddr == 0 || CodeSize == 0)
     {
-        return 0xFF;
+        return PROCESS_ID_INVALID;
     }
 
     // Check if code is raw binary or ELF by looking for ELF magic number
@@ -306,16 +311,16 @@ uint8_t LogicLayer::CreateUserProcess(uint64_t CodeAddr, uint64_t CodeSize)
 
     if (AddressSpace == nullptr)
     {
-        return 0xFF;
+        return PROCESS_ID_INVALID;
     }
 
     uint64_t StackTop = USER_PROCESS_VIRTUAL_STACK_TOP;
 
     CpuState State = {};
     State.rip      = UserEntryPoint;
-    State.rflags   = 0x202;                    // Bit1 always set, IF enabled
+    State.rflags   = INITIAL_PROCESS_RFLAGS;   // Bit1 always set, IF enabled
     State.rbp      = 0;                        // bottom of stack frame
-    State.rsp      = (StackTop & ~0xFULL) - 8; // SysV entry alignment without a real CALL
+    State.rsp      = (StackTop & ~STACK_ALIGNMENT_MASK) - STACK_RETURN_SLOT_SIZE; // SysV entry alignment without a real CALL
 
     State.cs   = USER_CS;
     State.ss   = USER_SS;
@@ -326,7 +331,7 @@ uint8_t LogicLayer::CreateUserProcess(uint64_t CodeAddr, uint64_t CodeSize)
         IsELF ? FILE_TYPE_ELF : FILE_TYPE_RAW_BINARY
     );
 
-    if (Id != 0xFF)
+    if (Id != PROCESS_ID_INVALID)
     {
         Sched->AddToReadyQueue(Id);
     }
@@ -882,7 +887,7 @@ void LogicLayer::CaptureCurrentInterruptState(const Registers* Regs)
         return;
     }
 
-    if ((Regs->cs & 0x3) != 0x3)
+    if ((Regs->cs & USER_MODE_FLAG_MASK) != USER_MODE_FLAG_MASK)
     {
         return;
     }
@@ -929,7 +934,7 @@ void LogicLayer::Tick()
     {
         Sync->Tick();
         uint8_t IdToWake = Sync->GetNextProcessToWake();
-        if (IdToWake != 0xFF)
+        if (IdToWake != PROCESS_ID_INVALID)
         {
             WakeProcess(IdToWake);
         }
@@ -955,7 +960,7 @@ void LogicLayer::Schedule()
 
     // Resource->GetConsole()->printf_("Scheduling: Next process ID = %u\n", NextProcessId);
 
-    if (NextProcessId == 0xFF)
+    if (NextProcessId == PROCESS_ID_INVALID)
     {
         return;
     }

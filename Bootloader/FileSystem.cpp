@@ -7,6 +7,12 @@
 #include <CommonUtils.hpp>
 #include <FileSystem.hpp>
 
+namespace
+{
+constexpr UINTN BYTES_PER_MIB = 1024 * 1024;
+constexpr UINTN BYTES_PER_GIB = 1024 * 1024 * 1024;
+}
+
 /**
  * Function: FileSystem::FileSystem
  * Description: Initializes the FileSystem helper with UEFI handles, boot services, and console access.
@@ -119,11 +125,11 @@ void PrintMemoryMap(MemoryMapInfo MemoryMap, Console* efiConsole)
         if (desc->Type == EfiLoaderCode || desc->Type == EfiLoaderData || desc->Type == EfiBootServicesCode || desc->Type == EfiBootServicesData || desc->Type == EfiConventionalMemory
             || desc->Type == EfiPersistentMemory)
         {
-            usable_bytes += desc->NumberOfPages * 4096;
+            usable_bytes += desc->NumberOfPages * PAGE_SIZE;
         }
     }
 
-    efiConsole->printf_("\r\nUsable memory: %u / %u MiB / %u GiB\r\n", usable_bytes, usable_bytes / (1024 * 1024), usable_bytes / (1024 * 1024 * 1024));
+    efiConsole->printf_("\r\nUsable memory: %u / %u MiB / %u GiB\r\n", usable_bytes, usable_bytes / BYTES_PER_MIB, usable_bytes / BYTES_PER_GIB);
 }
 
 /**

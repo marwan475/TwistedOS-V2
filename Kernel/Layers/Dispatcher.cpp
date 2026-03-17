@@ -9,6 +9,13 @@
 #include <Memory/KernelHeapAllocations.hpp>
 #include <Testing/KernelSelfTests.hpp>
 
+namespace
+{
+constexpr uint64_t TIMER_INTERRUPT_VECTOR      = 32;
+constexpr uint64_t SYSCALL_INTERRUPT_VECTOR    = 128;
+constexpr uint64_t SCHEDULER_TICK_INTERVAL     = 100;
+}
+
 Dispatcher* Dispatcher::ActiveDispatcher = nullptr;
 uint64_t    Ticks                        = 0;
 
@@ -132,13 +139,13 @@ void Dispatcher::InterruptHandler(uint64_t InterruptNumber)
 {
     switch (InterruptNumber)
     {
-        case 32:
+        case TIMER_INTERRUPT_VECTOR:
         {
             Ticks++;
             if (Logic.isScheduling())
             {
                 Logic.Tick();
-                if (Ticks % 100 == 0) // Schedule every 100 ticks (1 second if timer is set to 10ms)
+                if (Ticks % SCHEDULER_TICK_INTERVAL == 0) // Schedule every 100 ticks (1 second if timer is set to 10ms)
                 {
                     Ticks = 0;
                     Logic.Schedule();
@@ -146,7 +153,7 @@ void Dispatcher::InterruptHandler(uint64_t InterruptNumber)
             }
         }
         break;
-        case 128:
+        case SYSCALL_INTERRUPT_VECTOR:
         {
             Resource.GetConsole()->printf_("User syscall interrupt received (int 0x80)\n");
         }

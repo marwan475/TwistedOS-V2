@@ -103,7 +103,7 @@ uint8_t Scheduler::SelectNextProcess()
 {
     if (ReadyQueue.IsEmpty())
     {
-        return 0xFF;
+        return PROCESS_ID_INVALID;
     }
 
     if (CurrentProcess == nullptr)

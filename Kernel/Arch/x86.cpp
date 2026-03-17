@@ -16,6 +16,9 @@
 #define IA32_EFER_SCE (1ULL << 0)
 #define RFLAGS_IF (1ULL << 9)
 
+#define SYSCALL_INTERRUPT_VECTOR 0x80
+#define PIC_END_OF_INTERRUPT_COMMAND 0x20
+
 #define SYSCALL_STAR_USER_CS_SHIFT 48
 #define SYSCALL_STAR_KERNEL_CS_SHIFT 32
 
@@ -182,7 +185,7 @@ static void ISR_init()
         EnableIDTEntry(interrupt);
     }
 
-    SetIDTEntry(0x80, ISRHandlers[0x80], GDT_CODE_SEGMENT, IDT_FLAG_PRESENT | IDT_FLAG_RING3 | IDT_FLAG_GATE_32BIT_INT);
+    SetIDTEntry(SYSCALL_INTERRUPT_VECTOR, ISRHandlers[SYSCALL_INTERRUPT_VECTOR], GDT_CODE_SEGMENT, IDT_FLAG_PRESENT | IDT_FLAG_RING3 | IDT_FLAG_GATE_32BIT_INT);
 }
 
 /**
@@ -265,10 +268,10 @@ extern "C" void ISRHANDLER(Registers* reg)
     {
         if (reg->interrupt_number >= 32 && reg->interrupt_number <= 47)
         {
-            outb(PIC1_COMMAND_PORT, 0x20); // Send End of Interrupt (EOI) signal to master PIC
+            outb(PIC1_COMMAND_PORT, PIC_END_OF_INTERRUPT_COMMAND); // Send End of Interrupt (EOI) signal to master PIC
             if (reg->interrupt_number >= 40)
             {
-                outb(PIC2_COMMAND_PORT, 0x20); // Send End of Interrupt (EOI) signal to slave PIC
+                outb(PIC2_COMMAND_PORT, PIC_END_OF_INTERRUPT_COMMAND); // Send End of Interrupt (EOI) signal to slave PIC
             }
         }
     }

@@ -14,7 +14,7 @@
  * Returns:
  *   ProcessManager - Constructed process manager instance.
  */
-ProcessManager::ProcessManager() : CurrentProcessId(0xFF)
+ProcessManager::ProcessManager() : CurrentProcessId(PROCESS_ID_INVALID)
 {
     for (size_t index = 0; index < MaxProcesses; ++index)
     {
@@ -55,7 +55,7 @@ Process* ProcessManager::GetRunningProcess()
         }
     }
 
-    CurrentProcessId = 0xFF;
+    CurrentProcessId = PROCESS_ID_INVALID;
     return nullptr;
 }
 
@@ -126,7 +126,7 @@ uint8_t ProcessManager::CreateKernelProcess(void* StackPointer, CpuState Initial
             return Processes[index].Id;
         }
     }
-    return 0xFF; // Indicate failure to create process
+    return PROCESS_ID_INVALID; // Indicate failure to create process
 }
 
 /**
@@ -155,7 +155,7 @@ uint8_t ProcessManager::CreateUserProcess(void* StackPointer, CpuState InitialSt
             return Processes[index].Id;
         }
     }
-    return 0xFF; // Indicate failure to create process
+    return PROCESS_ID_INVALID; // Indicate failure to create process
 }
 
 // Kill process and return its stack pointer for cleanup

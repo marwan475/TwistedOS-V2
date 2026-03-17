@@ -6,6 +6,8 @@
 
 #include "SynchronizationManager.hpp"
 
+#include "ProcessManager.hpp"
+
 #include <new>
 
 /**
@@ -117,5 +119,5 @@ uint8_t SynchronizationManager::GetNextProcessToWake()
         return Node->Id;
     }
 
-    return 0xFF;
+    return PROCESS_ID_INVALID;
 }
