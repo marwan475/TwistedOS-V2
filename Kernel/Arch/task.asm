@@ -28,6 +28,15 @@ global ResourceLayerTaskSwitchUserAsm
 %define CPUSTATE_SS      152
 %define USER_DPL_MASK    0x3
 
+; /**
+;  * Function: ResourceLayerTaskSwitchKernelAsm
+;  * Description: Saves current task CPU state when needed and restores next kernel task CPU state.
+;  * Parameters:
+;  *   rdi (CpuState*) - Current task state storage.
+;  *   rsi (const CpuState*) - Next task state to restore.
+;  * Returns:
+;  *   void - Control transfers to restored RIP via ret.
+;  */
 ResourceLayerTaskSwitchKernelAsm:
     ; SysV ABI:
     ; rdi = CpuState* old_state
@@ -103,6 +112,16 @@ ResourceLayerTaskSwitchKernelAsm:
     mov r11, [r11 + CPUSTATE_R11]
     ret
 
+; /**
+;  * Function: ResourceLayerTaskSwitchUserAsm
+;  * Description: Saves current task CPU state when needed, optionally switches page table, restores next user task state, and enters user mode.
+;  * Parameters:
+;  *   rdi (CpuState*) - Current task state storage.
+;  *   rsi (const CpuState*) - Next task state to restore.
+;  *   rdx (uint64_t) - Optional CR3 value for next user address space.
+;  * Returns:
+;  *   void - Control transfers to restored user RIP via iretq.
+;  */
 ResourceLayerTaskSwitchUserAsm:
     ; SysV ABI:
     ; rdi = CpuState* old_state
@@ -187,8 +206,24 @@ ResourceLayerTaskSwitchUserAsm:
     mov r11, [r11 + CPUSTATE_R11]
     iretq
 
+; /**
+;  * Function: TaskSwitchKernelResume
+;  * Description: Resume label used as saved RIP target when returning to a previously switched-out kernel task.
+;  * Parameters:
+;  *   None
+;  * Returns:
+;  *   void - Returns to caller using ret.
+;  */
 TaskSwitchKernelResume:
     ret
 
+; /**
+;  * Function: TaskSwitchUserResume
+;  * Description: Resume label used as saved RIP target for user-task context save path.
+;  * Parameters:
+;  *   None
+;  * Returns:
+;  *   void - Returns to caller using ret.
+;  */
 TaskSwitchUserResume:
     ret

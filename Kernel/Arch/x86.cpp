@@ -21,16 +21,41 @@ static IDTentry       IDT[256]                                                 =
 static IDTdescription IDTDescriptor                                            = {sizeof(IDT) - 1, IDT};
 static uint8_t        KernelInterruptStack[16384] __attribute__((aligned(16))) = {};
 
+/**
+ * Function: LoadIDT
+ * Description: Loads the processor IDT register with the provided descriptor.
+ * Parameters:
+ *   const IDTdescription* idt_descriptor - Pointer to the IDT descriptor.
+ * Returns:
+ *   void - No return value.
+ */
 static inline void LoadIDT(const IDTdescription* idt_descriptor)
 {
     __asm__ __volatile__("lidt %0" : : "m"(*idt_descriptor) : "memory");
 }
 
+/**
+ * Function: outb
+ * Description: Writes one byte to a hardware I/O port.
+ * Parameters:
+ *   uint16_t port - Target I/O port number.
+ *   uint8_t value - Byte value to write.
+ * Returns:
+ *   void - No return value.
+ */
 static inline void outb(uint16_t port, uint8_t value)
 {
     __asm__ __volatile__("outb %0, %1" : : "a"(value), "Nd"(port));
 }
 
+/**
+ * Function: inb
+ * Description: Reads one byte from a hardware I/O port.
+ * Parameters:
+ *   uint16_t port - Source I/O port number.
+ * Returns:
+ *   uint8_t - Byte read from the port.
+ */
 static inline uint8_t inb(uint16_t port)
 {
     uint8_t value = 0;
@@ -38,6 +63,15 @@ static inline uint8_t inb(uint16_t port)
     return value;
 }
 
+/**
+ * Function: WriteMSR
+ * Description: Writes a 64-bit value to a model-specific register.
+ * Parameters:
+ *   uint32_t msr - MSR index.
+ *   uint64_t value - Value to write to the MSR.
+ * Returns:
+ *   void - No return value.
+ */
 static inline void WriteMSR(uint32_t msr, uint64_t value)
 {
     uint32_t low  = (uint32_t) (value & 0xFFFFFFFF);
@@ -45,6 +79,14 @@ static inline void WriteMSR(uint32_t msr, uint64_t value)
     __asm__ __volatile__("wrmsr" : : "c"(msr), "a"(low), "d"(high));
 }
 
+/**
+ * Function: ReadMSR
+ * Description: Reads a 64-bit value from a model-specific register.
+ * Parameters:
+ *   uint32_t msr - MSR index.
+ * Returns:
+ *   uint64_t - Value read from the MSR.
+ */
 static inline uint64_t ReadMSR(uint32_t msr)
 {
     uint32_t low  = 0;
@@ -53,6 +95,17 @@ static inline uint64_t ReadMSR(uint32_t msr)
     return ((uint64_t) high << 32) | low;
 }
 
+/**
+ * Function: SetIDTEntry
+ * Description: Populates one IDT entry with handler address, selector, and flags.
+ * Parameters:
+ *   int interrupt - Interrupt vector index.
+ *   void (*base)() - ISR handler function address.
+ *   uint16_t segment - Code segment selector.
+ *   uint8_t flags - Gate attribute flags.
+ * Returns:
+ *   void - No return value.
+ */
 static void SetIDTEntry(int interrupt, void (*base)(), uint16_t segment, uint8_t flags)
 {
     uintptr_t base_addr        = reinterpret_cast<uintptr_t>(base);
@@ -65,11 +118,27 @@ static void SetIDTEntry(int interrupt, void (*base)(), uint16_t segment, uint8_t
     IDT[interrupt].zero        = 0;
 }
 
+/**
+ * Function: EnableIDTEntry
+ * Description: Marks an IDT entry as present.
+ * Parameters:
+ *   int interrupt - Interrupt vector index.
+ * Returns:
+ *   void - No return value.
+ */
 static void EnableIDTEntry(int interrupt)
 {
     IDT[interrupt].type_attr |= IDT_FLAG_PRESENT;
 }
 
+/**
+ * Function: DisableIDTEntry
+ * Description: Marks an IDT entry as not present.
+ * Parameters:
+ *   int interrupt - Interrupt vector index.
+ * Returns:
+ *   void - No return value.
+ */
 static void DisableIDTEntry(int interrupt)
 {
     IDT[interrupt].type_attr &= ~IDT_FLAG_PRESENT;
@@ -89,6 +158,14 @@ static void (*const ISRHandlers[256])() = {
         ISR240, ISR241, ISR242, ISR243, ISR244, ISR245, ISR246, ISR247, ISR248, ISR249, ISR250, ISR251, ISR252, ISR253, ISR254, ISR255,
 };
 
+    /**
+     * Function: ISR_init
+     * Description: Initializes all IDT vectors and configures user-accessible syscall interrupt gate.
+     * Parameters:
+     *   None
+     * Returns:
+     *   void - No return value.
+     */
 static void ISR_init()
 {
     DisableIDTEntry(0); // Avoid Compiler Warning
@@ -102,6 +179,14 @@ static void ISR_init()
     SetIDTEntry(0x80, ISRHandlers[0x80], GDT_CODE_SEGMENT, IDT_FLAG_PRESENT | IDT_FLAG_RING3 | IDT_FLAG_GATE_32BIT_INT);
 }
 
+/**
+ * Function: InitTimer
+ * Description: Configures PIT channel 0 for periodic timer interrupts.
+ * Parameters:
+ *   None
+ * Returns:
+ *   void - No return value.
+ */
 void InitTimer()
 {
     constexpr uint32_t PIT_BASE_FREQUENCY_HZ = 1193182;
@@ -114,6 +199,14 @@ void InitTimer()
     outb(PIT_CHANNEL0_DATA_PORT, (uint8_t) ((PIT_DIVISOR >> 8) & 0xFF));
 }
 
+/**
+ * Function: RemapPIC
+ * Description: Remaps master and slave PIC vectors and completes PIC initialization sequence.
+ * Parameters:
+ *   None
+ * Returns:
+ *   void - No return value.
+ */
 void RemapPIC()
 {
     outb(PIC1_COMMAND_PORT, PIC_INIT_COMMAND);
@@ -133,6 +226,14 @@ void RemapPIC()
 }
 
 // All ISRs will call this handler with a pointer to the registers struct
+/**
+ * Function: ISRHANDLER
+ * Description: Main interrupt handler that processes faults, sends PIC EOI, and dispatches to active kernel layers.
+ * Parameters:
+ *   Registers* reg - Pointer to captured interrupt register state.
+ * Returns:
+ *   void - No return value.
+ */
 extern "C" void ISRHANDLER(Registers* reg)
 {
     if (reg->interrupt_number < 32)
@@ -179,6 +280,14 @@ extern "C" void ISRHANDLER(Registers* reg)
     }
 }
 
+/**
+ * Function: InitInterrupts
+ * Description: Initializes ISR tables, loads IDT, configures PIC/PIT, and enables CPU interrupts.
+ * Parameters:
+ *   None
+ * Returns:
+ *   void - No return value.
+ */
 void InitInterrupts()
 {
     ISR_init();
@@ -191,6 +300,14 @@ void InitInterrupts()
     asm volatile("sti");
 }
 
+/**
+ * Function: BuildTSSDescriptor
+ * Description: Builds a TSS descriptor structure for inclusion in the GDT.
+ * Parameters:
+ *   const TSS* tss - Pointer to the TSS object.
+ * Returns:
+ *   TSSDescriptor - Encoded descriptor for the provided TSS.
+ */
 TSSDescriptor BuildTSSDescriptor(const TSS* tss)
 {
     uint64_t tss_address = (uint64_t) tss;
@@ -212,6 +329,14 @@ TSSDescriptor BuildTSSDescriptor(const TSS* tss)
     return tss_descriptor;
 }
 
+/**
+ * Function: BuildGDT
+ * Description: Builds a complete GDT with kernel/user segments and TSS descriptor.
+ * Parameters:
+ *   const TSSDescriptor& tss_descriptor - TSS descriptor to embed.
+ * Returns:
+ *   GDT - Initialized global descriptor table.
+ */
 GDT BuildGDT(const TSSDescriptor& tss_descriptor)
 {
     GDT gdt = {};
@@ -226,6 +351,14 @@ GDT BuildGDT(const TSSDescriptor& tss_descriptor)
     return gdt;
 }
 
+/**
+ * Function: InitGDT
+ * Description: Initializes kernel TSS and GDT, then reloads descriptor and segment registers.
+ * Parameters:
+ *   None
+ * Returns:
+ *   void - No return value.
+ */
 void InitGDT()
 {
     uint64_t KernelInterruptStackTop = reinterpret_cast<uint64_t>(&KernelInterruptStack[sizeof(KernelInterruptStack)]);
@@ -269,6 +402,20 @@ static_assert(sizeof(DiscriptorRegister) == 10, "GDTR must be 10 bytes in long m
 static_assert(sizeof(TSSDescriptor) == 16, "TSS descriptor must be 16 bytes");
 static_assert(offsetof(GDT, tss) == 0x28, "TSS selector offset must be 0x28");
 
+/**
+ * Function: HandleSystemCallFromEntry
+ * Description: Receives syscall register arguments from assembly entry and forwards to dispatcher.
+ * Parameters:
+ *   uint64_t Arg1 - First syscall argument.
+ *   uint64_t Arg2 - Second syscall argument.
+ *   uint64_t Arg3 - Third syscall argument.
+ *   uint64_t Arg4 - Fourth syscall argument.
+ *   uint64_t Arg5 - Fifth syscall argument.
+ *   uint64_t Arg6 - Sixth syscall argument.
+ *   uint64_t SystemCallNumber - Syscall identifier.
+ * Returns:
+ *   void - No return value.
+ */
 extern "C" void HandleSystemCallFromEntry(uint64_t Arg1, uint64_t Arg2, uint64_t Arg3, uint64_t Arg4, uint64_t Arg5, uint64_t Arg6, uint64_t SystemCallNumber)
 {
     Dispatcher* ActiveDispatcher = Dispatcher::GetActive();
@@ -280,6 +427,14 @@ extern "C" void HandleSystemCallFromEntry(uint64_t Arg1, uint64_t Arg2, uint64_t
 
 extern "C" void SystemCallEntry();
 
+/**
+ * Function: InitSystemCalls
+ * Description: Configures STAR/LSTAR/FMASK MSRs and enables SYSCALL instruction support.
+ * Parameters:
+ *   None
+ * Returns:
+ *   void - No return value.
+ */
 void InitSystemCalls()
 {
     uint64_t star = ((uint64_t) USER_CS << SYSCALL_STAR_USER_CS_SHIFT) | ((uint64_t) KERNEL_CS << SYSCALL_STAR_KERNEL_CS_SHIFT);

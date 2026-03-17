@@ -1,6 +1,16 @@
 #include <Console.hpp>
 #include <printf.hpp>
 
+/**
+ * Function: Console::Console
+ * Description: Initializes console interfaces and locates the UEFI Graphics Output Protocol (GOP).
+ * Parameters:
+ *   EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL* ConOut - UEFI text output protocol interface.
+ *   EFI_SIMPLE_TEXT_INPUT_PROTOCOL* ConIn - UEFI text input protocol interface.
+ *   EFI_BOOT_SERVICES* BootServices - UEFI boot services table used for protocol and event operations.
+ * Returns:
+ *   N/A - Constructor initializes the Console object.
+ */
 Console::Console(EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL* ConOut, EFI_SIMPLE_TEXT_INPUT_PROTOCOL* ConIn, EFI_BOOT_SERVICES* BootServices) : ConsoleOut(ConOut), ConsoleIn(ConIn), BootServices(BootServices)
 {
     Gop               = NULL;
@@ -14,25 +24,66 @@ Console::Console(EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL* ConOut, EFI_SIMPLE_TEXT_INPUT_
     }
 }
 
+/**
+ * Function: Console::~Console
+ * Description: Destroys the Console object.
+ * Parameters:
+ *   None - This function takes no parameters.
+ * Returns:
+ *   N/A - Destructor does not return a value.
+ */
 Console::~Console()
 {
 }
 
+/**
+ * Function: Console::Reset
+ * Description: Resets the UEFI text output console.
+ * Parameters:
+ *   None - This function takes no parameters.
+ * Returns:
+ *   void - No value is returned.
+ */
 void Console::Reset()
 {
     ConsoleOut->Reset(ConsoleOut, false);
 }
 
+/**
+ * Function: Console::ClearConsole
+ * Description: Clears the UEFI text output screen.
+ * Parameters:
+ *   None - This function takes no parameters.
+ * Returns:
+ *   void - No value is returned.
+ */
 void Console::ClearConsole()
 {
     ConsoleOut->ClearScreen(ConsoleOut);
 }
 
+/**
+ * Function: Console::ChangeColor
+ * Description: Sets the foreground and background colors for text output.
+ * Parameters:
+ *   int forground - Foreground color attribute value.
+ *   int background - Background color attribute value.
+ * Returns:
+ *   void - No value is returned.
+ */
 void Console::ChangeColor(int forground, int background)
 {
     ConsoleOut->SetAttribute(ConsoleOut, EFI_TEXT_ATTR(forground, background));
 }
 
+/**
+ * Function: Console::DisplayModeInfo
+ * Description: Displays information for the current UEFI text mode.
+ * Parameters:
+ *   None - This function takes no parameters.
+ * Returns:
+ *   void - No value is returned.
+ */
 void Console::DisplayModeInfo()
 {
     INT32 MaxMode = ConsoleOut->Mode->MaxMode;
@@ -49,6 +100,14 @@ void Console::DisplayModeInfo()
     printf_("Rows: %d\r\n", Rows);
 }
 
+/**
+ * Function: Console::DisplayAllModeInfo
+ * Description: Displays information for all available UEFI text modes.
+ * Parameters:
+ *   None - This function takes no parameters.
+ * Returns:
+ *   void - No value is returned.
+ */
 void Console::DisplayAllModeInfo()
 {
     INT32 MaxMode = ConsoleOut->Mode->MaxMode;
@@ -68,11 +127,27 @@ void Console::DisplayAllModeInfo()
     }
 }
 
+/**
+ * Function: Console::SetTextMode
+ * Description: Sets the active UEFI text mode by mode index.
+ * Parameters:
+ *   int mode - Text mode index to activate.
+ * Returns:
+ *   void - No value is returned.
+ */
 void Console::SetTextMode(int mode)
 {
     ConsoleOut->SetMode(ConsoleOut, mode);
 }
 
+/**
+ * Function: Console::DisplayGraphicsModeInfo
+ * Description: Displays details about the current GOP graphics mode.
+ * Parameters:
+ *   None - This function takes no parameters.
+ * Returns:
+ *   void - No value is returned.
+ */
 void Console::DisplayGraphicsModeInfo()
 {
     EFI_GRAPHICS_OUTPUT_MODE_INFORMATION* GopModeInfo  = NULL;
@@ -89,6 +164,14 @@ void Console::DisplayGraphicsModeInfo()
     printf_("Pixels Per Scan line %u\r\n", GopModeInfo->PixelsPerScanLine);
 }
 
+/**
+ * Function: Console::DisplayAllGraphicsModeInfo
+ * Description: Displays resolution information for all available GOP graphics modes.
+ * Parameters:
+ *   None - This function takes no parameters.
+ * Returns:
+ *   void - No value is returned.
+ */
 void Console::DisplayAllGraphicsModeInfo()
 {
     EFI_GRAPHICS_OUTPUT_MODE_INFORMATION* GopModeInfo  = NULL;
@@ -103,6 +186,14 @@ void Console::DisplayAllGraphicsModeInfo()
     }
 }
 
+/**
+ * Function: Console::SetGraphicsMode
+ * Description: Sets the GOP graphics mode and prints the updated mode information.
+ * Parameters:
+ *   int mode - Graphics mode index to activate.
+ * Returns:
+ *   void - No value is returned.
+ */
 void Console::SetGraphicsMode(int mode)
 {
     Gop->SetMode(Gop, mode);
@@ -113,11 +204,27 @@ void Console::SetGraphicsMode(int mode)
     DisplayGraphicsModeInfo();
 }
 
+/**
+ * Function: Console::GetGopMode
+ * Description: Retrieves the current GOP mode structure.
+ * Parameters:
+ *   None - This function takes no parameters.
+ * Returns:
+ *   EFI_GRAPHICS_OUTPUT_PROTOCOL_MODE - Current GOP mode data.
+ */
 EFI_GRAPHICS_OUTPUT_PROTOCOL_MODE Console::GetGopMode()
 {
     return *Gop->Mode;
 }
 
+/**
+ * Function: Console::GetKeyFromUser
+ * Description: Reads a key stroke from the UEFI text input device.
+ * Parameters:
+ *   EFI_INPUT_KEY* key - Output buffer for the key data read from input.
+ * Returns:
+ *   EFI_STATUS - UEFI status result from ReadKeyStroke.
+ */
 EFI_STATUS Console::GetKeyFromUser(EFI_INPUT_KEY* key)
 {
     EFI_STATUS ret = ConsoleIn->ReadKeyStroke(ConsoleIn, key);
@@ -125,6 +232,14 @@ EFI_STATUS Console::GetKeyFromUser(EFI_INPUT_KEY* key)
     return ret;
 }
 
+/**
+ * Function: Console::GetKeyOnEvent
+ * Description: Waits for a key event and returns the Unicode character from the received key.
+ * Parameters:
+ *   None - This function takes no parameters.
+ * Returns:
+ *   char - Unicode character value from the key event.
+ */
 char Console::GetKeyOnEvent()
 {
     EFI_EVENT events[1];
@@ -146,6 +261,14 @@ char Console::GetKeyOnEvent()
     return key.UnicodeChar;
 }
 
+/**
+ * Function: Console::putchar
+ * Description: Writes a single character to the UEFI text output console.
+ * Parameters:
+ *   char c - Character to output.
+ * Returns:
+ *   void - No value is returned.
+ */
 void Console::putchar(char c)
 {
     CHAR16 str[2];
@@ -154,6 +277,15 @@ void Console::putchar(char c)
     ConsoleOut->OutputString(ConsoleOut, str);
 }
 
+/**
+ * Function: Console::printf_
+ * Description: Prints formatted text to the console using variadic arguments.
+ * Parameters:
+ *   const char* format - Format string used for output formatting.
+ *   ... - Variadic arguments consumed by the formatter.
+ * Returns:
+ *   int - Number of characters written, as returned by vprintf_proxy.
+ */
 int Console::printf_(const char* format, ...)
 {
     va_list args;

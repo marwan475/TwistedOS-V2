@@ -1,5 +1,13 @@
 #include "ProcessManager.hpp"
 
+/**
+ * Function: ProcessManager::ProcessManager
+ * Description: Initializes process table entries and sets default current process ID.
+ * Parameters:
+ *   None
+ * Returns:
+ *   ProcessManager - Constructed process manager instance.
+ */
 ProcessManager::ProcessManager() : CurrentProcessId(0xFF)
 {
     for (size_t index = 0; index < MaxProcesses; ++index)
@@ -15,6 +23,14 @@ ProcessManager::ProcessManager() : CurrentProcessId(0xFF)
     CurrentProcessId = 0;
 }
 
+/**
+ * Function: ProcessManager::GetRunningProcess
+ * Description: Returns the currently running process or the blocked current process during handoff.
+ * Parameters:
+ *   None
+ * Returns:
+ *   Process* - Pointer to running process, or nullptr if none exists.
+ */
 Process* ProcessManager::GetRunningProcess()
 {
     if (GetProcessById(CurrentProcessId)->Status == PROCESS_BLOCKED)
@@ -37,16 +53,40 @@ Process* ProcessManager::GetRunningProcess()
     return nullptr;
 }
 
+/**
+ * Function: ProcessManager::UpdateCurrentProcessId
+ * Description: Updates tracked current process ID.
+ * Parameters:
+ *   uint8_t Id - Process ID to store as current.
+ * Returns:
+ *   void - No return value.
+ */
 void ProcessManager::UpdateCurrentProcessId(uint8_t Id)
 {
     CurrentProcessId = Id;
 }
 
+/**
+ * Function: ProcessManager::GetMaxProcesses
+ * Description: Returns maximum process capacity.
+ * Parameters:
+ *   None
+ * Returns:
+ *   size_t - Maximum number of process slots.
+ */
 size_t ProcessManager::GetMaxProcesses() const
 {
     return MaxProcesses;
 }
 
+/**
+ * Function: ProcessManager::GetProcessById
+ * Description: Returns process record by ID if within valid range.
+ * Parameters:
+ *   uint8_t Id - Process ID to look up.
+ * Returns:
+ *   Process* - Pointer to process entry or nullptr if ID is invalid.
+ */
 Process* ProcessManager::GetProcessById(uint8_t Id)
 {
     if (Id >= MaxProcesses)
@@ -56,6 +96,15 @@ Process* ProcessManager::GetProcessById(uint8_t Id)
     return &Processes[Id];
 }
 
+/**
+ * Function: ProcessManager::CreateKernelProcess
+ * Description: Creates a kernel-level process entry in the first free slot.
+ * Parameters:
+ *   void* StackPointer - Base pointer associated with process stack allocation.
+ *   CpuState InitialState - Initial CPU context for process startup.
+ * Returns:
+ *   uint8_t - Created process ID or 0xFF on failure.
+ */
 uint8_t ProcessManager::CreateKernelProcess(void* StackPointer, CpuState InitialState)
 {
     for (size_t index = 0; index < MaxProcesses; ++index)
@@ -74,6 +123,17 @@ uint8_t ProcessManager::CreateKernelProcess(void* StackPointer, CpuState Initial
     return 0xFF; // Indicate failure to create process
 }
 
+/**
+ * Function: ProcessManager::CreateUserProcess
+ * Description: Creates a user-level process entry in the first free slot.
+ * Parameters:
+ *   void* StackPointer - Base pointer associated with process stack allocation.
+ *   CpuState InitialState - Initial CPU context for process startup.
+ *   VirtualAddressSpace* AddressSpace - User process address space descriptor.
+ *   FILE_TYPE FileType - Executable type used by the process.
+ * Returns:
+ *   uint8_t - Created process ID or 0xFF on failure.
+ */
 uint8_t ProcessManager::CreateUserProcess(void* StackPointer, CpuState InitialState, VirtualAddressSpace* AddressSpace, FILE_TYPE FileType)
 {
     for (size_t index = 0; index < MaxProcesses; ++index)
@@ -93,6 +153,14 @@ uint8_t ProcessManager::CreateUserProcess(void* StackPointer, CpuState InitialSt
 }
 
 // Kill process and return its stack pointer for cleanup
+/**
+ * Function: ProcessManager::KillProcess
+ * Description: Marks a process as terminated and returns its stack pointer for caller cleanup.
+ * Parameters:
+ *   uint8_t Id - Process ID to terminate.
+ * Returns:
+ *   void* - Stack pointer associated with the process, or nullptr on invalid ID.
+ */
 void* ProcessManager::KillProcess(uint8_t Id)
 {
     if (Id >= MaxProcesses)

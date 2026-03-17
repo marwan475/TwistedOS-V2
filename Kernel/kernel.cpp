@@ -24,6 +24,14 @@ static Dispatcher KernelDispatcher;
 // Uefi sets us up in 64bit long mode with identity mapped pages
 extern "C"
 {
+    /**
+     * Function: KernelEntry
+    * Description: Initializes core x86 CPU features, sets up memory managers, maps the kernel heap into the higher half, then enters the dispatcher.
+     * Parameters:
+     *   KernelParameters KernelArgs - Boot parameters provided by the bootloader, including graphics mode, memory map, paging, and initramfs metadata.
+     * Returns:
+     *   void - No value is returned.
+     */
     void EFIAPI KernelEntry(KernelParameters KernelArgs)
     {
         FrameBufferConsole Console;
@@ -98,6 +106,14 @@ extern "C"
         DispatcherEntry(Params);
     }
 
+    /**
+     * Function: DispatcherEntry
+     * Description: Activates the global dispatcher, initializes layers, starts self-tests, and enables scheduling.
+     * Parameters:
+     *   DispatcherParameters Params - Runtime parameters and subsystem pointers passed to dispatcher initialization.
+     * Returns:
+     *   void - No value is returned.
+     */
     void DispatcherEntry(DispatcherParameters Params)
     {
         Dispatcher::SetActive(&KernelDispatcher);
@@ -114,7 +130,6 @@ extern "C"
 
         ActiveDispatcher->InitializeLayers(Params);
 
-        // Create Null Process (idle process)
         ActiveDispatcher->GetLogicLayer()->CreateNullProcess();
 
         if (!KernelSelfTestStart(ActiveDispatcher))

@@ -7,6 +7,15 @@ namespace
 constexpr uint32_t ALLOCATION_MAGIC = 0x4B484D47;
 }
 
+/**
+ * Function: KernelHeapManager::KernelHeapManager
+ * Description: Initializes kernel heap range metadata and clears allocation bitmap.
+ * Parameters:
+ *   uint64_t HeapStart - Start address of managed heap range.
+ *   uint64_t HeapEnd - End address of managed heap range.
+ * Returns:
+ *   KernelHeapManager - Constructed kernel heap manager instance.
+ */
 KernelHeapManager::KernelHeapManager(uint64_t HeapStart, uint64_t HeapEnd) : HeapStart(HeapStart), HeapEnd(HeapEnd)
 {
     if (this->HeapStart != 0)
@@ -35,6 +44,14 @@ KernelHeapManager::KernelHeapManager(uint64_t HeapStart, uint64_t HeapEnd) : Hea
     }
 }
 
+/**
+ * Function: KernelHeapManager::GetManagedHeapSize
+ * Description: Returns the effective heap size managed by this allocator.
+ * Parameters:
+ *   None
+ * Returns:
+ *   size_t - Number of bytes managed by the heap manager.
+ */
 size_t KernelHeapManager::GetManagedHeapSize() const
 {
     if (HeapEnd <= HeapStart)
@@ -46,11 +63,27 @@ size_t KernelHeapManager::GetManagedHeapSize() const
     return (RangeSize < KERNEL_HEAP_SIZE) ? RangeSize : KERNEL_HEAP_SIZE;
 }
 
+/**
+ * Function: KernelHeapManager::GetUsableBlockCount
+ * Description: Returns the number of fixed-size blocks available for allocations.
+ * Parameters:
+ *   None
+ * Returns:
+ *   size_t - Usable block count.
+ */
 size_t KernelHeapManager::GetUsableBlockCount() const
 {
     return GetManagedHeapSize() / BLOCK_SIZE;
 }
 
+/**
+ * Function: KernelHeapManager::IsBlockUsed
+ * Description: Checks whether a specific block is marked as allocated.
+ * Parameters:
+ *   size_t BlockIndex - Index of the block to query.
+ * Returns:
+ *   bool - True if block is used, false if free.
+ */
 bool KernelHeapManager::IsBlockUsed(size_t BlockIndex) const
 {
     size_t ByteIndex = BlockIndex / BITS_PER_BYTE;
@@ -58,6 +91,15 @@ bool KernelHeapManager::IsBlockUsed(size_t BlockIndex) const
     return (BitMap[ByteIndex] & (1u << BitIndex)) != 0;
 }
 
+/**
+ * Function: KernelHeapManager::SetBlockUsed
+ * Description: Marks or unmarks a block as allocated in the allocation bitmap.
+ * Parameters:
+ *   size_t BlockIndex - Index of the block to modify.
+ *   bool Used - True to mark used, false to mark free.
+ * Returns:
+ *   void - No return value.
+ */
 void KernelHeapManager::SetBlockUsed(size_t BlockIndex, bool Used)
 {
     size_t  ByteIndex = BlockIndex / BITS_PER_BYTE;
@@ -73,6 +115,15 @@ void KernelHeapManager::SetBlockUsed(size_t BlockIndex, bool Used)
     BitMap[ByteIndex] &= static_cast<uint8_t>(~Mask);
 }
 
+/**
+ * Function: KernelHeapManager::IsRangeFree
+ * Description: Tests whether a contiguous block range is entirely free.
+ * Parameters:
+ *   size_t StartBlock - Index of first block in range.
+ *   size_t BlockCount - Number of blocks in range.
+ * Returns:
+ *   bool - True if all blocks in range are free, false otherwise.
+ */
 bool KernelHeapManager::IsRangeFree(size_t StartBlock, size_t BlockCount) const
 {
     for (size_t Offset = 0; Offset < BlockCount; ++Offset)
@@ -86,6 +137,16 @@ bool KernelHeapManager::IsRangeFree(size_t StartBlock, size_t BlockCount) const
     return true;
 }
 
+/**
+ * Function: KernelHeapManager::MarkRange
+ * Description: Marks all blocks in a range as used or free.
+ * Parameters:
+ *   size_t StartBlock - Index of first block in range.
+ *   size_t BlockCount - Number of blocks in range.
+ *   bool Used - True to mark used, false to mark free.
+ * Returns:
+ *   void - No return value.
+ */
 void KernelHeapManager::MarkRange(size_t StartBlock, size_t BlockCount, bool Used)
 {
     for (size_t Offset = 0; Offset < BlockCount; ++Offset)
@@ -94,6 +155,14 @@ void KernelHeapManager::MarkRange(size_t StartBlock, size_t BlockCount, bool Use
     }
 }
 
+/**
+ * Function: KernelHeapManager::kmalloc
+ * Description: Allocates a heap block range large enough for the requested size and allocation header.
+ * Parameters:
+ *   size_t Size - Number of user bytes requested.
+ * Returns:
+ *   void* - Pointer to usable allocation memory, or nullptr on failure.
+ */
 void* KernelHeapManager::kmalloc(size_t Size)
 {
     if (Size == 0)
@@ -140,6 +209,14 @@ void* KernelHeapManager::kmalloc(size_t Size)
     return nullptr;
 }
 
+/**
+ * Function: KernelHeapManager::kfree
+ * Description: Frees a previously allocated heap block range after validating allocation metadata.
+ * Parameters:
+ *   void* Ptr - Pointer returned by kmalloc.
+ * Returns:
+ *   void - No return value.
+ */
 void KernelHeapManager::kfree(void* Ptr)
 {
     if (Ptr == nullptr)

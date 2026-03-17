@@ -28,11 +28,29 @@ struct CpioNewcHeader
 
 static_assert(sizeof(CpioNewcHeader) == 110, "cpio newc header size mismatch");
 
+/**
+ * Function: IsHexDigit
+ * Description: Checks whether a character is a valid hexadecimal digit.
+ * Parameters:
+ *   char Character - Character to validate.
+ * Returns:
+ *   bool - True if character is hexadecimal, false otherwise.
+ */
 bool IsHexDigit(char Character)
 {
     return (Character >= '0' && Character <= '9') || (Character >= 'a' && Character <= 'f') || (Character >= 'A' && Character <= 'F');
 }
 
+/**
+ * Function: ParseHexField
+ * Description: Parses a fixed-length hexadecimal ASCII field into a uint64 value.
+ * Parameters:
+ *   const char* Field - Pointer to ASCII hex field.
+ *   uint64_t Length - Number of characters to parse.
+ *   bool& Valid - In/out parse validity flag set false on error.
+ * Returns:
+ *   uint64_t - Parsed numeric value, or 0 when invalid.
+ */
 uint64_t ParseHexField(const char* Field, uint64_t Length, bool& Valid)
 {
     uint64_t Value = 0;
@@ -65,6 +83,16 @@ uint64_t ParseHexField(const char* Field, uint64_t Length, bool& Valid)
     return Value;
 }
 
+/**
+ * Function: MatchesLiteral
+ * Description: Compares a byte sequence to a literal for a fixed length.
+ * Parameters:
+ *   const char* Value - Value to compare.
+ *   const char* Literal - Expected literal bytes.
+ *   uint64_t Length - Number of bytes to compare.
+ * Returns:
+ *   bool - True when all bytes match.
+ */
 bool MatchesLiteral(const char* Value, const char* Literal, uint64_t Length)
 {
     for (uint64_t Index = 0; Index < Length; ++Index)
@@ -78,11 +106,27 @@ bool MatchesLiteral(const char* Value, const char* Literal, uint64_t Length)
     return true;
 }
 
+/**
+ * Function: AlignUpToFour
+ * Description: Rounds a value up to the next 4-byte boundary.
+ * Parameters:
+ *   uint64_t Value - Value to align.
+ * Returns:
+ *   uint64_t - 4-byte aligned value.
+ */
 uint64_t AlignUpToFour(uint64_t Value)
 {
     return (Value + 3) & ~static_cast<uint64_t>(3);
 }
 
+/**
+ * Function: DecodeEntryType
+ * Description: Converts cpio mode bits into a ram filesystem entry type.
+ * Parameters:
+ *   uint64_t Mode - cpio mode field value.
+ * Returns:
+ *   RamFileSystemEntryType - Decoded entry type.
+ */
 RamFileSystemEntryType DecodeEntryType(uint64_t Mode)
 {
     uint64_t FileTypeBits = Mode & CpioModeFileTypeMask;
@@ -105,6 +149,14 @@ RamFileSystemEntryType DecodeEntryType(uint64_t Mode)
     return RamFileSystemEntryTypeOther;
 }
 
+/**
+ * Function: EntryTypeToString
+ * Description: Converts entry type enum value to printable text.
+ * Parameters:
+ *   RamFileSystemEntryType Type - Entry type.
+ * Returns:
+ *   const char* - String name for the entry type.
+ */
 const char* EntryTypeToString(RamFileSystemEntryType Type)
 {
     switch (Type)
@@ -121,6 +173,14 @@ const char* EntryTypeToString(RamFileSystemEntryType Type)
     }
 }
 
+/**
+ * Function: SkipPathPrefixes
+ * Description: Normalizes a path by skipping leading '/' and './' prefixes.
+ * Parameters:
+ *   const char* Path - Input path string.
+ * Returns:
+ *   const char* - Pointer to normalized path, or nullptr if input is null.
+ */
 const char* SkipPathPrefixes(const char* Path)
 {
     if (Path == nullptr)
@@ -141,6 +201,15 @@ const char* SkipPathPrefixes(const char* Path)
     return Path;
 }
 
+/**
+ * Function: StringsEqual
+ * Description: Compares two null-terminated strings for exact equality.
+ * Parameters:
+ *   const char* Left - First string.
+ *   const char* Right - Second string.
+ * Returns:
+ *   bool - True if strings match exactly.
+ */
 bool StringsEqual(const char* Left, const char* Right)
 {
     if (Left == nullptr || Right == nullptr)
@@ -162,6 +231,15 @@ bool StringsEqual(const char* Left, const char* Right)
     return *Left == '\0' && *Right == '\0';
 }
 
+/**
+ * Function: PathMatchesArchiveName
+ * Description: Compares requested path against archive entry name with normalized prefixes.
+ * Parameters:
+ *   const char* RequestedPath - Path requested by caller.
+ *   const char* ArchiveName - Path stored in archive entry.
+ * Returns:
+ *   bool - True if paths refer to the same normalized name.
+ */
 bool PathMatchesArchiveName(const char* RequestedPath, const char* ArchiveName)
 {
     const char* NormalizedRequested = SkipPathPrefixes(RequestedPath);
@@ -180,6 +258,20 @@ bool PathMatchesArchiveName(const char* RequestedPath, const char* ArchiveName)
     return StringsEqual(NormalizedRequested, NormalizedArchive);
 }
 
+/**
+ * Function: ParseEntryAtOffset
+ * Description: Parses a single cpio newc entry at an archive offset and computes the next entry offset.
+ * Parameters:
+ *   const char* Base - Archive base pointer.
+ *   uint64_t ArchiveSize - Archive size in bytes.
+ *   uint64_t Offset - Current entry offset from base.
+ *   RamFileSystemEntry* Entry - Optional output entry metadata.
+ *   uint64_t* NextOffset - Output offset of next entry.
+ *   bool* ReachedTrailer - Output flag set when TRAILER!!! is reached.
+ *   FrameBufferConsole* Console - Optional console for parse errors.
+ * Returns:
+ *   bool - True on successful parse, false on format or bounds errors.
+ */
 bool ParseEntryAtOffset(const char* Base, uint64_t ArchiveSize, uint64_t Offset, RamFileSystemEntry* Entry, uint64_t* NextOffset, bool* ReachedTrailer, FrameBufferConsole* Console)
 {
     const CpioNewcHeader* Header = reinterpret_cast<const CpioNewcHeader*>(Base + Offset);
@@ -261,6 +353,15 @@ typedef struct
     uint64_t            EntryCount;
 } PrintInitramfsContext;
 
+/**
+ * Function: PrintInitramfsEntry
+ * Description: Enumeration callback that prints one initramfs entry and increments count.
+ * Parameters:
+ *   const RamFileSystemEntry& Entry - Entry being enumerated.
+ *   void* Context - Pointer to PrintInitramfsContext.
+ * Returns:
+ *   bool - Always true to continue enumeration.
+ */
 bool PrintInitramfsEntry(const RamFileSystemEntry& Entry, void* Context)
 {
     PrintInitramfsContext* PrintContext = reinterpret_cast<PrintInitramfsContext*>(Context);
@@ -279,6 +380,15 @@ typedef struct
     bool                Found;
 } FindEntryContext;
 
+/**
+ * Function: FindEntryByPath
+ * Description: Enumeration callback that stops when requested path matches an archive entry.
+ * Parameters:
+ *   const RamFileSystemEntry& Entry - Entry being enumerated.
+ *   void* Context - Pointer to FindEntryContext.
+ * Returns:
+ *   bool - False when match is found to stop enumeration, true otherwise.
+ */
 bool FindEntryByPath(const RamFileSystemEntry& Entry, void* Context)
 {
     FindEntryContext* FindContext = reinterpret_cast<FindEntryContext*>(Context);
@@ -297,20 +407,55 @@ bool FindEntryByPath(const RamFileSystemEntry& Entry, void* Context)
 }
 } // namespace
 
+/**
+ * Function: RamFileSystemManager::RamFileSystemManager
+ * Description: Constructs a ram filesystem manager with initramfs location metadata.
+ * Parameters:
+ *   uint64_t InitramfsAddress - Base address of initramfs archive.
+ *   uint64_t InitramfsSize - Size of initramfs archive in bytes.
+ * Returns:
+ *   RamFileSystemManager - Constructed manager instance.
+ */
 RamFileSystemManager::RamFileSystemManager(uint64_t InitramfsAddress, uint64_t InitramfsSize) : InitramfsAddress(InitramfsAddress), InitramfsSize(InitramfsSize)
 {
 }
 
+/**
+ * Function: RamFileSystemManager::GetInitramfsAddress
+ * Description: Returns initramfs base address.
+ * Parameters:
+ *   None
+ * Returns:
+ *   uint64_t - Initramfs base address.
+ */
 uint64_t RamFileSystemManager::GetInitramfsAddress() const
 {
     return InitramfsAddress;
 }
 
+/**
+ * Function: RamFileSystemManager::GetInitramfsSize
+ * Description: Returns initramfs archive size.
+ * Parameters:
+ *   None
+ * Returns:
+ *   uint64_t - Initramfs size in bytes.
+ */
 uint64_t RamFileSystemManager::GetInitramfsSize() const
 {
     return InitramfsSize;
 }
 
+/**
+ * Function: RamFileSystemManager::EnumerateEntries
+ * Description: Iterates all cpio entries and invokes callback for each parsed entry.
+ * Parameters:
+ *   RamFileSystemEntryCallback Callback - Entry callback function.
+ *   void* Context - User callback context pointer.
+ *   FrameBufferConsole* Console - Optional console for diagnostics.
+ * Returns:
+ *   bool - True on successful enumeration, false on parse failures.
+ */
 bool RamFileSystemManager::EnumerateEntries(RamFileSystemEntryCallback Callback, void* Context, FrameBufferConsole* Console) const
 {
     if (InitramfsAddress == 0 || InitramfsSize < sizeof(CpioNewcHeader))
@@ -358,6 +503,16 @@ bool RamFileSystemManager::EnumerateEntries(RamFileSystemEntryCallback Callback,
     return false;
 }
 
+/**
+ * Function: RamFileSystemManager::FindEntry
+ * Description: Finds an initramfs entry by path and returns its metadata.
+ * Parameters:
+ *   const char* Path - Requested entry path.
+ *   RamFileSystemEntry* Entry - Output entry metadata.
+ *   FrameBufferConsole* Console - Optional console for diagnostics.
+ * Returns:
+ *   bool - True if matching entry is found.
+ */
 bool RamFileSystemManager::FindEntry(const char* Path, RamFileSystemEntry* Entry, FrameBufferConsole* Console) const
 {
     if (Path == nullptr || Entry == nullptr)
@@ -374,6 +529,17 @@ bool RamFileSystemManager::FindEntry(const char* Path, RamFileSystemEntry* Entry
     return Context.Found;
 }
 
+/**
+ * Function: RamFileSystemManager::FindFile
+ * Description: Finds a regular file entry and returns direct data pointer and size.
+ * Parameters:
+ *   const char* Path - Requested file path.
+ *   const void** Data - Output file data pointer.
+ *   uint64_t* Size - Output file size in bytes.
+ *   FrameBufferConsole* Console - Optional console for diagnostics.
+ * Returns:
+ *   bool - True if regular file is found.
+ */
 bool RamFileSystemManager::FindFile(const char* Path, const void** Data, uint64_t* Size, FrameBufferConsole* Console) const
 {
     if (Path == nullptr || Data == nullptr || Size == nullptr)
@@ -402,6 +568,14 @@ bool RamFileSystemManager::FindFile(const char* Path, const void** Data, uint64_
     return true;
 }
 
+/**
+ * Function: RamFileSystemManager::ParseAndPrintInitramfs
+ * Description: Enumerates and prints initramfs contents and status of /init file.
+ * Parameters:
+ *   FrameBufferConsole* Console - Console used for output.
+ * Returns:
+ *   void - No return value.
+ */
 void RamFileSystemManager::ParseAndPrintInitramfs(FrameBufferConsole* Console) const
 {
     if (Console == nullptr)

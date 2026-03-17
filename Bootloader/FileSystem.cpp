@@ -1,14 +1,40 @@
 #include <CommonUtils.hpp>
 #include <FileSystem.hpp>
 
+/**
+ * Function: FileSystem::FileSystem
+ * Description: Initializes the FileSystem helper with UEFI handles, boot services, and console access.
+ * Parameters:
+ *   EFI_HANDLE ImageHandle - Handle for the currently loaded UEFI image.
+ *   EFI_BOOT_SERVICES* BootServices - UEFI boot services interface.
+ *   Console* efiConsole - Console interface used for boot-time logging.
+ * Returns:
+ *   N/A - Constructor initializes the FileSystem object.
+ */
 FileSystem::FileSystem(EFI_HANDLE ImageHandle, EFI_BOOT_SERVICES* BootServices, Console* efiConsole) : ImageHandle(ImageHandle), BootServices(BootServices), efiConsole(efiConsole)
 {
 }
 
+/**
+ * Function: FileSystem::~FileSystem
+ * Description: Destroys the FileSystem object.
+ * Parameters:
+ *   None - This function takes no parameters.
+ * Returns:
+ *   N/A - Destructor does not return a value.
+ */
 FileSystem::~FileSystem()
 {
 }
 
+/**
+ * Function: FileSystem::OutputDirectoryInfo
+ * Description: Reads and prints directory entry information for files in a UEFI directory.
+ * Parameters:
+ *   EFI_FILE_PROTOCOL* Dir - Directory handle to enumerate and print.
+ * Returns:
+ *   void - No value is returned.
+ */
 void FileSystem::OutputDirectoryInfo(EFI_FILE_PROTOCOL* Dir)
 {
     EFI_FILE_INFO FileInfo;
@@ -39,6 +65,15 @@ void FileSystem::OutputDirectoryInfo(EFI_FILE_PROTOCOL* Dir)
     }
 }
 
+/**
+ * Function: GetMemoryMapFromEfi
+ * Description: Retrieves the UEFI memory map and stores descriptor metadata in the provided structure.
+ * Parameters:
+ *   MemoryMapInfo* MemoryMap - Output structure that receives memory map data and metadata.
+ *   EFI_BOOT_SERVICES* BootServices - UEFI boot services used to query and allocate memory map storage.
+ * Returns:
+ *   EFI_STATUS - Status code from the final GetMemoryMap call.
+ */
 EFI_STATUS GetMemoryMapFromEfi(MemoryMapInfo* MemoryMap, EFI_BOOT_SERVICES* BootServices)
 {
     EFI_STATUS status;
@@ -53,12 +88,21 @@ EFI_STATUS GetMemoryMapFromEfi(MemoryMapInfo* MemoryMap, EFI_BOOT_SERVICES* Boot
     return status;
 }
 
+/**
+ * Function: PrintMemoryMap
+ * Description: Prints all memory map descriptors and summarizes total usable memory.
+ * Parameters:
+ *   MemoryMapInfo MemoryMap - Memory map data and descriptor metadata to inspect.
+ *   Console* efiConsole - Console interface used to output memory map details.
+ * Returns:
+ *   void - No value is returned.
+ */
 void PrintMemoryMap(MemoryMapInfo MemoryMap, Console* efiConsole)
 {
     efiConsole->printf_("Memory map: Size %u, Descriptor size: %u, # of descriptors: %u, key: %x\r\n", MemoryMap.MemoryMapSize, MemoryMap.DescriptorSize,
                         MemoryMap.MemoryMapSize / MemoryMap.DescriptorSize, MemoryMap.MapKey);
 
-    UINTN usable_bytes = 0; // "Usable" memory for an OS or similar, not firmware/device reserved
+    UINTN usable_bytes = 0; 
     for (UINTN i = 0; i < MemoryMap.MemoryMapSize / MemoryMap.DescriptorSize; i++)
     {
         EFI_MEMORY_DESCRIPTOR* desc = (EFI_MEMORY_DESCRIPTOR*) ((UINT8*) MemoryMap.MemoryMap + (i * MemoryMap.DescriptorSize));
@@ -76,6 +120,18 @@ void PrintMemoryMap(MemoryMapInfo MemoryMap, Console* efiConsole)
     efiConsole->printf_("\r\nUsable memory: %u / %u MiB / %u GiB\r\n", usable_bytes, usable_bytes / (1024 * 1024), usable_bytes / (1024 * 1024 * 1024));
 }
 
+/**
+ * Function: FileSystem::LoadFileToMemory
+ * Description: Opens a file, allocates pages, and reads the file contents into memory.
+ * Parameters:
+ *   EFI_FILE_PROTOCOL* Dir - Directory handle used to open the target file.
+ *   CHAR16* Path - UTF-16 path to the file relative to the directory.
+ *   EFI_MEMORY_TYPE MemoryType - UEFI memory type used for file buffer page allocation.
+ *   void** Buffer - Output pointer receiving the allocated file buffer address.
+ *   UINTN* BufferSize - Output pointer receiving the file size in bytes.
+ * Returns:
+ *   EFI_STATUS - EFI_SUCCESS on success or a UEFI error status on failure.
+ */
 EFI_STATUS FileSystem::LoadFileToMemory(EFI_FILE_PROTOCOL* Dir, CHAR16* Path, EFI_MEMORY_TYPE MemoryType, void** Buffer, UINTN* BufferSize)
 {
     EFI_STATUS         status;
@@ -136,6 +192,14 @@ EFI_STATUS FileSystem::LoadFileToMemory(EFI_FILE_PROTOCOL* Dir, CHAR16* Path, EF
     return EFI_SUCCESS;
 }
 
+/**
+ * Function: FileSystem::SetupForKernel
+ * Description: Loads kernel assets, prepares memory/paging state, exits boot services, and invokes the kernel entry point.
+ * Parameters:
+ *   EFI_FILE_PROTOCOL* Dir - Root directory handle used to load kernel and initramfs files.
+ * Returns:
+ *   EFI_STATUS - EFI_SUCCESS or an error status from setup steps before kernel invocation.
+ */
 EFI_STATUS FileSystem::SetupForKernel(EFI_FILE_PROTOCOL* Dir)
 {
     EFI_STATUS status;
@@ -217,6 +281,14 @@ EFI_STATUS FileSystem::SetupForKernel(EFI_FILE_PROTOCOL* Dir)
     return status;
 }
 
+/**
+ * Function: FileSystem::LoadKernel
+ * Description: Opens required UEFI file system protocols, reads the root directory, and starts kernel setup.
+ * Parameters:
+ *   None - This function takes no parameters.
+ * Returns:
+ *   EFI_STATUS - EFI_SUCCESS or a UEFI error status from protocol/file operations.
+ */
 EFI_STATUS FileSystem::LoadKernel()
 {
     EFI_GUID                   LoadImageGUID = EFI_LOADED_IMAGE_PROTOCOL_GUID;

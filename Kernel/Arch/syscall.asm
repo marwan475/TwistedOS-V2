@@ -12,6 +12,14 @@ extern KernelTSS
 %define USER_CS 0x1B
 %define USER_SS 0x23
 
+; /**
+;  * Function: SystemCallEntry
+;  * Description: SYSCALL entry trampoline that saves user return context, switches to kernel stack, dispatches syscall handler, and returns to user mode.
+;  * Parameters:
+;  *   rax, rdi, rsi, rdx, r10, r8, r9 (implicit) - Linux/SysV syscall register arguments.
+;  * Returns:
+;  *   void - Returns to user space via iretq.
+;  */
 SystemCallEntry:
     mov [SavedSystemCallUserRSP], rsp
     mov [SavedSystemCallUserRIP], rcx

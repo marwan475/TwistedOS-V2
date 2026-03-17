@@ -2,6 +2,17 @@
 #include <Logging/FrameBufferConsole.hpp>
 #include <Memory/PhysicalMemoryManager.hpp>
 
+/**
+ * Function: PhysicalMemoryManager::PhysicalMemoryManager
+ * Description: Initializes the physical memory manager state from boot memory map information.
+ * Parameters:
+ *   MemoryMapInfo MemoryMap - Firmware memory map metadata and pointer.
+ *   UINTN NextPageAddress - Next free page address in the current descriptor.
+ *   UINTN CurrentDescriptor - Index of the current memory descriptor in use.
+ *   UINTN RemainingPagesInDescriptor - Number of pages remaining in the current descriptor.
+ * Returns:
+ *   PhysicalMemoryManager - Constructed physical memory manager instance.
+ */
 PhysicalMemoryManager::PhysicalMemoryManager(MemoryMapInfo MemoryMap, UINTN NextPageAddress, UINTN CurrentDescriptor, UINTN RemainingPagesInDescriptor)
     : MemoryMap(MemoryMap), NextPageAddress(NextPageAddress), CurrentDescriptor(CurrentDescriptor), RemainingPagesInDescriptor(RemainingPagesInDescriptor), TotalUsableMemory(0), TotalNumberOfPages(0),
       MemoryDescriptorInfo{0, 0, 0, NULL}
@@ -9,6 +20,14 @@ PhysicalMemoryManager::PhysicalMemoryManager(MemoryMapInfo MemoryMap, UINTN Next
     InitializeMemoryStats();
 }
 
+/**
+ * Function: PhysicalMemoryManager::InitializeMemoryStats
+ * Description: Calculates total usable memory and page count from conventional memory descriptors.
+ * Parameters:
+ *   None
+ * Returns:
+ *   void - No return value.
+ */
 void PhysicalMemoryManager::InitializeMemoryStats()
 {
     UINTN DescriptorCount = MemoryMap.MemoryMapSize / MemoryMap.DescriptorSize;
@@ -25,6 +44,14 @@ void PhysicalMemoryManager::InitializeMemoryStats()
     }
 }
 
+/**
+ * Function: PhysicalMemoryManager::AllocatePagesFromMemoryMap
+ * Description: Allocates contiguous pages directly from conventional memory map descriptors.
+ * Parameters:
+ *   UINTN Pages - Number of pages to allocate.
+ * Returns:
+ *   void* - Base address of allocated pages, or NULL if no suitable descriptor is found.
+ */
 void* PhysicalMemoryManager::AllocatePagesFromMemoryMap(UINTN Pages)
 {
     if (RemainingPagesInDescriptor < Pages)
@@ -51,6 +78,14 @@ void* PhysicalMemoryManager::AllocatePagesFromMemoryMap(UINTN Pages)
     return Page;
 }
 
+/**
+ * Function: PhysicalMemoryManager::AllocatePagesFromDescriptor
+ * Description: Allocates pages from the managed descriptor bitmap using a first-fit contiguous run.
+ * Parameters:
+ *   UINTN Pages - Number of pages to allocate.
+ * Returns:
+ *   void* - Base address of the allocated run, or NULL if allocation fails.
+ */
 void* PhysicalMemoryManager::AllocatePagesFromDescriptor(UINTN Pages)
 {
     if (Pages == 0)
@@ -100,6 +135,15 @@ void* PhysicalMemoryManager::AllocatePagesFromDescriptor(UINTN Pages)
     return NULL;
 }
 
+/**
+ * Function: PhysicalMemoryManager::FreePagesFromDescriptor
+ * Description: Frees pages in the managed descriptor bitmap and updates free-page accounting.
+ * Parameters:
+ *   void* Address - Base address of the pages to free.
+ *   UINTN Pages - Number of pages to free.
+ * Returns:
+ *   bool - True if inputs were valid and the operation completed, false on invalid input.
+ */
 bool PhysicalMemoryManager::FreePagesFromDescriptor(void* Address, UINTN Pages)
 {
     if (Address == NULL || Pages == 0)
@@ -146,16 +190,40 @@ bool PhysicalMemoryManager::FreePagesFromDescriptor(void* Address, UINTN Pages)
     return true;
 }
 
+/**
+ * Function: PhysicalMemoryManager::TotalUsableMemoryBytes
+ * Description: Returns the total conventional memory size in bytes.
+ * Parameters:
+ *   None
+ * Returns:
+ *   UINTN - Total usable memory in bytes.
+ */
 UINTN PhysicalMemoryManager::TotalUsableMemoryBytes() const
 {
     return TotalUsableMemory;
 }
 
+/**
+ * Function: PhysicalMemoryManager::TotalPages
+ * Description: Returns the total number of conventional memory pages.
+ * Parameters:
+ *   None
+ * Returns:
+ *   UINTN - Total number of pages.
+ */
 UINTN PhysicalMemoryManager::TotalPages() const
 {
     return TotalNumberOfPages;
 }
 
+/**
+ * Function: PhysicalMemoryManager::PrintConventionalMemoryMap
+ * Description: Prints a summary of conventional memory descriptors to the framebuffer console.
+ * Parameters:
+ *   FrameBufferConsole& Console - Console used for formatted output.
+ * Returns:
+ *   void - No return value.
+ */
 void PhysicalMemoryManager::PrintConventionalMemoryMap(FrameBufferConsole& Console) const
 {
     UINTN DescriptorCount             = MemoryMap.MemoryMapSize / MemoryMap.DescriptorSize;
@@ -189,6 +257,14 @@ void PhysicalMemoryManager::PrintConventionalMemoryMap(FrameBufferConsole& Conso
     }
 }
 
+/**
+ * Function: PhysicalMemoryManager::PrintMemoryDescriptors
+ * Description: Prints summary information for the selected largest managed memory descriptor.
+ * Parameters:
+ *   FrameBufferConsole& Console - Console used for formatted output.
+ * Returns:
+ *   void - No return value.
+ */
 void PhysicalMemoryManager::PrintMemoryDescriptors(FrameBufferConsole& Console) const
 {
     if (MemoryDescriptorInfo.TotalNumberOfPages == 0)
@@ -201,6 +277,14 @@ void PhysicalMemoryManager::PrintMemoryDescriptors(FrameBufferConsole& Console) 
                     (unsigned long long) MemoryDescriptorInfo.TotalNumberOfPages, (unsigned long long) MemoryDescriptorInfo.NumberOfFreePages, MemoryDescriptorInfo.BitMap ? "yes" : "no");
 }
 
+/**
+ * Function: InitializeMemoryDescriptorBitMap
+ * Description: Initializes the allocation bitmap inside a descriptor and reserves bitmap storage pages.
+ * Parameters:
+ *   MemoryDescriptor* Md - Descriptor metadata to initialize.
+ * Returns:
+ *   void* - Pointer to the bitmap memory, or NULL if the descriptor is too small.
+ */
 void* InitializeMemoryDescriptorBitMap(MemoryDescriptor* Md)
 {
     uint64_t BitMapSize = (Md->NumberOfFreePages + 7) / 8;
@@ -221,6 +305,14 @@ void* InitializeMemoryDescriptorBitMap(MemoryDescriptor* Md)
     return BitMapAddr;
 }
 
+/**
+ * Function: PhysicalMemoryManager::InitializeMemoryDescriptors
+ * Description: Selects the largest available conventional descriptor and initializes its allocation bitmap.
+ * Parameters:
+ *   None
+ * Returns:
+ *   void - No return value.
+ */
 void PhysicalMemoryManager::InitializeMemoryDescriptors()
 {
     uint64_t DescriptorCount = MemoryMap.MemoryMapSize / MemoryMap.DescriptorSize;

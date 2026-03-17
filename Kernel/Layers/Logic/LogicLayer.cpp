@@ -6,11 +6,27 @@
 
 namespace
 {
+/**
+ * Function: AlignUpToPage
+ * Description: Rounds a value up to the next page boundary.
+ * Parameters:
+ *   uint64_t Value - Value to align.
+ * Returns:
+ *   uint64_t - Page-aligned value rounded upward.
+ */
 uint64_t AlignUpToPage(uint64_t Value)
 {
     return (Value + PAGE_SIZE - 1) & ~(static_cast<uint64_t>(PAGE_SIZE) - 1);
 }
 
+/**
+ * Function: AlignDownToPage
+ * Description: Rounds a value down to the nearest page boundary.
+ * Parameters:
+ *   uint64_t Value - Value to align.
+ * Returns:
+ *   uint64_t - Page-aligned value rounded downward.
+ */
 uint64_t AlignDownToPage(uint64_t Value)
 {
     return Value & ~(static_cast<uint64_t>(PAGE_SIZE) - 1);
@@ -19,6 +35,14 @@ uint64_t AlignDownToPage(uint64_t Value)
 
 namespace
 {
+/**
+ * Function: NullProcessEntry
+ * Description: Idle process entry point that halts CPU in an infinite loop.
+ * Parameters:
+ *   None
+ * Returns:
+ *   void - No return value.
+ */
 void NullProcessEntry()
 {
     while (1)
@@ -26,10 +50,26 @@ void NullProcessEntry()
 }
 } // namespace
 
+/**
+ * Function: LogicLayer::LogicLayer
+ * Description: Constructs logic layer with uninitialized subsystem pointers.
+ * Parameters:
+ *   None
+ * Returns:
+ *   LogicLayer - Constructed logic layer instance.
+ */
 LogicLayer::LogicLayer() : Resource(nullptr), PM(nullptr), Sched(nullptr), Sync(nullptr), ELF(nullptr)
 {
 }
 
+/**
+ * Function: LogicLayer::~LogicLayer
+ * Description: Destroys logic layer and releases owned subsystem objects.
+ * Parameters:
+ *   None
+ * Returns:
+ *   void - No return value.
+ */
 LogicLayer::~LogicLayer()
 {
     if (PM != nullptr)
@@ -54,21 +94,53 @@ LogicLayer::~LogicLayer()
 
 }
 
+/**
+ * Function: LogicLayer::Initialize
+ * Description: Sets resource-layer dependency used by logic operations.
+ * Parameters:
+ *   ResourceLayer* Resource - Resource layer instance.
+ * Returns:
+ *   void - No return value.
+ */
 void LogicLayer::Initialize(ResourceLayer* Resource)
 {
     this->Resource = Resource;
 }
 
+/**
+ * Function: LogicLayer::GetResourceLayer
+ * Description: Returns attached resource layer.
+ * Parameters:
+ *   None
+ * Returns:
+ *   ResourceLayer* - Pointer to resource layer.
+ */
 ResourceLayer* LogicLayer::GetResourceLayer() const
 {
     return Resource;
 }
 
+/**
+ * Function: LogicLayer::GetELFManger
+ * Description: Returns ELF manager instance.
+ * Parameters:
+ *   None
+ * Returns:
+ *   ELFManager* - Pointer to ELF manager.
+ */
 ELFManager* LogicLayer::GetELFManger() const
 {
     return ELF;
 }
 
+/**
+ * Function: LogicLayer::InitializeProcessManager
+ * Description: Creates process manager if it has not been initialized.
+ * Parameters:
+ *   None
+ * Returns:
+ *   void - No return value.
+ */
 void LogicLayer::InitializeProcessManager()
 {
     if (PM != nullptr)
@@ -80,6 +152,14 @@ void LogicLayer::InitializeProcessManager()
     Resource->GetConsole()->printf_("Process Manager Initialized\n");
 }
 
+/**
+ * Function: LogicLayer::InitializeScheduler
+ * Description: Creates scheduler if it has not been initialized.
+ * Parameters:
+ *   None
+ * Returns:
+ *   void - No return value.
+ */
 void LogicLayer::InitializeScheduler()
 {
     if (Sched != nullptr)
@@ -91,6 +171,14 @@ void LogicLayer::InitializeScheduler()
     Resource->GetConsole()->printf_("Scheduler Initialized\n");
 }
 
+/**
+ * Function: LogicLayer::InitializeSynchronizationManager
+ * Description: Creates synchronization manager if it has not been initialized.
+ * Parameters:
+ *   None
+ * Returns:
+ *   void - No return value.
+ */
 void LogicLayer::InitializeSynchronizationManager()
 {
     if (Sync != nullptr)
@@ -102,6 +190,14 @@ void LogicLayer::InitializeSynchronizationManager()
     Resource->GetConsole()->printf_("Synchronization Manager Initialized\n");
 }
 
+/**
+ * Function: LogicLayer::InitializeELFManager
+ * Description: Creates ELF manager if it has not been initialized.
+ * Parameters:
+ *   None
+ * Returns:
+ *   void - No return value.
+ */
 void LogicLayer::InitializeELFManager()
 {
     if (ELF != nullptr)
@@ -113,6 +209,14 @@ void LogicLayer::InitializeELFManager()
     Resource->GetConsole()->printf_("ELF Manager Initialized\n");
 }
 
+/**
+ * Function: LogicLayer::CreateNullProcess
+ * Description: Creates idle kernel process and marks it running for initial scheduling.
+ * Parameters:
+ *   None
+ * Returns:
+ *   uint8_t - Process ID of created null process.
+ */
 uint8_t LogicLayer::CreateNullProcess()
 {
     uint8_t Id = CreateKernelProcess(NullProcessEntry);
@@ -123,6 +227,14 @@ uint8_t LogicLayer::CreateNullProcess()
     return Id;
 }
 
+/**
+ * Function: LogicLayer::CreateKernelProcess
+ * Description: Creates a kernel process with prepared initial CPU state and stack.
+ * Parameters:
+ *   void (*EntryPoint)() - Kernel function entry point.
+ * Returns:
+ *   uint8_t - Process ID or 0xFF on failure.
+ */
 uint8_t LogicLayer::CreateKernelProcess(void (*EntryPoint)())
 {
     void*    ProcessStack = Resource->kmalloc(KERNEL_PROCESS_STACK_SIZE);
@@ -148,6 +260,15 @@ uint8_t LogicLayer::CreateKernelProcess(void (*EntryPoint)())
     return Id;
 }
 
+/**
+ * Function: LogicLayer::CreateUserProcess
+ * Description: Creates a user process from raw binary or ELF image and schedules it.
+ * Parameters:
+ *   uint64_t CodeAddr - Physical address of program image.
+ *   uint64_t CodeSize - Program image size in bytes.
+ * Returns:
+ *   uint8_t - Process ID or 0xFF on failure.
+ */
 uint8_t LogicLayer::CreateUserProcess(uint64_t CodeAddr, uint64_t CodeSize)
 {
     if (CodeAddr == 0 || CodeSize == 0)
@@ -207,6 +328,15 @@ uint8_t LogicLayer::CreateUserProcess(uint64_t CodeAddr, uint64_t CodeSize)
     return Id;
 }
 
+/**
+ * Function: LogicLayer::MapRawBinary
+ * Description: Builds address space mappings for raw binary code, heap, and stack.
+ * Parameters:
+ *   uint64_t CodeAddr - Physical base address of raw code.
+ *   uint64_t CodeSize - Raw code size in bytes.
+ * Returns:
+ *   VirtualAddressSpace* - Initialized address space or nullptr on failure.
+ */
 VirtualAddressSpace* LogicLayer::MapRawBinary(uint64_t CodeAddr, uint64_t CodeSize)
 {
     // CodeAddr is a page-aligned physical address (from PMM) with CodeSize bytes copied in
@@ -247,6 +377,16 @@ VirtualAddressSpace* LogicLayer::MapRawBinary(uint64_t CodeAddr, uint64_t CodeSi
     return AddressSpace;
 }
 
+/**
+ * Function: LogicLayer::MapELF
+ * Description: Builds address space mappings for ELF loadable segments plus heap and stack.
+ * Parameters:
+ *   uint64_t CodeAddr - Physical base address of ELF image.
+ *   uint64_t CodeSize - ELF image size in bytes.
+ *   const ELFHeader& Header - Parsed ELF header.
+ * Returns:
+ *   VirtualAddressSpace* - Initialized ELF address space or nullptr on failure.
+ */
 VirtualAddressSpace* LogicLayer::MapELF(uint64_t CodeAddr, uint64_t CodeSize, const ELFHeader& Header)
 {
     if (ELF == nullptr || !ELF->ValidateProgramHeaderTable(Header, CodeSize))
@@ -358,6 +498,14 @@ VirtualAddressSpace* LogicLayer::MapELF(uint64_t CodeAddr, uint64_t CodeSize, co
     return AddressSpace;
 }
 
+/**
+ * Function: LogicLayer::CleanUpRawBinary
+ * Description: Frees physical pages and page-map root associated with a raw-binary process address space.
+ * Parameters:
+ *   VirtualAddressSpace* AddressSpace - Address space to clean up.
+ * Returns:
+ *   void - No return value.
+ */
 void LogicLayer::CleanUpRawBinary(VirtualAddressSpace* AddressSpace)
 {
     if (AddressSpace == nullptr || Resource == nullptr)
@@ -400,6 +548,14 @@ void LogicLayer::CleanUpRawBinary(VirtualAddressSpace* AddressSpace)
     }
 }
 
+/**
+ * Function: LogicLayer::CleanUpELF
+ * Description: Frees physical ranges and page-map root associated with an ELF process address space.
+ * Parameters:
+ *   VirtualAddressSpace* AddressSpace - Address space to clean up.
+ * Returns:
+ *   void - No return value.
+ */
 void LogicLayer::CleanUpELF(VirtualAddressSpace* AddressSpace)
 {
     if (AddressSpace == nullptr || Resource == nullptr)
@@ -516,6 +672,14 @@ void LogicLayer::CleanUpELF(VirtualAddressSpace* AddressSpace)
     }
 }
 
+/**
+ * Function: LogicLayer::KillProcess
+ * Description: Terminates a process and releases its resources based on process type.
+ * Parameters:
+ *   uint8_t Id - Process ID to terminate.
+ * Returns:
+ *   void - No return value.
+ */
 void LogicLayer::KillProcess(uint8_t Id)
 {
     Process* TargetProcess = PM->GetProcessById(Id);
@@ -552,6 +716,14 @@ void LogicLayer::KillProcess(uint8_t Id)
     Sched->RemoveFromReadyQueue(Id);
 }
 
+/**
+ * Function: LogicLayer::RunProcess
+ * Description: Switches execution from current process to target process.
+ * Parameters:
+ *   uint8_t Id - Target process ID to run.
+ * Returns:
+ *   bool - True if switch request was valid, false otherwise.
+ */
 bool LogicLayer::RunProcess(uint8_t Id)
 {
     if (PM == nullptr || Resource == nullptr)
@@ -600,6 +772,15 @@ bool LogicLayer::RunProcess(uint8_t Id)
     return true;
 }
 
+/**
+ * Function: LogicLayer::SleepProcess
+ * Description: Blocks a running process for a specified tick duration and triggers reschedule.
+ * Parameters:
+ *   uint8_t Id - Process ID to sleep.
+ *   uint64_t WaitTicks - Number of ticks to sleep.
+ * Returns:
+ *   void - No return value.
+ */
 void LogicLayer::SleepProcess(uint8_t Id, uint64_t WaitTicks)
 {
     Process* TargetProcess = PM->GetProcessById(Id);
@@ -616,6 +797,14 @@ void LogicLayer::SleepProcess(uint8_t Id, uint64_t WaitTicks)
     Schedule();
 }
 
+/**
+ * Function: LogicLayer::WakeProcess
+ * Description: Wakes a blocked process and requeues it as ready.
+ * Parameters:
+ *   uint8_t Id - Process ID to wake.
+ * Returns:
+ *   void - No return value.
+ */
 void LogicLayer::WakeProcess(uint8_t Id)
 {
     Process* TargetProcess = PM->GetProcessById(Id);
@@ -629,6 +818,14 @@ void LogicLayer::WakeProcess(uint8_t Id)
     Sched->AddToReadyQueue(Id);
 }
 
+/**
+ * Function: LogicLayer::BlockProcess
+ * Description: Blocks a running process and triggers scheduler.
+ * Parameters:
+ *   uint8_t Id - Process ID to block.
+ * Returns:
+ *   void - No return value.
+ */
 void LogicLayer::BlockProcess(uint8_t Id)
 {
     Process* TargetProcess = PM->GetProcessById(Id);
@@ -644,6 +841,14 @@ void LogicLayer::BlockProcess(uint8_t Id)
     Schedule();
 }
 
+/**
+ * Function: LogicLayer::UnblockProcess
+ * Description: Moves a blocked process back to ready state.
+ * Parameters:
+ *   uint8_t Id - Process ID to unblock.
+ * Returns:
+ *   void - No return value.
+ */
 void LogicLayer::UnblockProcess(uint8_t Id)
 {
     Process* TargetProcess = PM->GetProcessById(Id);
@@ -656,6 +861,14 @@ void LogicLayer::UnblockProcess(uint8_t Id)
     Sched->AddToReadyQueue(Id);
 }
 
+/**
+ * Function: LogicLayer::CaptureCurrentInterruptState
+ * Description: Captures user-mode CPU register state from interrupt frame into running process state.
+ * Parameters:
+ *   const Registers* Regs - Interrupt register frame.
+ * Returns:
+ *   void - No return value.
+ */
 void LogicLayer::CaptureCurrentInterruptState(const Registers* Regs)
 {
     if (Regs == nullptr || PM == nullptr)
@@ -696,6 +909,14 @@ void LogicLayer::CaptureCurrentInterruptState(const Registers* Regs)
     CurrentProcess->State.ss     = Regs->ss;
 }
 
+/**
+ * Function: LogicLayer::Tick
+ * Description: Advances synchronization timers and wakes processes whose sleep expired.
+ * Parameters:
+ *   None
+ * Returns:
+ *   void - No return value.
+ */
 void LogicLayer::Tick()
 {
     if (Sync != nullptr)
@@ -709,6 +930,14 @@ void LogicLayer::Tick()
     }
 }
 
+/**
+ * Function: LogicLayer::Schedule
+ * Description: Selects next ready process and requests context switch.
+ * Parameters:
+ *   None
+ * Returns:
+ *   void - No return value.
+ */
 void LogicLayer::Schedule()
 {
     if (Sched == nullptr || PM == nullptr)
@@ -728,16 +957,40 @@ void LogicLayer::Schedule()
     RunProcess(NextProcessId);
 }
 
+/**
+ * Function: LogicLayer::isScheduling
+ * Description: Returns whether scheduler-driven switching is enabled.
+ * Parameters:
+ *   None
+ * Returns:
+ *   bool - True if scheduling is enabled.
+ */
 bool LogicLayer::isScheduling()
 {
     return IsScheduling;
 }
 
+/**
+ * Function: LogicLayer::EnableScheduling
+ * Description: Enables scheduler-driven context switching.
+ * Parameters:
+ *   None
+ * Returns:
+ *   void - No return value.
+ */
 void LogicLayer::EnableScheduling()
 {
     IsScheduling = true;
 }
 
+/**
+ * Function: LogicLayer::DisableScheduling
+ * Description: Disables scheduler-driven context switching.
+ * Parameters:
+ *   None
+ * Returns:
+ *   void - No return value.
+ */
 void LogicLayer::DisableScheduling()
 {
     IsScheduling = false;

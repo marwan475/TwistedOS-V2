@@ -1,10 +1,29 @@
 #include <CommonUtils.hpp>
 #include <Memory/VirtualMemoryManager.hpp>
 
+/**
+ * Function: VirtualMemoryManager::VirtualMemoryManager
+ * Description: Initializes the virtual memory manager with the active PML4 table and physical memory manager.
+ * Parameters:
+ *   UINTN PageMapL4TableAddr - Physical address of the level-4 page table.
+ *   PhysicalMemoryManager& PMM - Reference to the physical memory manager used for page table allocations.
+ * Returns:
+ *   VirtualMemoryManager - Constructed virtual memory manager instance.
+ */
 VirtualMemoryManager::VirtualMemoryManager(UINTN PageMapL4TableAddr, PhysicalMemoryManager& PMM) : PageMapL4Table((PageTableEntry*) PageMapL4TableAddr), PMM(PMM)
 {
 }
 
+/**
+ * Function: VirtualMemoryManager::MapPage
+ * Description: Maps one physical page to one virtual page and creates intermediate page tables when required.
+ * Parameters:
+ *   UINTN PhysicalAddr - Physical address to map.
+ *   UINTN VirtualAddr - Virtual address to map to.
+ *   const PageMappingFlags& Flags - Access and write flags to apply to the mapping.
+ * Returns:
+ *   bool - True if the page was mapped, false if allocation of a paging structure failed.
+ */
 bool VirtualMemoryManager::MapPage(UINTN PhysicalAddr, UINTN VirtualAddr, const PageMappingFlags& Flags)
 {
     VirtualAddress Vaddr;
@@ -108,6 +127,17 @@ bool VirtualMemoryManager::MapPage(UINTN PhysicalAddr, UINTN VirtualAddr, const 
     return true;
 }
 
+/**
+ * Function: VirtualMemoryManager::MapRange
+ * Description: Maps a contiguous range of pages from a physical range to a virtual range.
+ * Parameters:
+ *   UINTN PhysicalAddr - Starting physical address.
+ *   UINTN VirtualAddr - Starting virtual address.
+ *   UINTN Pages - Number of pages to map.
+ *   const PageMappingFlags& Flags - Access and write flags for each page mapping.
+ * Returns:
+ *   UINTN - First virtual address immediately after the mapped range.
+ */
 UINTN VirtualMemoryManager::MapRange(UINTN PhysicalAddr, UINTN VirtualAddr, UINTN Pages, const PageMappingFlags& Flags)
 {
     UINTN RangeStartPhysical = PhysicalAddr & PHYS_PAGE_ADDR_MASK;
@@ -122,6 +152,14 @@ UINTN VirtualMemoryManager::MapRange(UINTN PhysicalAddr, UINTN VirtualAddr, UINT
     return RangeStartVirtual + (Pages * PAGE_SIZE);
 }
 
+/**
+ * Function: VirtualMemoryManager::UnmapPage
+ * Description: Removes the mapping for a single virtual page and invalidates the TLB entry.
+ * Parameters:
+ *   UINTN VirtualAddr - Virtual address of the page to unmap.
+ * Returns:
+ *   bool - True if a valid mapping path existed and was cleared, false otherwise.
+ */
 bool VirtualMemoryManager::UnmapPage(UINTN VirtualAddr)
 {
     VirtualAddress Vaddr;
@@ -158,6 +196,15 @@ bool VirtualMemoryManager::UnmapPage(UINTN VirtualAddr)
     return true;
 }
 
+/**
+ * Function: VirtualMemoryManager::UnmapRange
+ * Description: Removes mappings for a contiguous range of virtual pages.
+ * Parameters:
+ *   UINTN VirtualAddr - Starting virtual address of the range.
+ *   UINTN Pages - Number of pages to unmap.
+ * Returns:
+ *   UINTN - First virtual address immediately after the unmapped range.
+ */
 UINTN VirtualMemoryManager::UnmapRange(UINTN VirtualAddr, UINTN Pages)
 {
     UINTN RangeStartVirtual = VirtualAddr & PHYS_PAGE_ADDR_MASK;
@@ -171,6 +218,14 @@ UINTN VirtualMemoryManager::UnmapRange(UINTN VirtualAddr, UINTN Pages)
     return RangeStartVirtual + (Pages * PAGE_SIZE);
 }
 
+/**
+ * Function: VirtualMemoryManager::CopyPageMapL4Table
+ * Description: Deep-copies the current paging hierarchy and returns a new PML4 root table.
+ * Parameters:
+ *   None
+ * Returns:
+ *   PageTableEntry* - Pointer to the copied PML4 table, or NULL on allocation failure.
+ */
 PageTableEntry* VirtualMemoryManager::CopyPageMapL4Table()
 {
     void* NewPML4Addr = PMM.AllocatePagesFromMemoryMap(1);

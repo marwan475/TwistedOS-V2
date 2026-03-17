@@ -106,6 +106,16 @@ KernelSelfTestState State = {
 
 uint8_t CreateUserProcessFromInitramfs(Dispatcher* ActiveDispatcher, const char* Path, bool RequireElfImage);
 
+/**
+ * Function: ValidateImageAsElf
+ * Description: Parses and validates an in-memory image as an ELF binary.
+ * Parameters:
+ *   Dispatcher* ActiveDispatcher - Dispatcher used to access the ELF manager.
+ *   const void* Data - Pointer to the in-memory image data.
+ *   uint64_t Size - Size of the image data in bytes.
+ * Returns:
+ *   bool - true if the image is a valid ELF file; otherwise false.
+ */
 bool ValidateImageAsElf(Dispatcher* ActiveDispatcher, const void* Data, uint64_t Size)
 {
     if (ActiveDispatcher == nullptr || Data == nullptr || Size < sizeof(ELFHeader))
@@ -123,6 +133,14 @@ bool ValidateImageAsElf(Dispatcher* ActiveDispatcher, const void* Data, uint64_t
     return ElfManager->ValidateELF(Header);
 }
 
+/**
+ * Function: RequireDispatcher
+ * Description: Returns the active dispatcher and halts if no dispatcher is available.
+ * Parameters:
+ *   None - This function takes no parameters.
+ * Returns:
+ *   Dispatcher* - Active dispatcher pointer.
+ */
 Dispatcher* RequireDispatcher()
 {
     Dispatcher* ActiveDispatcher = State.DispatcherRef;
@@ -142,6 +160,14 @@ Dispatcher* RequireDispatcher()
     return ActiveDispatcher;
 }
 
+/**
+ * Function: RegisterTestProcess
+ * Description: Registers a process ID in the self-test process list when valid and space is available.
+ * Parameters:
+ *   uint8_t ProcessId - Process identifier to track in self-test state.
+ * Returns:
+ *   void - No value is returned.
+ */
 void RegisterTestProcess(uint8_t ProcessId)
 {
     if (ProcessId == INVALID_PROCESS_ID)
@@ -158,6 +184,14 @@ void RegisterTestProcess(uint8_t ProcessId)
     ++State.TestProcessCount;
 }
 
+/**
+ * Function: ResetMultitaskCounters
+ * Description: Resets multitasking counters and related logging flags for a new monitoring run.
+ * Parameters:
+ *   None - This function takes no parameters.
+ * Returns:
+ *   void - No value is returned.
+ */
 void ResetMultitaskCounters()
 {
     State.FastCycles                      = 0;
@@ -171,6 +205,14 @@ void ResetMultitaskCounters()
     State.MultitaskSleepResultLogged      = false;
 }
 
+/**
+ * Function: KernelSleepFastTask
+ * Description: Kernel test task that tracks fast-cycle activity and sleeps for a short interval.
+ * Parameters:
+ *   None - This function takes no parameters.
+ * Returns:
+ *   void - No value is returned.
+ */
 void KernelSleepFastTask()
 {
     Dispatcher* ActiveDispatcher = RequireDispatcher();
@@ -183,6 +225,14 @@ void KernelSleepFastTask()
     }
 }
 
+/**
+ * Function: KernelSleepMediumTask
+ * Description: Kernel test task that tracks medium-cycle activity and sleeps for a medium interval.
+ * Parameters:
+ *   None - This function takes no parameters.
+ * Returns:
+ *   void - No value is returned.
+ */
 void KernelSleepMediumTask()
 {
     Dispatcher* ActiveDispatcher = RequireDispatcher();
@@ -195,6 +245,14 @@ void KernelSleepMediumTask()
     }
 }
 
+/**
+ * Function: KernelSleepSlowTask
+ * Description: Kernel test task that tracks slow-cycle activity and sleeps for a longer interval.
+ * Parameters:
+ *   None - This function takes no parameters.
+ * Returns:
+ *   void - No value is returned.
+ */
 void KernelSleepSlowTask()
 {
     Dispatcher* ActiveDispatcher = RequireDispatcher();
@@ -207,6 +265,14 @@ void KernelSleepSlowTask()
     }
 }
 
+/**
+ * Function: KernelBurstTask
+ * Description: Kernel test task that spins in bursts and periodically yields via short sleep.
+ * Parameters:
+ *   None - This function takes no parameters.
+ * Returns:
+ *   void - No value is returned.
+ */
 void KernelBurstTask()
 {
     Dispatcher* ActiveDispatcher = RequireDispatcher();
@@ -224,16 +290,42 @@ void KernelBurstTask()
     }
 }
 
+/**
+ * Function: KernelChecksPassed
+ * Description: Evaluates whether kernel multitasking counters satisfy minimum pass thresholds.
+ * Parameters:
+ *   None - This function takes no parameters.
+ * Returns:
+ *   bool - true if all kernel-side thresholds are met; otherwise false.
+ */
 bool KernelChecksPassed()
 {
     return State.FastCycles >= FAST_MIN_CYCLES && State.MediumCycles >= MEDIUM_MIN_CYCLES && State.SlowCycles >= SLOW_MIN_CYCLES && State.BurstLoops >= BURST_MIN_LOOPS;
 }
 
+/**
+ * Function: UserChecksPassed
+ * Description: Evaluates whether user-process syscall counters satisfy minimum pass thresholds.
+ * Parameters:
+ *   None - This function takes no parameters.
+ * Returns:
+ *   bool - true if user syscall targets are met; otherwise false.
+ */
 bool UserChecksPassed()
 {
     return State.SyscallOneCount >= USER_PROCESS_INSTANCE_COUNT && State.SyscallTwoCount >= USER_PROCESS_INSTANCE_COUNT;
 }
 
+/**
+ * Function: LogTestResult
+ * Description: Records pass/fail totals and prints a formatted self-test result line.
+ * Parameters:
+ *   Dispatcher* ActiveDispatcher - Dispatcher used to access console output.
+ *   const char* TestName - Name of the test being reported.
+ *   bool Passed - Result flag indicating pass (true) or fail (false).
+ * Returns:
+ *   void - No value is returned.
+ */
 void LogTestResult(Dispatcher* ActiveDispatcher, const char* TestName, bool Passed)
 {
     if (Passed)
@@ -248,6 +340,14 @@ void LogTestResult(Dispatcher* ActiveDispatcher, const char* TestName, bool Pass
     ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("[SelfTest] [%s] test result=%s\n", TestName, Passed ? "PASS" : "FAIL");
 }
 
+/**
+ * Function: PrintSummaryIfNeeded
+ * Description: Prints final self-test summary once and suppresses duplicate summary output.
+ * Parameters:
+ *   Dispatcher* ActiveDispatcher - Dispatcher used to access console output.
+ * Returns:
+ *   void - No value is returned.
+ */
 void PrintSummaryIfNeeded(Dispatcher* ActiveDispatcher)
 {
     if (State.SummaryPrinted)
@@ -259,11 +359,27 @@ void PrintSummaryIfNeeded(Dispatcher* ActiveDispatcher)
     ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("[SelfTest] summary: passed=%u failed=%u\n", State.TestsPassed, State.TestsFailed);
 }
 
+/**
+ * Function: PrintMemoryTestResult
+ * Description: Placeholder hook for detailed memory test result logging.
+ * Parameters:
+ *   Dispatcher* ActiveDispatcher - Dispatcher context for potential console output.
+ * Returns:
+ *   void - No value is returned.
+ */
 void PrintMemoryTestResult(Dispatcher* ActiveDispatcher)
 {
     (void) ActiveDispatcher;
 }
 
+/**
+ * Function: RunMemoryTest
+ * Description: Runs physical allocation, virtual map/unmap, and heap allocation self-checks.
+ * Parameters:
+ *   Dispatcher* ActiveDispatcher - Dispatcher used to access resource managers.
+ * Returns:
+ *   bool - true if all memory checks pass; otherwise false.
+ */
 bool RunMemoryTest(Dispatcher* ActiveDispatcher)
 {
     // Super-basic memory test:
@@ -319,6 +435,14 @@ bool RunMemoryTest(Dispatcher* ActiveDispatcher)
     return State.MemoryPhysicalOk && State.MemoryVirtualOk && State.MemoryHeapOk;
 }
 
+/**
+ * Function: KillAllTestProcessesExceptValidator
+ * Description: Terminates all tracked self-test processes except the validator process.
+ * Parameters:
+ *   Dispatcher* ActiveDispatcher - Dispatcher used to issue process termination requests.
+ * Returns:
+ *   void - No value is returned.
+ */
 void KillAllTestProcessesExceptValidator(Dispatcher* ActiveDispatcher)
 {
     for (uint8_t index = 0; index < State.TestProcessCount; ++index)
@@ -340,6 +464,14 @@ void KillAllTestProcessesExceptValidator(Dispatcher* ActiveDispatcher)
     State.KernelBurstId       = INVALID_PROCESS_ID;
 }
 
+/**
+ * Function: SetupMultitaskingTest
+ * Description: Creates kernel and user test processes required for multitasking and syscall validation.
+ * Parameters:
+ *   Dispatcher* ActiveDispatcher - Dispatcher used to create and register test processes.
+ * Returns:
+ *   bool - true if all required processes are created successfully; otherwise false.
+ */
 bool SetupMultitaskingTest(Dispatcher* ActiveDispatcher)
 {
     ResetMultitaskCounters();
@@ -374,6 +506,16 @@ bool SetupMultitaskingTest(Dispatcher* ActiveDispatcher)
     return true;
 }
 
+/**
+ * Function: CreateUserProcessFromInitramfs
+ * Description: Loads a user image from initramfs, validates format policy, and creates a user process.
+ * Parameters:
+ *   Dispatcher* ActiveDispatcher - Dispatcher used for file loading, logging, and process creation.
+ *   const char* Path - Initramfs path to the user image.
+ *   bool RequireElfImage - Whether image must validate as ELF before process creation.
+ * Returns:
+ *   uint8_t - Created process ID, or INVALID_PROCESS_ID on failure.
+ */
 uint8_t CreateUserProcessFromInitramfs(Dispatcher* ActiveDispatcher, const char* Path, bool RequireElfImage)
 {
     uint64_t FileSize = 0;
@@ -411,6 +553,14 @@ uint8_t CreateUserProcessFromInitramfs(Dispatcher* ActiveDispatcher, const char*
 
 } // namespace
 
+/**
+ * Function: KernelSelfTestStart
+ * Description: Initializes global self-test state and spawns the validator kernel process.
+ * Parameters:
+ *   Dispatcher* ActiveDispatcher - Dispatcher used to create and manage self-test processes.
+ * Returns:
+ *   bool - true if self-test setup succeeds; otherwise false.
+ */
 bool KernelSelfTestStart(Dispatcher* ActiveDispatcher)
 {
     if (ActiveDispatcher == nullptr)
@@ -441,6 +591,14 @@ bool KernelSelfTestStart(Dispatcher* ActiveDispatcher)
     return true;
 }
 
+/**
+ * Function: KernelSelfTestsOnSystemCall
+ * Description: Records syscall activity counters while multitasking self-tests are in monitor phase.
+ * Parameters:
+ *   uint64_t SystemCallNumber - System call identifier observed by the kernel hook.
+ * Returns:
+ *   void - No value is returned.
+ */
 void KernelSelfTestsOnSystemCall(uint64_t SystemCallNumber)
 {
     if (!State.Initialized || State.Passed || State.Phase != SELF_TEST_PHASE_MULTITASK_MONITOR)
@@ -458,6 +616,14 @@ void KernelSelfTestsOnSystemCall(uint64_t SystemCallNumber)
     }
 }
 
+/**
+ * Function: KernelValidatorTask
+ * Description: Drives self-test phase transitions, logs progress/results, and manages test lifecycle.
+ * Parameters:
+ *   None - This function takes no parameters.
+ * Returns:
+ *   void - No value is returned.
+ */
 void KernelValidatorTask()
 {
     // Validator owns the test lifecycle and can be extended to run more suites
