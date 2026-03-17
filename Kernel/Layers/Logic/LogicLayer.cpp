@@ -13,7 +13,7 @@ void NullProcessEntry()
 }
 } // namespace
 
-LogicLayer::LogicLayer() : Resource(nullptr), PM(nullptr), Sched(nullptr)
+LogicLayer::LogicLayer() : Resource(nullptr), PM(nullptr), Sched(nullptr), Sync(nullptr), ELF(nullptr)
 {
 }
 
@@ -33,6 +33,12 @@ LogicLayer::~LogicLayer()
     {
         delete Sync;
     }
+
+    if (ELF != nullptr)
+    {
+        delete ELF;
+    }
+
 }
 
 void LogicLayer::Initialize(ResourceLayer* Resource)
@@ -78,6 +84,17 @@ void LogicLayer::InitializeSynchronizationManager()
     Resource->GetConsole()->printf_("Synchronization Manager Initialized\n");
 }
 
+void LogicLayer::InitializeELFManager()
+{
+    if (ELF != nullptr)
+    {
+        return;
+    }
+
+    ELF = new ELFManager();
+    Resource->GetConsole()->printf_("ELF Manager Initialized\n");
+}
+
 uint8_t LogicLayer::CreateNullProcess()
 {
     uint8_t Id = CreateKernelProcess(NullProcessEntry);
@@ -120,34 +137,27 @@ uint8_t LogicLayer::CreateUserProcess(uint64_t CodeAddr, uint64_t CodeSize)
         return 0xFF;
     }
 
-    // CodeAddr is a page-aligned physical address (from PMM) with CodeSize bytes copied in
-    uint64_t CodePages = (CodeSize + PAGE_SIZE - 1) / PAGE_SIZE;
+    // Check if code is raw binary or ELF by looking for ELF magic number
+    ELFHeader Header                = {};
+    VirtualAddressSpace* AddressSpace = nullptr;
+    bool IsELF                      = false;
 
-    void* ProcessStack = Resource->GetPMM()->AllocatePagesFromDescriptor(USER_PROCESS_STACK_SIZE / PAGE_SIZE);
-    void* ProcessHeap  = Resource->GetPMM()->AllocatePagesFromDescriptor(USER_PROCESS_HEAP_SIZE / PAGE_SIZE);
-    if (ProcessStack == nullptr || ProcessHeap == nullptr)
+    if (ELF != nullptr)
     {
-        return 0xFF;
+        Header = ELF->ParseELF(CodeAddr);
+        IsELF  = (Header.Magic[0] == 0x7F && Header.Magic[1] == 'E' && Header.Magic[2] == 'L' && Header.Magic[3] == 'F');
     }
 
-    uint64_t ProcessHeapVirtualAddrStart  = USER_PROCESS_VIRTUAL_BASE + (CodePages * PAGE_SIZE);
-    uint64_t ProcessStackVirtualAddrStart = (USER_PROCESS_VIRTUAL_STACK_TOP + 1) - USER_PROCESS_STACK_SIZE;
-
-    VirtualAddressSpace* AddressSpace = new VirtualAddressSpace(CodeAddr, CodeSize, USER_PROCESS_VIRTUAL_BASE, reinterpret_cast<uint64_t>(ProcessHeap), USER_PROCESS_HEAP_SIZE,
-                                                                ProcessHeapVirtualAddrStart, reinterpret_cast<uint64_t>(ProcessStack), USER_PROCESS_STACK_SIZE, ProcessStackVirtualAddrStart);
+    if (IsELF)
+    {
+        AddressSpace = MapELF(CodeAddr, CodeSize, Header);
+    }
+    else
+    {
+        AddressSpace = MapRawBinary(CodeAddr, CodeSize);
+    }
 
     if (AddressSpace == nullptr)
-    {
-        return 0xFF;
-    }
-
-    uint64_t ProcessPageMapL4TableAddr = reinterpret_cast<uint64_t>(Resource->GetVMM()->CopyPageMapL4Table());
-    if (ProcessPageMapL4TableAddr == 0)
-    {
-        return 0xFF;
-    }
-
-    if (!AddressSpace->Init(ProcessPageMapL4TableAddr, *Resource->GetPMM()))
     {
         return 0xFF;
     }
@@ -162,7 +172,7 @@ uint8_t LogicLayer::CreateUserProcess(uint64_t CodeAddr, uint64_t CodeSize)
 
     State.cs   = USER_CS;
     State.ss   = USER_SS;
-    uint8_t Id = PM->CreateUserProcess(ProcessStack, State, AddressSpace);
+    uint8_t Id = PM->CreateUserProcess(reinterpret_cast<void*>(AddressSpace->GetStackPhysicalAddress()), State, AddressSpace);
 
     if (Id != 0xFF)
     {
@@ -170,6 +180,55 @@ uint8_t LogicLayer::CreateUserProcess(uint64_t CodeAddr, uint64_t CodeSize)
     }
 
     return Id;
+}
+
+VirtualAddressSpace* LogicLayer::MapRawBinary(uint64_t CodeAddr, uint64_t CodeSize)
+{
+    // CodeAddr is a page-aligned physical address (from PMM) with CodeSize bytes copied in
+    uint64_t CodePages = (CodeSize + PAGE_SIZE - 1) / PAGE_SIZE;
+
+    void* ProcessStack = Resource->GetPMM()->AllocatePagesFromDescriptor(USER_PROCESS_STACK_SIZE / PAGE_SIZE);
+    void* ProcessHeap  = Resource->GetPMM()->AllocatePagesFromDescriptor(USER_PROCESS_HEAP_SIZE / PAGE_SIZE);
+    if (ProcessStack == nullptr || ProcessHeap == nullptr)
+    {
+        return nullptr;
+    }
+
+    uint64_t ProcessHeapVirtualAddrStart  = USER_PROCESS_VIRTUAL_BASE + (CodePages * PAGE_SIZE);
+    uint64_t ProcessStackVirtualAddrStart = (USER_PROCESS_VIRTUAL_STACK_TOP + 1) - USER_PROCESS_STACK_SIZE;
+
+    VirtualAddressSpace* AddressSpace =
+        new VirtualAddressSpace(CodeAddr, CodeSize, USER_PROCESS_VIRTUAL_BASE, reinterpret_cast<uint64_t>(ProcessHeap), USER_PROCESS_HEAP_SIZE, ProcessHeapVirtualAddrStart,
+                                reinterpret_cast<uint64_t>(ProcessStack), USER_PROCESS_STACK_SIZE, ProcessStackVirtualAddrStart);
+
+    if (AddressSpace == nullptr)
+    {
+        return nullptr;
+    }
+
+    uint64_t ProcessPageMapL4TableAddr = reinterpret_cast<uint64_t>(Resource->GetVMM()->CopyPageMapL4Table());
+    if (ProcessPageMapL4TableAddr == 0)
+    {
+        delete AddressSpace;
+        return nullptr;
+    }
+
+    if (!AddressSpace->Init(ProcessPageMapL4TableAddr, *Resource->GetPMM()))
+    {
+        delete AddressSpace;
+        return nullptr;
+    }
+
+    return AddressSpace;
+}
+
+VirtualAddressSpace* LogicLayer::MapELF(uint64_t CodeAddr, uint64_t CodeSize, const ELFHeader& Header)
+{
+    (void) CodeAddr;
+    (void) CodeSize;
+    (void) Header;
+
+    return nullptr;
 }
 
 void LogicLayer::KillProcess(uint8_t Id)

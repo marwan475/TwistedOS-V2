@@ -73,8 +73,30 @@ struct KernelSelfTestState
 };
 
 KernelSelfTestState State = {
-    nullptr, {}, 0, INVALID_PROCESS_ID, INVALID_PROCESS_ID, INVALID_PROCESS_ID, INVALID_PROCESS_ID, INVALID_PROCESS_ID, 0, 0, 0, 0, 0, 0, 0, false, false, false, 0, 0, false, SELF_TEST_PHASE_MEMORY,
-    false, false,
+        nullptr,
+        {},
+        0,
+        INVALID_PROCESS_ID,
+        INVALID_PROCESS_ID,
+        INVALID_PROCESS_ID,
+        INVALID_PROCESS_ID,
+        INVALID_PROCESS_ID,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        false,
+        false,
+        false,
+        0,
+        0,
+        false,
+        SELF_TEST_PHASE_MEMORY,
+        false,
+        false,
 };
 
 uint8_t CreateUserProcessFromInitramfs(Dispatcher* ActiveDispatcher, const char* Path);
@@ -116,12 +138,12 @@ void RegisterTestProcess(uint8_t ProcessId)
 
 void ResetMultitaskCounters()
 {
-    State.FastCycles      = 0;
-    State.MediumCycles    = 0;
-    State.SlowCycles      = 0;
-    State.BurstLoops      = 0;
-    State.SyscallOneCount = 0;
-    State.SyscallTwoCount = 0;
+    State.FastCycles                      = 0;
+    State.MediumCycles                    = 0;
+    State.SlowCycles                      = 0;
+    State.BurstLoops                      = 0;
+    State.SyscallOneCount                 = 0;
+    State.SyscallTwoCount                 = 0;
     State.NextMultitaskProgressBurstLoops = 200;
 }
 
@@ -349,7 +371,7 @@ uint8_t CreateUserProcessFromInitramfs(Dispatcher* ActiveDispatcher, const char*
     return UserProcessId;
 }
 
-} 
+} // namespace
 
 bool KernelSelfTestStart(Dispatcher* ActiveDispatcher)
 {
@@ -358,7 +380,7 @@ bool KernelSelfTestStart(Dispatcher* ActiveDispatcher)
         return false;
     }
 
-    State = {};
+    State                     = {};
     State.DispatcherRef       = ActiveDispatcher;
     State.KernelSleepFastId   = INVALID_PROCESS_ID;
     State.KernelSleepMediumId = INVALID_PROCESS_ID;
@@ -450,9 +472,9 @@ void KernelValidatorTask()
                 if (State.BurstLoops >= State.NextMultitaskProgressBurstLoops)
                 {
                     ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_(
-                        "[SelfTest] [Multitask] progress: fast=%llu medium=%llu slow=%llu burst=%llu/%llu syscall1=%llu/%u syscall2=%llu/%u\n", (unsigned long long) State.FastCycles,
-                        (unsigned long long) State.MediumCycles, (unsigned long long) State.SlowCycles, (unsigned long long) State.BurstLoops, (unsigned long long) BURST_MIN_LOOPS,
-                        (unsigned long long) State.SyscallOneCount, (unsigned) USER_PROCESS_INSTANCE_COUNT, (unsigned long long) State.SyscallTwoCount, (unsigned) USER_PROCESS_INSTANCE_COUNT);
+                            "[SelfTest] [Multitask] progress: fast=%llu medium=%llu slow=%llu burst=%llu/%llu syscall1=%llu/%u syscall2=%llu/%u\n", (unsigned long long) State.FastCycles,
+                            (unsigned long long) State.MediumCycles, (unsigned long long) State.SlowCycles, (unsigned long long) State.BurstLoops, (unsigned long long) BURST_MIN_LOOPS,
+                            (unsigned long long) State.SyscallOneCount, (unsigned) USER_PROCESS_INSTANCE_COUNT, (unsigned long long) State.SyscallTwoCount, (unsigned) USER_PROCESS_INSTANCE_COUNT);
 
                     State.NextMultitaskProgressBurstLoops += 200;
                 }
@@ -460,10 +482,10 @@ void KernelValidatorTask()
                 if (KernelChecksPassed() && UserChecksPassed())
                 {
                     LogTestResult(ActiveDispatcher, "Multitask", true);
-                    ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_(
-                        "[SelfTest] multitask details: fast=%llu medium=%llu slow=%llu burst=%llu syscall1=%llu syscall2=%llu\n", (unsigned long long) State.FastCycles,
-                        (unsigned long long) State.MediumCycles, (unsigned long long) State.SlowCycles, (unsigned long long) State.BurstLoops, (unsigned long long) State.SyscallOneCount,
-                        (unsigned long long) State.SyscallTwoCount);
+                    ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("[SelfTest] multitask details: fast=%llu medium=%llu slow=%llu burst=%llu syscall1=%llu syscall2=%llu\n",
+                                                                                (unsigned long long) State.FastCycles, (unsigned long long) State.MediumCycles, (unsigned long long) State.SlowCycles,
+                                                                                (unsigned long long) State.BurstLoops, (unsigned long long) State.SyscallOneCount,
+                                                                                (unsigned long long) State.SyscallTwoCount);
                     KillAllTestProcessesExceptValidator(ActiveDispatcher);
                     State.Passed = true;
                     State.Phase  = SELF_TEST_PHASE_COMPLETE;

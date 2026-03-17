@@ -1,5 +1,6 @@
 #pragma once
 
+#include "ELFManager.hpp"
 #include "ProcessManager.hpp"
 #include "Scheduler.hpp"
 #include "SynchronizationManager.hpp"
@@ -18,7 +19,11 @@ private:
     ProcessManager*         PM;
     Scheduler*              Sched;
     SynchronizationManager* Sync;
+    ELFManager*             ELF;
     bool                    IsScheduling = false;
+
+    VirtualAddressSpace* MapRawBinary(uint64_t CodeAddr, uint64_t CodeSize);
+    VirtualAddressSpace* MapELF(uint64_t CodeAddr, uint64_t CodeSize, const ELFHeader& Header);
 
 public:
     LogicLayer();
@@ -29,6 +34,7 @@ public:
     void           InitializeProcessManager();
     void           InitializeScheduler();
     void           InitializeSynchronizationManager();
+    void           InitializeELFManager();
     uint8_t        CreateNullProcess();
     uint8_t        CreateKernelProcess(void (*EntryPoint)());
     uint8_t        CreateUserProcess(uint64_t CodeAddr, uint64_t CodeSize);
