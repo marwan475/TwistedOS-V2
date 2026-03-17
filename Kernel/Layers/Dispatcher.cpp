@@ -102,7 +102,7 @@ void Dispatcher::HandleSystemCall(uint64_t SystemCallNumber, uint64_t Arg1, uint
     (void) Arg6;
 
     KernelSelfTestsOnSystemCall(SystemCallNumber);
-    // Resource.GetConsole()->printf_("User syscall instruction received (syscall=%lu, a1=%lu, a2=%lu, a3=%lu, a4=%lu, a5=%lu, a6=%lu)\n", SystemCallNumber, Arg1, Arg2, Arg3, Arg4, Arg5, Arg6);
+    Resource.GetConsole()->printf_("User syscall instruction received (syscall=%lu, a1=%lu, a2=%lu, a3=%lu, a4=%lu, a5=%lu, a6=%lu)\n", SystemCallNumber, Arg1, Arg2, Arg3, Arg4, Arg5, Arg6);
 }
 
 ResourceLayer* Dispatcher::GetResourceLayer()
