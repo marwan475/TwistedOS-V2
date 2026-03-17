@@ -156,3 +156,4 @@ make format
 - https://wiki.osdev.org/Model_Specific_Registers
 - https://wiki.osdev.org/ELF
 - https://wiki.osdev.org/Exceptions
+- CMPT 432 Advanced Operating Systems
