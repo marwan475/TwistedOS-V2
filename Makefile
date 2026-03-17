@@ -46,9 +46,12 @@ KERNEL_ASFLAGS = \
 	-g \
 	-F dwarf
 
+POSIX_SYSCALLS_CFLAGS =
+
 ifeq ($(DEBUG),1)
 CFLAGS += -DDEBUG_BUILD
 KERNEL_CFLAGS += -DDEBUG_BUILD
+POSIX_SYSCALLS_CFLAGS += -fno-jump-tables -fno-tree-switch-conversion
 endif
 
 BIN = bin/
@@ -138,7 +141,7 @@ $(KERNEL): Kernel/kernel.cpp Kernel/Testing/KernelSelfTests.cpp Kernel/Layers/Di
 	$(KERNEL_CC) $(KERNEL_CFLAGS) -I./Kernel -I./Bootloader -I./utils -c Kernel/Layers/Logic/SynchronizationManager.cpp -o $(BUILD)synchronization_manager.o
 	$(KERNEL_CC) $(KERNEL_CFLAGS) -I./Kernel -I./Bootloader -I./utils -c Kernel/Layers/Logic/VirtualFileSystem.cpp -o $(BUILD)virtual_file_system.o
 	$(KERNEL_CC) $(KERNEL_CFLAGS) -I./Kernel -I./Bootloader -I./utils -c Kernel/Layers/Translation/TranslationLayer.cpp -o $(BUILD)translation_layer.o
-	$(KERNEL_CC) $(KERNEL_CFLAGS) -I./Kernel -I./Bootloader -I./utils -c Kernel/Layers/Translation/POSIX_SystemCalls.cpp -o $(BUILD)posix_system_calls.o
+	$(KERNEL_CC) $(KERNEL_CFLAGS) $(POSIX_SYSCALLS_CFLAGS) -I./Kernel -I./Bootloader -I./utils -c Kernel/Layers/Translation/POSIX_SystemCalls.cpp -o $(BUILD)posix_system_calls.o
 	$(KERNEL_CC) $(KERNEL_CFLAGS) -I./Kernel -I./Bootloader -I./utils -c Kernel/Memory/KernelHeapAllocations.cpp -o $(BUILD)kernel_heap_allocations.o
 	$(KERNEL_CC) $(KERNEL_CFLAGS) -I./Kernel -I./Bootloader -I./utils -c Kernel/Memory/PhysicalMemoryManager.cpp -o $(BUILD)physical_memory_manager.o
 	$(KERNEL_CC) $(KERNEL_CFLAGS) -I./Kernel -I./Bootloader -I./utils -c Kernel/Memory/VirtualMemoryManager.cpp -o $(BUILD)virtual_memory_manager.o
@@ -195,6 +198,8 @@ $(DRIVE):
 qemu:
 	$(QEMU) $(QEMU_FULL)
 
+qemu-debug qemu-basic-debug gdb-kernel debug: DEBUG=1
+
 qemu-debug: all
 	@mkdir -p $(BUILD)
 	@echo "QEMU GDB server listening on localhost:$(QEMU_GDB_PORT)"
@@ -223,7 +228,7 @@ gdb-kernel: all
 		-ex "target remote localhost:$(QEMU_GDB_PORT)" \
 		-ex "hbreak KernelEntry"
 
-debug: all
+debug:
 	./scripts/debug-kernel.sh
 
 ALL_SOURCE_FILES := $(shell find . -type f \( -name '*.c' -o -name '*.cpp' -o -name '*.h' -o -name '*.hpp' \))

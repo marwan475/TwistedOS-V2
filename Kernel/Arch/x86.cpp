@@ -423,15 +423,17 @@ static_assert(offsetof(GDT, tss) == 0x28, "TSS selector offset must be 0x28");
  *   uint64_t Arg6 - Sixth syscall argument.
  *   uint64_t SystemCallNumber - Syscall identifier.
  * Returns:
- *   void - No return value.
+ *   uint64_t - Syscall return value to place in rax.
  */
-extern "C" void HandleSystemCallFromEntry(uint64_t Arg1, uint64_t Arg2, uint64_t Arg3, uint64_t Arg4, uint64_t Arg5, uint64_t Arg6, uint64_t SystemCallNumber)
+extern "C" uint64_t HandleSystemCallFromEntry(uint64_t Arg1, uint64_t Arg2, uint64_t Arg3, uint64_t Arg4, uint64_t Arg5, uint64_t Arg6, uint64_t SystemCallNumber)
 {
     Dispatcher* ActiveDispatcher = Dispatcher::GetActive();
     if (ActiveDispatcher != nullptr)
     {
-        ActiveDispatcher->HandleSystemCall(SystemCallNumber, Arg1, Arg2, Arg3, Arg4, Arg5, Arg6);
+        return static_cast<uint64_t>(ActiveDispatcher->HandleSystemCall(SystemCallNumber, Arg1, Arg2, Arg3, Arg4, Arg5, Arg6));
     }
+
+    return static_cast<uint64_t>(-38);
 }
 
 extern "C" void SystemCallEntry();

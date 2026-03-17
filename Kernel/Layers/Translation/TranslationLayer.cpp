@@ -8,6 +8,33 @@
 
 #include "Layers/Logic/LogicLayer.hpp"
 
+namespace
+{
+constexpr int64_t LINUX_ERR_EFAULT = -14;
+constexpr int64_t LINUX_ERR_ENOENT = -2;
+constexpr int64_t LINUX_ERR_EMFILE = -24;
+constexpr int64_t LINUX_ERR_EINVAL = -22;
+
+constexpr uint64_t LINUX_O_ACCMODE = 0x3;
+
+FileFlags DecodeAccessFlags(uint64_t Flags)
+{
+    uint64_t AccessMode = Flags & LINUX_O_ACCMODE;
+
+    if (AccessMode == 1)
+    {
+        return WRITE;
+    }
+
+    if (AccessMode == 2)
+    {
+        return READ_WRITE;
+    }
+
+    return READ;
+}
+}
+
 /**
  * Function: TranslationLayer::TranslationLayer
  * Description: Constructs the translation layer with no attached logic layer.
@@ -44,4 +71,54 @@ void TranslationLayer::Initialize(LogicLayer* Logic)
 LogicLayer* TranslationLayer::GetLogicLayer() const
 {
     return Logic;
+}
+
+// Posix system call handlers
+
+int64_t TranslationLayer::HandleOpenSystemCall(const char* Path, uint64_t Flags)
+{
+    if (Logic == nullptr || Path == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    VirtualFileSystem* VFS = Logic->GetVirtualFileSystem();
+    ProcessManager*    PM  = Logic->GetProcessManager();
+    if (VFS == nullptr || PM == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    Dentry* NodeDentry = VFS->Lookup(Path);
+    if (NodeDentry == nullptr || NodeDentry->inode == nullptr)
+    {
+        return LINUX_ERR_ENOENT;
+    }
+
+    if ((Flags & LINUX_O_ACCMODE) == LINUX_O_ACCMODE)
+    {
+        return LINUX_ERR_EINVAL;
+    }
+
+    Process* CurrentProcess = PM->GetRunningProcess();
+    if (CurrentProcess == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    for (size_t FileDescriptor = 0; FileDescriptor < MAX_OPEN_FILES_PER_PROCESS; ++FileDescriptor)
+    {
+        if (CurrentProcess->FileTable[FileDescriptor] == nullptr)
+        {
+            File* NewFile              = new File;
+            NewFile->FileDescriptor    = FileDescriptor;
+            NewFile->Node              = NodeDentry->inode;
+            NewFile->CurrentOffset     = 0;
+            NewFile->AccessFlags       = DecodeAccessFlags(Flags);
+            CurrentProcess->FileTable[FileDescriptor] = NewFile;
+            return static_cast<int64_t>(FileDescriptor);
+        }
+    }
+
+    return LINUX_ERR_EMFILE;
 }

@@ -6,6 +6,26 @@
 
 #include "ProcessManager.hpp"
 
+namespace
+{
+void ResetProcessFileTable(Process& ProcessEntry)
+{
+    for (size_t FileIndex = 0; FileIndex < MAX_OPEN_FILES_PER_PROCESS; ++FileIndex)
+    {
+        ProcessEntry.FileTable[FileIndex] = nullptr;
+    }
+}
+
+void ReleaseProcessFileTable(Process& ProcessEntry)
+{
+    for (size_t FileIndex = 0; FileIndex < MAX_OPEN_FILES_PER_PROCESS; ++FileIndex)
+    {
+        delete ProcessEntry.FileTable[FileIndex];
+        ProcessEntry.FileTable[FileIndex] = nullptr;
+    }
+}
+}
+
 /**
  * Function: ProcessManager::ProcessManager
  * Description: Initializes process table entries and sets default current process ID.
@@ -24,6 +44,7 @@ ProcessManager::ProcessManager() : CurrentProcessId(PROCESS_ID_INVALID)
         Processes[index].FileType     = FILE_TYPE_RAW_BINARY;
         Processes[index].StackPointer = nullptr;
         Processes[index].State        = {};
+        ResetProcessFileTable(Processes[index]);
     }
 
     CurrentProcessId = 0;
@@ -123,6 +144,7 @@ uint8_t ProcessManager::CreateKernelProcess(void* StackPointer, CpuState Initial
             Processes[index].StackPointer = StackPointer;
             Processes[index].AddressSpace = nullptr;
             Processes[index].State        = InitialState;
+            ResetProcessFileTable(Processes[index]);
             return Processes[index].Id;
         }
     }
@@ -152,6 +174,7 @@ uint8_t ProcessManager::CreateUserProcess(void* StackPointer, CpuState InitialSt
             Processes[index].StackPointer = StackPointer;
             Processes[index].AddressSpace = AddressSpace;
             Processes[index].State        = InitialState;
+            ResetProcessFileTable(Processes[index]);
             return Processes[index].Id;
         }
     }
@@ -173,6 +196,7 @@ void* ProcessManager::KillProcess(uint8_t Id)
     {
         return nullptr; // Invalid process ID
     }
+    ReleaseProcessFileTable(Processes[Id]);
     Processes[Id].Status   = PROCESS_TERMINATED;
     Processes[Id].FileType = FILE_TYPE_RAW_BINARY;
     return Processes[Id].StackPointer;

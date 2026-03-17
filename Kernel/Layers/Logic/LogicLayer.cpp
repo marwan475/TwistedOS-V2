@@ -149,6 +149,19 @@ ELFManager* LogicLayer::GetELFManager() const
 }
 
 /**
+ * Function: LogicLayer::GetProcessManager
+ * Description: Returns process manager instance.
+ * Parameters:
+ *   None
+ * Returns:
+ *   ProcessManager* - Pointer to process manager.
+ */
+ProcessManager* LogicLayer::GetProcessManager() const
+{
+    return PM;
+}
+
+/**
  * Function: LogicLayer::GetVirtualFileSystem
  * Description: Returns virtual file system instance.
  * Parameters:

@@ -42,6 +42,7 @@ public:
 
     ResourceLayer*     GetResourceLayer() const;
     ELFManager*        GetELFManager() const;
+    ProcessManager*    GetProcessManager() const;
     VirtualFileSystem* GetVirtualFileSystem() const;
     void               InitializeProcessManager();
     void               InitializeScheduler();

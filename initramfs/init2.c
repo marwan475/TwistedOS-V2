@@ -3,10 +3,16 @@ typedef unsigned long u64;
 enum LinuxSyscallNumber
 {
     LINUX_SYS_WRITE        = 1,
+    LINUX_SYS_OPEN         = 2,
     LINUX_SYS_GETPID       = 39,
     LINUX_SYS_GETTID       = 186,
     LINUX_SYS_CLOCKGETTIME = 228,
     LINUX_SYS_EXIT         = 60,
+};
+
+enum LinuxOpenFlags
+{
+    LINUX_O_RDONLY = 0,
 };
 
 struct LinuxTimespec
@@ -48,6 +54,11 @@ static long test_write_banner(void)
     return syscall3(LINUX_SYS_WRITE, 1, (u64) message, sizeof(message) - 1);
 }
 
+static long write_text(const char* text, u64 length)
+{
+    return syscall3(LINUX_SYS_WRITE, 1, (u64) text, length);
+}
+
 static long test_getpid(void)
 {
     return syscall0(LINUX_SYS_GETPID);
@@ -64,6 +75,18 @@ static long test_clock_gettime(void)
     return syscall2(LINUX_SYS_CLOCKGETTIME, 0, (u64) &ts);
 }
 
+static long test_open_existing_file(void)
+{
+    static const char path[] = "/init2";
+    return syscall2(LINUX_SYS_OPEN, (u64) path, LINUX_O_RDONLY);
+}
+
+static long test_open_missing_file(void)
+{
+    static const char path[] = "/no_such_file";
+    return syscall2(LINUX_SYS_OPEN, (u64) path, LINUX_O_RDONLY);
+}
+
 static __attribute__((noreturn)) void linux_exit(int code)
 {
     (void) syscall6(LINUX_SYS_EXIT, (u64) code, 0, 0, 0, 0, 0);
@@ -76,15 +99,34 @@ static __attribute__((noreturn)) void linux_exit(int code)
 
 void _start()
 {
-    volatile long write_result = test_write_banner();
-    volatile long pid_result   = test_getpid();
-    volatile long tid_result   = test_gettid();
-    volatile long time_result  = test_clock_gettime();
+    volatile long open_existing_fd    = test_open_existing_file();
+    volatile long open_missing_result = test_open_missing_file();
 
-    (void) write_result;
-    (void) pid_result;
-    (void) tid_result;
-    (void) time_result;
+    static const char open_success_message[] = "open('/init2') passed\n";
+    static const char open_failure_message[] = "open('/init2') failed\n";
+    static const char enoent_success_message[] = "open('/no_such_file') returned -ENOENT\n";
+    static const char enoent_failure_message[] = "open('/no_such_file') unexpected result\n";
+
+    if (open_existing_fd >= 0)
+    {
+        (void) write_text(open_success_message, sizeof(open_success_message) - 1);
+    }
+    else
+    {
+        (void) write_text(open_failure_message, sizeof(open_failure_message) - 1);
+    }
+
+    if (open_missing_result == -2)
+    {
+        (void) write_text(enoent_success_message, sizeof(enoent_success_message) - 1);
+    }
+    else
+    {
+        (void) write_text(enoent_failure_message, sizeof(enoent_failure_message) - 1);
+    }
+
+    (void) open_existing_fd;
+    (void) open_missing_result;
 
     linux_exit(0);
 }
