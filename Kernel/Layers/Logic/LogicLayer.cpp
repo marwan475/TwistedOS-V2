@@ -485,11 +485,20 @@ void LogicLayer::CleanUpELF(VirtualAddressSpace* AddressSpace)
         }
     }
 
+
+    uint64_t CodePhysAddr     = AddressSpace->GetCodePhysicalAddress();
+    uint64_t CodeSize         = AddressSpace->GetCodeSize();
+    uint64_t CodePages        = (CodeSize + PAGE_SIZE - 1) / PAGE_SIZE;
     uint64_t HeapPhysAddr     = AddressSpace->GetHeapPhysicalAddress();
     uint64_t HeapSize         = AddressSpace->GetHeapSize();
     uint64_t StackPhysAddr    = AddressSpace->GetStackPhysicalAddress();
     uint64_t StackSize        = AddressSpace->GetStackSize();
     uint64_t ProcessPageMapL4 = AddressSpace->GetPageMapL4TableAddr();
+
+    if (CodePhysAddr != 0 && CodeSize != 0)
+    {
+        PMM->FreePagesFromDescriptor(reinterpret_cast<void*>(CodePhysAddr), CodePages);
+    }
 
     if (HeapPhysAddr != 0 && HeapSize != 0)
     {
