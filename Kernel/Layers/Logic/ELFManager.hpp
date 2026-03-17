@@ -28,11 +28,32 @@ struct __attribute__((packed)) ELFHeader
 
 static_assert(sizeof(ELFHeader) == 64, "ELFHeader must match the 64-bit ELF header layout");
 
+struct __attribute__((packed)) ELFProgramHeader64
+{
+    uint32_t Type;
+    uint32_t Flags;
+    uint64_t Offset;
+    uint64_t VirtualAddress;
+    uint64_t PhysicalAddress;
+    uint64_t FileSize;
+    uint64_t MemorySize;
+    uint64_t Align;
+};
+
+static_assert(sizeof(ELFProgramHeader64) == 56, "ELFProgramHeader64 must match the 64-bit ELF program header layout");
+
 class ELFManager
 {
 public:
     ELFManager();
     ~ELFManager();
 
-    ELFHeader ParseELF(uint64_t PhysicalAddress) const;
+    ELFHeader                  ParseELF(uint64_t PhysicalAddress) const;
+    bool                       ValidateELF(const ELFHeader& Header) const;
+    bool                       ValidateELF64(const ELFHeader& Header) const;
+    bool                       ValidateProgramHeaderTable(const ELFHeader& Header, uint64_t ImageSize) const;
+    const ELFProgramHeader64*  GetProgramHeaderTable(uint64_t PhysicalAddress, const ELFHeader& Header) const;
+    bool                       IsLoadableSegment(const ELFProgramHeader64& ProgramHeader) const;
+    bool                       IsWritableSegment(const ELFProgramHeader64& ProgramHeader) const;
+    bool                       ValidateProgramSegment(const ELFProgramHeader64& ProgramHeader, uint64_t ImageSize) const;
 };

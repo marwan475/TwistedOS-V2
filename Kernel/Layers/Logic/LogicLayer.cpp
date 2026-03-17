@@ -6,6 +6,14 @@
 
 namespace
 {
+uint64_t AlignUpToPage(uint64_t Value)
+{
+    return (Value + PAGE_SIZE - 1) & ~(static_cast<uint64_t>(PAGE_SIZE) - 1);
+}
+} // namespace
+
+namespace
+{
 void NullProcessEntry()
 {
     while (1)
@@ -140,17 +148,19 @@ uint8_t LogicLayer::CreateUserProcess(uint64_t CodeAddr, uint64_t CodeSize)
     // Check if code is raw binary or ELF by looking for ELF magic number
     ELFHeader Header                = {};
     VirtualAddressSpace* AddressSpace = nullptr;
-    bool IsELF                      = false;
+    bool IsELF                        = false;
+    uint64_t UserEntryPoint           = USER_PROCESS_VIRTUAL_BASE;
 
     if (ELF != nullptr)
     {
         Header = ELF->ParseELF(CodeAddr);
-        IsELF  = (Header.Magic[0] == 0x7F && Header.Magic[1] == 'E' && Header.Magic[2] == 'L' && Header.Magic[3] == 'F');
+        IsELF  = ELF->ValidateELF(Header);
     }
 
     if (IsELF)
     {
         AddressSpace = MapELF(CodeAddr, CodeSize, Header);
+        UserEntryPoint = Header.Entry;
     }
     else
     {
@@ -165,7 +175,7 @@ uint8_t LogicLayer::CreateUserProcess(uint64_t CodeAddr, uint64_t CodeSize)
     uint64_t StackTop = USER_PROCESS_VIRTUAL_STACK_TOP;
 
     CpuState State = {};
-    State.rip      = USER_PROCESS_VIRTUAL_BASE;
+    State.rip      = UserEntryPoint;
     State.rflags   = 0x202;                    // Bit1 always set, IF enabled
     State.rbp      = 0;                        // bottom of stack frame
     State.rsp      = (StackTop & ~0xFULL) - 8; // SysV entry alignment without a real CALL
@@ -224,11 +234,113 @@ VirtualAddressSpace* LogicLayer::MapRawBinary(uint64_t CodeAddr, uint64_t CodeSi
 
 VirtualAddressSpace* LogicLayer::MapELF(uint64_t CodeAddr, uint64_t CodeSize, const ELFHeader& Header)
 {
-    (void) CodeAddr;
-    (void) CodeSize;
-    (void) Header;
+    if (ELF == nullptr || !ELF->ValidateProgramHeaderTable(Header, CodeSize))
+    {
+        return nullptr;
+    }
 
-    return nullptr;
+    const ELFProgramHeader64* ProgramHeaders = ELF->GetProgramHeaderTable(CodeAddr, Header);
+    if (ProgramHeaders == nullptr)
+    {
+        return nullptr;
+    }
+
+    uint64_t LowestVirtualAddress = 0;
+    uint64_t HighestVirtualEnd    = 0;
+    bool HasLoadableSegment       = false;
+
+    for (uint16_t ProgramHeaderIndex = 0; ProgramHeaderIndex < Header.ProgramHeaderEntryCount; ++ProgramHeaderIndex)
+    {
+        const ELFProgramHeader64& ProgramHeader = ProgramHeaders[ProgramHeaderIndex];
+        if (!ELF->IsLoadableSegment(ProgramHeader))
+        {
+            continue;
+        }
+
+        if (!ELF->ValidateProgramSegment(ProgramHeader, CodeSize))
+        {
+            return nullptr;
+        }
+
+        uint64_t SegmentStart = ProgramHeader.VirtualAddress;
+        uint64_t SegmentEnd   = AlignUpToPage(ProgramHeader.VirtualAddress + ProgramHeader.MemorySize);
+
+        if (!HasLoadableSegment || SegmentStart < LowestVirtualAddress)
+        {
+            LowestVirtualAddress = SegmentStart;
+        }
+
+        if (!HasLoadableSegment || SegmentEnd > HighestVirtualEnd)
+        {
+            HighestVirtualEnd = SegmentEnd;
+        }
+
+        HasLoadableSegment = true;
+    }
+
+    if (!HasLoadableSegment)
+    {
+        return nullptr;
+    }
+
+    void* ProcessStack = Resource->GetPMM()->AllocatePagesFromDescriptor(USER_PROCESS_STACK_SIZE / PAGE_SIZE);
+    void* ProcessHeap  = Resource->GetPMM()->AllocatePagesFromDescriptor(USER_PROCESS_HEAP_SIZE / PAGE_SIZE);
+    if (ProcessStack == nullptr || ProcessHeap == nullptr)
+    {
+        return nullptr;
+    }
+
+    uint64_t ProcessHeapVirtualAddrStart  = AlignUpToPage(HighestVirtualEnd);
+    uint64_t ProcessStackVirtualAddrStart = (USER_PROCESS_VIRTUAL_STACK_TOP + 1) - USER_PROCESS_STACK_SIZE;
+    if (ProcessHeapVirtualAddrStart + USER_PROCESS_HEAP_SIZE > ProcessStackVirtualAddrStart)
+    {
+        return nullptr;
+    }
+
+    VirtualAddressSpaceELF* AddressSpace =
+        new VirtualAddressSpaceELF(CodeAddr, CodeSize, LowestVirtualAddress, reinterpret_cast<uint64_t>(ProcessHeap), USER_PROCESS_HEAP_SIZE, ProcessHeapVirtualAddrStart,
+                                   reinterpret_cast<uint64_t>(ProcessStack), USER_PROCESS_STACK_SIZE, ProcessStackVirtualAddrStart);
+
+    if (AddressSpace == nullptr)
+    {
+        return nullptr;
+    }
+
+    for (uint16_t ProgramHeaderIndex = 0; ProgramHeaderIndex < Header.ProgramHeaderEntryCount; ++ProgramHeaderIndex)
+    {
+        const ELFProgramHeader64& ProgramHeader = ProgramHeaders[ProgramHeaderIndex];
+        if (!ELF->IsLoadableSegment(ProgramHeader))
+        {
+            continue;
+        }
+
+        ELFMemoryRegion Region = {};
+        Region.PhysicalAddress = CodeAddr + ProgramHeader.Offset;
+        Region.VirtualAddress  = ProgramHeader.VirtualAddress;
+        Region.Size            = ProgramHeader.MemorySize;
+        Region.Writable        = ELF->IsWritableSegment(ProgramHeader);
+
+        if (!AddressSpace->AddMemoryRegion(Region))
+        {
+            delete AddressSpace;
+            return nullptr;
+        }
+    }
+
+    uint64_t ProcessPageMapL4TableAddr = reinterpret_cast<uint64_t>(Resource->GetVMM()->CopyPageMapL4Table());
+    if (ProcessPageMapL4TableAddr == 0)
+    {
+        delete AddressSpace;
+        return nullptr;
+    }
+
+    if (!AddressSpace->Init(ProcessPageMapL4TableAddr, *Resource->GetPMM()))
+    {
+        delete AddressSpace;
+        return nullptr;
+    }
+
+    return AddressSpace;
 }
 
 void LogicLayer::KillProcess(uint8_t Id)
