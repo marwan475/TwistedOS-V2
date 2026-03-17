@@ -185,6 +185,23 @@ void ResourceLayer::kfree(void* Ptr)
     KHM.kfree(Ptr);
 }
 
+uint64_t ResourceLayer::ReadCurrentPageTable() const
+{
+    uint64_t PageTableAddress = 0;
+    __asm__ __volatile__("mov %%cr3, %0" : "=r"(PageTableAddress));
+    return PageTableAddress;
+}
+
+void ResourceLayer::LoadPageTable(uint64_t PageMapL4TableAddr)
+{
+    if (PageMapL4TableAddr == 0)
+    {
+        return;
+    }
+
+    __asm__ __volatile__("mov %0, %%cr3" : : "r"(PageMapL4TableAddr) : "memory");
+}
+
 // Loads file from initramfs into PMM-allocated physical pages
 /**
  * Function: ResourceLayer::LoadFileFromInitramfs

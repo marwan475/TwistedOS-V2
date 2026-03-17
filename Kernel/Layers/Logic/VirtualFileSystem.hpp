@@ -25,8 +25,12 @@ enum FileFlags
     READ_WRITE
 };
 
+struct File;
+
 struct FileOperations
 {
+    int64_t (*Read)(File* OpenFile, void* Buffer, uint64_t Count);
+    int64_t (*Write)(File* OpenFile, const void* Buffer, uint64_t Count);
 };
 
 struct INodeOperations

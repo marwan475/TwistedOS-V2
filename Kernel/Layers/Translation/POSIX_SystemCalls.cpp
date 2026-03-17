@@ -25,7 +25,6 @@
 
 int64_t TranslationLayer::HandlePosixSystemCallNumber(uint64_t SystemCallNumber, uint64_t Arg1, uint64_t Arg2, uint64_t Arg3, uint64_t Arg4, uint64_t Arg5, uint64_t Arg6)
 {
-    (void) Arg3;
     (void) Arg4;
     (void) Arg5;
     (void) Arg6;
@@ -35,8 +34,10 @@ int64_t TranslationLayer::HandlePosixSystemCallNumber(uint64_t SystemCallNumber,
     switch (SystemCallNumber)
     {
         case 0: // read
+            return HandleReadSystemCall(Arg1, reinterpret_cast<void*>(Arg2), Arg3);
             break;
         case 1: // write
+            return HandleWriteSystemCall(Arg1, reinterpret_cast<const void*>(Arg2), Arg3);
             break;
         case 2: // open
             return HandleOpenSystemCall(reinterpret_cast<const char*>(Arg1), Arg2);

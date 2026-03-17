@@ -54,6 +54,8 @@ public:
     uint8_t            CreateUserProcess(uint64_t CodeAddr, uint64_t CodeSize);
     uint8_t            CreateUserProcessFromVFS(const char* FilePath);
     bool               RunProcess(uint8_t Id);
+    bool               CopyFromUserToKernel(const void* UserSource, void* KernelDestination, uint64_t Count);
+    bool               CopyFromKernelToUser(const void* KernelSource, void* UserDestination, uint64_t Count);
     void               KillProcess(uint8_t Id);
     void               SleepProcess(uint8_t Id, uint64_t WaitTicks);
     void               WakeProcess(uint8_t Id);

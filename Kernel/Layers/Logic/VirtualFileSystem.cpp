@@ -21,11 +21,107 @@ constexpr uint64_t ROOT_FILE_SIZE          = 0;
 constexpr uint64_t ROOT_TREE_DEPTH         = 0;
 constexpr uint64_t INDENT_SPACES_PER_LEVEL = 2;
 
+constexpr int64_t LINUX_ERR_EFAULT = -14;
+constexpr int64_t LINUX_ERR_EISDIR = -21;
+constexpr int64_t LINUX_ERR_ENOSPC = -28;
+constexpr int64_t LINUX_ERR_ENOSYS = -38;
+
 typedef struct
 {
     Dentry* RootDentry;
     bool    IsSuccessful;
 } MountInitRamFileSystemContext;
+
+int64_t DefaultReadFileOperation(File* OpenFile, void* Buffer, uint64_t Count)
+{
+    if (OpenFile == nullptr || OpenFile->Node == nullptr || (Buffer == nullptr && Count != 0))
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    if (OpenFile->Node->NodeType == INODE_DIR)
+    {
+        return LINUX_ERR_EISDIR;
+    }
+
+    if (OpenFile->Node->NodeType != INODE_FILE)
+    {
+        return LINUX_ERR_ENOSYS;
+    }
+
+    if (Count == 0)
+    {
+        return 0;
+    }
+
+    if (OpenFile->Node->NodeData == nullptr)
+    {
+        return (OpenFile->Node->NodeSize == 0) ? 0 : LINUX_ERR_EFAULT;
+    }
+
+    uint64_t FileSize = OpenFile->Node->NodeSize;
+    if (OpenFile->CurrentOffset >= FileSize)
+    {
+        return 0;
+    }
+
+    uint64_t RemainingBytes = FileSize - OpenFile->CurrentOffset;
+    uint64_t BytesToRead    = (Count < RemainingBytes) ? Count : RemainingBytes;
+
+    const uint8_t* Source = reinterpret_cast<const uint8_t*>(OpenFile->Node->NodeData) + OpenFile->CurrentOffset;
+    memcpy(Buffer, Source, static_cast<size_t>(BytesToRead));
+    OpenFile->CurrentOffset += BytesToRead;
+
+    return static_cast<int64_t>(BytesToRead);
+}
+
+int64_t DefaultWriteFileOperation(File* OpenFile, const void* Buffer, uint64_t Count)
+{
+    if (OpenFile == nullptr || OpenFile->Node == nullptr || (Buffer == nullptr && Count != 0))
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    if (OpenFile->Node->NodeType == INODE_DIR)
+    {
+        return LINUX_ERR_EISDIR;
+    }
+
+    if (OpenFile->Node->NodeType != INODE_FILE)
+    {
+        return LINUX_ERR_ENOSYS;
+    }
+
+    if (Count == 0)
+    {
+        return 0;
+    }
+
+    if (OpenFile->Node->NodeData == nullptr)
+    {
+        return LINUX_ERR_ENOSPC;
+    }
+
+    uint64_t FileSize = OpenFile->Node->NodeSize;
+    if (OpenFile->CurrentOffset >= FileSize)
+    {
+        return LINUX_ERR_ENOSPC;
+    }
+
+    uint64_t RemainingBytes = FileSize - OpenFile->CurrentOffset;
+    uint64_t BytesToWrite   = (Count < RemainingBytes) ? Count : RemainingBytes;
+
+    uint8_t* Destination = reinterpret_cast<uint8_t*>(OpenFile->Node->NodeData) + OpenFile->CurrentOffset;
+    memcpy(Destination, Buffer, static_cast<size_t>(BytesToWrite));
+    OpenFile->CurrentOffset += BytesToWrite;
+
+    return static_cast<int64_t>(BytesToWrite);
+}
+
+FileOperations DefaultFileOperations = {
+    &DefaultReadFileOperation,
+    &DefaultWriteFileOperation,
+};
 
 /**
  * Function: GetStringLength
@@ -192,7 +288,7 @@ INode* CreateINode(FileType Type, uint64_t Size, void* Data)
     Node->NodeSize = Size;
     Node->NodeData = Data;
     Node->INodeOps = nullptr;
-    Node->FileOps  = nullptr;
+    Node->FileOps  = &DefaultFileOperations;
     return Node;
 }
 

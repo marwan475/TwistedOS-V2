@@ -21,6 +21,8 @@ public:
     int64_t HandlePosixSystemCallNumber(uint64_t SystemCallNumber, uint64_t Arg1, uint64_t Arg2, uint64_t Arg3, uint64_t Arg4, uint64_t Arg5, uint64_t Arg6);
 
     // Posix system call handlers
+    int64_t HandleReadSystemCall(uint64_t FileDescriptor, void* Buffer, uint64_t Count);
+    int64_t HandleWriteSystemCall(uint64_t FileDescriptor, const void* Buffer, uint64_t Count);
     int64_t HandleOpenSystemCall(const char* Path, uint64_t Flags);
     int64_t HandleCloseSystemCall(uint64_t FileDescriptor);
 

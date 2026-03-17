@@ -42,6 +42,70 @@ uint64_t AlignDownToPage(uint64_t Value)
 {
     return Value & ~(static_cast<uint64_t>(PAGE_SIZE) - 1);
 }
+
+bool IsRangeWithin(uint64_t RangeStart, uint64_t RangeSize, uint64_t Address, uint64_t Count)
+{
+    if (RangeSize == 0)
+    {
+        return false;
+    }
+
+    if (Address < RangeStart)
+    {
+        return false;
+    }
+
+    uint64_t RangeEnd = RangeStart + RangeSize;
+    if (RangeEnd < RangeStart)
+    {
+        return false;
+    }
+
+    uint64_t AccessEnd = Address + Count;
+    if (AccessEnd < Address)
+    {
+        return false;
+    }
+
+    return AccessEnd <= RangeEnd;
+}
+
+bool IsUserAddressRangeAccessible(const Process* CurrentProcess, uint64_t Address, uint64_t Count)
+{
+    if (CurrentProcess == nullptr)
+    {
+        return false;
+    }
+
+    if (Count == 0)
+    {
+        return true;
+    }
+
+    if (CurrentProcess->Level != PROCESS_LEVEL_USER || CurrentProcess->AddressSpace == nullptr)
+    {
+        return false;
+    }
+
+    const VirtualAddressSpace* AddressSpace = CurrentProcess->AddressSpace;
+
+    if (IsRangeWithin(AddressSpace->GetCodeVirtualAddressStart(), AddressSpace->GetCodeSize(), Address, Count))
+    {
+        return true;
+    }
+
+    if (IsRangeWithin(AddressSpace->GetHeapVirtualAddressStart(), AddressSpace->GetHeapSize(), Address, Count))
+    {
+        return true;
+    }
+
+    if (IsRangeWithin(AddressSpace->GetStackVirtualAddressStart(), AddressSpace->GetStackSize(), Address, Count))
+    {
+        return true;
+    }
+
+    return false;
+}
 } // namespace
 
 namespace
@@ -825,6 +889,102 @@ void LogicLayer::KillProcess(uint8_t Id)
     }
 
     Sched->RemoveFromReadyQueue(Id);
+}
+
+bool LogicLayer::CopyFromUserToKernel(const void* UserSource, void* KernelDestination, uint64_t Count)
+{
+    if ((UserSource == nullptr && Count != 0) || (KernelDestination == nullptr && Count != 0))
+    {
+        return false;
+    }
+
+    if (Count == 0)
+    {
+        return true;
+    }
+
+    if (PM == nullptr)
+    {
+        return false;
+    }
+
+    Process* CurrentProcess = PM->GetRunningProcess();
+    if (!IsUserAddressRangeAccessible(CurrentProcess, reinterpret_cast<uint64_t>(UserSource), Count))
+    {
+        return false;
+    }
+
+    if (Resource == nullptr || CurrentProcess->AddressSpace == nullptr)
+    {
+        return false;
+    }
+
+    uint64_t UserPageTable = CurrentProcess->AddressSpace->GetPageMapL4TableAddr();
+    if (UserPageTable == 0)
+    {
+        return false;
+    }
+
+    uint64_t PreviousPageTable = Resource->ReadCurrentPageTable();
+    if (PreviousPageTable == 0)
+    {
+        return false;
+    }
+
+    Resource->LoadPageTable(UserPageTable);
+
+    memcpy(KernelDestination, UserSource, static_cast<size_t>(Count));
+
+    Resource->LoadPageTable(PreviousPageTable);
+    return true;
+}
+
+bool LogicLayer::CopyFromKernelToUser(const void* KernelSource, void* UserDestination, uint64_t Count)
+{
+    if ((KernelSource == nullptr && Count != 0) || (UserDestination == nullptr && Count != 0))
+    {
+        return false;
+    }
+
+    if (Count == 0)
+    {
+        return true;
+    }
+
+    if (PM == nullptr)
+    {
+        return false;
+    }
+
+    Process* CurrentProcess = PM->GetRunningProcess();
+    if (!IsUserAddressRangeAccessible(CurrentProcess, reinterpret_cast<uint64_t>(UserDestination), Count))
+    {
+        return false;
+    }
+
+    if (Resource == nullptr || CurrentProcess->AddressSpace == nullptr)
+    {
+        return false;
+    }
+
+    uint64_t UserPageTable = CurrentProcess->AddressSpace->GetPageMapL4TableAddr();
+    if (UserPageTable == 0)
+    {
+        return false;
+    }
+
+    uint64_t PreviousPageTable = Resource->ReadCurrentPageTable();
+    if (PreviousPageTable == 0)
+    {
+        return false;
+    }
+
+    Resource->LoadPageTable(UserPageTable);
+
+    memcpy(UserDestination, KernelSource, static_cast<size_t>(Count));
+
+    Resource->LoadPageTable(PreviousPageTable);
+    return true;
 }
 
 /**

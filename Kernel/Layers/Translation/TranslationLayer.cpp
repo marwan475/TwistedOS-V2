@@ -15,6 +15,9 @@ constexpr int64_t LINUX_ERR_ENOENT = -2;
 constexpr int64_t LINUX_ERR_EMFILE = -24;
 constexpr int64_t LINUX_ERR_EINVAL = -22;
 constexpr int64_t LINUX_ERR_EBADF  = -9;
+constexpr int64_t LINUX_ERR_ENOSYS = -38;
+
+constexpr uint64_t SYSCALL_COPY_CHUNK_SIZE = 4096;
 
 constexpr uint64_t LINUX_O_ACCMODE = 0x3;
 
@@ -75,6 +78,168 @@ LogicLayer* TranslationLayer::GetLogicLayer() const
 }
 
 // Posix system call handlers
+
+int64_t TranslationLayer::HandleReadSystemCall(uint64_t FileDescriptor, void* Buffer, uint64_t Count)
+{
+    if (Logic == nullptr || (Buffer == nullptr && Count != 0))
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    ProcessManager* PM = Logic->GetProcessManager();
+    if (PM == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    Process* CurrentProcess = PM->GetRunningProcess();
+    if (CurrentProcess == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    if (FileDescriptor >= MAX_OPEN_FILES_PER_PROCESS)
+    {
+        return LINUX_ERR_EBADF;
+    }
+
+    File* OpenFile = CurrentProcess->FileTable[FileDescriptor];
+    if (OpenFile == nullptr || OpenFile->Node == nullptr)
+    {
+        return LINUX_ERR_EBADF;
+    }
+
+    if (OpenFile->AccessFlags == WRITE)
+    {
+        return LINUX_ERR_EBADF;
+    }
+
+    if (OpenFile->Node->FileOps == nullptr || OpenFile->Node->FileOps->Read == nullptr)
+    {
+        return LINUX_ERR_ENOSYS;
+    }
+
+    if (Count == 0)
+    {
+        return 0;
+    }
+
+    uint8_t KernelBuffer[SYSCALL_COPY_CHUNK_SIZE];
+    uint64_t TotalCopied = 0;
+
+    while (TotalCopied < Count)
+    {
+        uint64_t Remaining = Count - TotalCopied;
+        uint64_t ChunkSize = (Remaining < SYSCALL_COPY_CHUNK_SIZE) ? Remaining : SYSCALL_COPY_CHUNK_SIZE;
+
+        int64_t BytesRead = OpenFile->Node->FileOps->Read(OpenFile, KernelBuffer, ChunkSize);
+        if (BytesRead < 0)
+        {
+            return (TotalCopied == 0) ? BytesRead : static_cast<int64_t>(TotalCopied);
+        }
+
+        if (BytesRead == 0)
+        {
+            break;
+        }
+
+        void* UserChunkDestination = reinterpret_cast<void*>(reinterpret_cast<uint64_t>(Buffer) + TotalCopied);
+        if (!Logic->CopyFromKernelToUser(KernelBuffer, UserChunkDestination, static_cast<uint64_t>(BytesRead)))
+        {
+            return (TotalCopied == 0) ? LINUX_ERR_EFAULT : static_cast<int64_t>(TotalCopied);
+        }
+
+        TotalCopied += static_cast<uint64_t>(BytesRead);
+
+        if (static_cast<uint64_t>(BytesRead) < ChunkSize)
+        {
+            break;
+        }
+    }
+
+    return static_cast<int64_t>(TotalCopied);
+}
+
+int64_t TranslationLayer::HandleWriteSystemCall(uint64_t FileDescriptor, const void* Buffer, uint64_t Count)
+{
+    if (Logic == nullptr || (Buffer == nullptr && Count != 0))
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    ProcessManager* PM = Logic->GetProcessManager();
+    if (PM == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    Process* CurrentProcess = PM->GetRunningProcess();
+    if (CurrentProcess == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    if (FileDescriptor >= MAX_OPEN_FILES_PER_PROCESS)
+    {
+        return LINUX_ERR_EBADF;
+    }
+
+    File* OpenFile = CurrentProcess->FileTable[FileDescriptor];
+    if (OpenFile == nullptr || OpenFile->Node == nullptr)
+    {
+        return LINUX_ERR_EBADF;
+    }
+
+    if (OpenFile->AccessFlags == READ)
+    {
+        return LINUX_ERR_EBADF;
+    }
+
+    if (OpenFile->Node->FileOps == nullptr || OpenFile->Node->FileOps->Write == nullptr)
+    {
+        return LINUX_ERR_ENOSYS;
+    }
+
+    if (Count == 0)
+    {
+        return 0;
+    }
+
+    uint8_t KernelBuffer[SYSCALL_COPY_CHUNK_SIZE];
+    uint64_t TotalCopied = 0;
+
+    while (TotalCopied < Count)
+    {
+        uint64_t Remaining = Count - TotalCopied;
+        uint64_t ChunkSize = (Remaining < SYSCALL_COPY_CHUNK_SIZE) ? Remaining : SYSCALL_COPY_CHUNK_SIZE;
+
+        const void* UserChunkSource = reinterpret_cast<const void*>(reinterpret_cast<uint64_t>(Buffer) + TotalCopied);
+        if (!Logic->CopyFromUserToKernel(UserChunkSource, KernelBuffer, ChunkSize))
+        {
+            return (TotalCopied == 0) ? LINUX_ERR_EFAULT : static_cast<int64_t>(TotalCopied);
+        }
+
+        int64_t BytesWritten = OpenFile->Node->FileOps->Write(OpenFile, KernelBuffer, ChunkSize);
+        if (BytesWritten < 0)
+        {
+            return (TotalCopied == 0) ? BytesWritten : static_cast<int64_t>(TotalCopied);
+        }
+
+        if (BytesWritten == 0)
+        {
+            break;
+        }
+
+        TotalCopied += static_cast<uint64_t>(BytesWritten);
+
+        if (static_cast<uint64_t>(BytesWritten) < ChunkSize)
+        {
+            break;
+        }
+    }
+
+    return static_cast<int64_t>(TotalCopied);
+}
 
 int64_t TranslationLayer::HandleOpenSystemCall(const char* Path, uint64_t Flags)
 {
