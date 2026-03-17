@@ -4,7 +4,7 @@ The goal is to build a semi-POSIX-compliant x86_64 operating system.
 
 ## Summary
 
-TwistedOS currently boots through UEFI into a higher-half x86_64 kernel with physical and virtual memory management, process scheduling, sleep support, and user-process address-space isolation with syscall instruction support. It can load and run ELF binaries from the initramfs, with a kernel self-test suite and QEMU/GDB-based debug tooling for validation and inspection.
+TwistedOS currently boots through UEFI into a higher-half x86_64 kernel with physical and virtual memory management, process scheduling, sleep support, and user-process address-space isolation with syscall instruction support. It can load and run ELF binaries from the VirtualFileSystem mounted on initramfs, with a kernel self-test suite and QEMU/GDB-based debug tooling for validation and inspection.
 
 ## Developed
 
