@@ -1,3 +1,9 @@
+/**
+ * File: LogicLayer.hpp
+ * Author: Marwan Mostafa
+ * Description: Logic layer orchestration interface declarations.
+ */
+
 #pragma once
 
 #include "ELFManager.hpp"

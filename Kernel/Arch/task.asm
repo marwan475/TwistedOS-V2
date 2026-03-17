@@ -1,3 +1,7 @@
+; File: task.asm
+; Author: Marwan Mostafa
+; Description: Task context switch and scheduling-related assembly routines.
+
 bits 64
 default rel
 

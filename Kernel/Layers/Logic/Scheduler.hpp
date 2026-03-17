@@ -1,3 +1,9 @@
+/**
+ * File: Scheduler.hpp
+ * Author: Marwan Mostafa
+ * Description: Task scheduling interface declarations.
+ */
+
 #pragma once
 
 #include "IntrusiveQueue.hpp"

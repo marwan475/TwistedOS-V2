@@ -1,3 +1,9 @@
+/**
+ * File: MemoryManager.cpp
+ * Author: Marwan Mostafa
+ * Description: Bootloader physical memory map and allocation logic.
+ */
+
 #include <CommonUtils.hpp>
 #include <MemoryManager.hpp>
 

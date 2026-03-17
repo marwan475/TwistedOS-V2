@@ -1,3 +1,9 @@
+/**
+ * File: KernelSelfTests.cpp
+ * Author: Marwan Mostafa
+ * Description: Kernel self-test implementations.
+ */
+
 #include "KernelSelfTests.hpp"
 
 #include <CommonUtils.hpp>

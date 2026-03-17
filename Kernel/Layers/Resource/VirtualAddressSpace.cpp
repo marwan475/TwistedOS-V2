@@ -1,3 +1,9 @@
+/**
+ * File: VirtualAddressSpace.cpp
+ * Author: Marwan Mostafa
+ * Description: Virtual address space management implementation.
+ */
+
 #include "VirtualAddressSpace.hpp"
 
 #include <Memory/VirtualMemoryManager.hpp>

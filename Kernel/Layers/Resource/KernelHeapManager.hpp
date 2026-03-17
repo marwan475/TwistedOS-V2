@@ -1,3 +1,9 @@
+/**
+ * File: KernelHeapManager.hpp
+ * Author: Marwan Mostafa
+ * Description: Kernel heap allocation manager declarations.
+ */
+
 #pragma once
 
 #include <stddef.h>

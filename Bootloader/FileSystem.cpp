@@ -1,3 +1,9 @@
+/**
+ * File: FileSystem.cpp
+ * Author: Marwan Mostafa
+ * Description: Bootloader file system access implementation.
+ */
+
 #include <CommonUtils.hpp>
 #include <FileSystem.hpp>
 

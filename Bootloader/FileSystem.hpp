@@ -1,3 +1,9 @@
+/**
+ * File: FileSystem.hpp
+ * Author: Marwan Mostafa
+ * Description: Bootloader file system interface declarations.
+ */
+
 #pragma once
 
 #include "../utils/KernelParameters.hpp"

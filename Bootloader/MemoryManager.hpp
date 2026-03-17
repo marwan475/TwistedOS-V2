@@ -1,3 +1,9 @@
+/**
+ * File: MemoryManager.hpp
+ * Author: Marwan Mostafa
+ * Description: Bootloader memory manager interface declarations.
+ */
+
 #pragma once
 
 #include "../utils/KernelParameters.hpp"

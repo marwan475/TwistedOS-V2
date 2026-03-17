@@ -1,3 +1,9 @@
+/**
+ * File: Dispatcher.hpp
+ * Author: Marwan Mostafa
+ * Description: Cross-layer dispatcher interface declarations.
+ */
+
 #pragma once
 
 #include <Logging/FrameBufferConsole.hpp>

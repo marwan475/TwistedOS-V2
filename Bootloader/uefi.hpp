@@ -1,3 +1,9 @@
+/**
+ * File: uefi.hpp
+ * Author: Marwan Mostafa
+ * Description: UEFI type and protocol definitions used by the bootloader.
+ */
+
 // https://uefi.org/sites/default/files/resources/UEFI_Spec_2_10_Aug29.pdf
 
 #pragma once

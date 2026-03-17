@@ -1,3 +1,9 @@
+/**
+ * File: Console.hpp
+ * Author: Marwan Mostafa
+ * Description: Bootloader console interface declarations.
+ */
+
 #pragma once
 
 #include <uefi.hpp>

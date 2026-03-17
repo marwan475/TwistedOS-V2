@@ -1,3 +1,9 @@
+/**
+ * File: font.hpp
+ * Author: Marwan Mostafa
+ * Description: Bitmap font data and constants for console rendering.
+ */
+
 #pragma once
 
 #define FONT_EXTRA_WORDS 4

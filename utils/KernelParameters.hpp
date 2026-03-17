@@ -1,3 +1,9 @@
+/**
+ * File: KernelParameters.hpp
+ * Author: Marwan Mostafa
+ * Description: Shared kernel/boot parameters and related definitions.
+ */
+
 #pragma once
 
 #include "../Bootloader/uefi.hpp"

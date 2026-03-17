@@ -1,3 +1,9 @@
+/**
+ * File: RamFileSystemManager.cpp
+ * Author: Marwan Mostafa
+ * Description: RAM file system operations implementation.
+ */
+
 #include "RamFileSystemManager.hpp"
 
 #include <Logging/FrameBufferConsole.hpp>

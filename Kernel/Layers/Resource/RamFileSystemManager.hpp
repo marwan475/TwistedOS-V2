@@ -1,3 +1,9 @@
+/**
+ * File: RamFileSystemManager.hpp
+ * Author: Marwan Mostafa
+ * Description: RAM file system operations declarations.
+ */
+
 #pragma once
 
 #include <stdint.h>

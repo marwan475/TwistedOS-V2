@@ -1,3 +1,9 @@
+/**
+ * File: CommonUtils.hpp
+ * Author: Marwan Mostafa
+ * Description: Common low-level utility function declarations.
+ */
+
 #pragma once
 
 #include <stddef.h>

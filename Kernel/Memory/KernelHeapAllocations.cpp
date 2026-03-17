@@ -1,3 +1,9 @@
+/**
+ * File: KernelHeapAllocations.cpp
+ * Author: Marwan Mostafa
+ * Description: Tracked kernel heap allocation implementation.
+ */
+
 #include "KernelHeapAllocations.hpp"
 
 #include "Layers/Dispatcher.hpp"

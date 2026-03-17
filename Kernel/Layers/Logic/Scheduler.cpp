@@ -1,3 +1,9 @@
+/**
+ * File: Scheduler.cpp
+ * Author: Marwan Mostafa
+ * Description: Task scheduling algorithm implementation.
+ */
+
 #include "Scheduler.hpp"
 
 #include <new>

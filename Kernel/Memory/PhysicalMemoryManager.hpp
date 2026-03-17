@@ -1,3 +1,9 @@
+/**
+ * File: PhysicalMemoryManager.hpp
+ * Author: Marwan Mostafa
+ * Description: Physical memory map and frame management declarations.
+ */
+
 #pragma once
 
 #include "../utils/KernelParameters.hpp"

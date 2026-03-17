@@ -1,3 +1,9 @@
+/**
+ * File: ProcessManager.hpp
+ * Author: Marwan Mostafa
+ * Description: Process creation and lifecycle management declarations.
+ */
+
 #pragma once
 
 #include <Arch/x86.hpp>

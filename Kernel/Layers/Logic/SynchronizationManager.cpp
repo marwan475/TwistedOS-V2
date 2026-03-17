@@ -1,3 +1,9 @@
+/**
+ * File: SynchronizationManager.cpp
+ * Author: Marwan Mostafa
+ * Description: Kernel synchronization primitive implementation.
+ */
+
 #include "SynchronizationManager.hpp"
 
 #include <new>

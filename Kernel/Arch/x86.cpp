@@ -1,3 +1,9 @@
+/**
+ * File: x86.cpp
+ * Author: Marwan Mostafa
+ * Description: x86-64 architecture-specific kernel implementation.
+ */
+
 #include <Arch/x86.hpp>
 #include <Layers/Dispatcher.hpp>
 #include <Logging/FrameBufferConsole.hpp>

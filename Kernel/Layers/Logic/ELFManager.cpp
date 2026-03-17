@@ -1,3 +1,9 @@
+/**
+ * File: ELFManager.cpp
+ * Author: Marwan Mostafa
+ * Description: ELF parsing and loading logic implementation.
+ */
+
 #include "ELFManager.hpp"
 
 namespace

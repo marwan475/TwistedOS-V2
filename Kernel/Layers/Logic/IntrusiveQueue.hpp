@@ -1,3 +1,9 @@
+/**
+ * File: IntrusiveQueue.hpp
+ * Author: Marwan Mostafa
+ * Description: Intrusive queue container template.
+ */
+
 #pragma once
 
 template <typename T, T* T::* NextMember> class IntrusiveQueue

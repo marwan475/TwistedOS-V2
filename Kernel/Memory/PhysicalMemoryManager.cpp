@@ -1,3 +1,9 @@
+/**
+ * File: PhysicalMemoryManager.cpp
+ * Author: Marwan Mostafa
+ * Description: Physical memory map and frame management implementation.
+ */
+
 #include <CommonUtils.hpp>
 #include <Logging/FrameBufferConsole.hpp>
 #include <Memory/PhysicalMemoryManager.hpp>

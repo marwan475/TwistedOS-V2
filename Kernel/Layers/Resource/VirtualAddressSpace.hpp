@@ -1,3 +1,9 @@
+/**
+ * File: VirtualAddressSpace.hpp
+ * Author: Marwan Mostafa
+ * Description: Virtual address space management declarations.
+ */
+
 #pragma once
 
 #include <Memory/PhysicalMemoryManager.hpp>

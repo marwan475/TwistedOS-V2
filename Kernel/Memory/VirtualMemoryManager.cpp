@@ -1,3 +1,9 @@
+/**
+ * File: VirtualMemoryManager.cpp
+ * Author: Marwan Mostafa
+ * Description: Virtual memory paging management implementation.
+ */
+
 #include <CommonUtils.hpp>
 #include <Memory/VirtualMemoryManager.hpp>
 

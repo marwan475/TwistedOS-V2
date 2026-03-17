@@ -1,3 +1,9 @@
+/**
+ * File: TranslationLayer.cpp
+ * Author: Marwan Mostafa
+ * Description: Translation layer implementation between system layers.
+ */
+
 #include "TranslationLayer.hpp"
 
 #include "Layers/Logic/LogicLayer.hpp"

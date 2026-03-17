@@ -1,3 +1,9 @@
+/**
+ * File: TranslationLayer.hpp
+ * Author: Marwan Mostafa
+ * Description: Translation layer interface declarations between system layers.
+ */
+
 #pragma once
 
 class LogicLayer;

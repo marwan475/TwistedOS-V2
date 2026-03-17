@@ -1,3 +1,7 @@
+; File: Interrupts.asm
+; Author: Marwan Mostafa
+; Description: Interrupt entry/exit and low-level interrupt handling routines.
+
 bits 64
 default rel
 

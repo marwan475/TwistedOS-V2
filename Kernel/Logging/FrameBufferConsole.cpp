@@ -1,3 +1,9 @@
+/**
+ * File: FrameBufferConsole.cpp
+ * Author: Marwan Mostafa
+ * Description: Framebuffer-backed kernel console implementation.
+ */
+
 #include <Logging/FrameBufferConsole.hpp>
 #include <Logging/font.hpp>
 #include <printf.hpp>

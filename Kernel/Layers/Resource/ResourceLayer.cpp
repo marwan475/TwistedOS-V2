@@ -1,3 +1,9 @@
+/**
+ * File: ResourceLayer.cpp
+ * Author: Marwan Mostafa
+ * Description: Resource layer coordination implementation.
+ */
+
 #include "ResourceLayer.hpp"
 
 #include "VirtualAddressSpace.hpp"

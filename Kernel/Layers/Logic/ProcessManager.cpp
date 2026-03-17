@@ -1,3 +1,9 @@
+/**
+ * File: ProcessManager.cpp
+ * Author: Marwan Mostafa
+ * Description: Process creation and lifecycle management implementation.
+ */
+
 #include "ProcessManager.hpp"
 
 /**

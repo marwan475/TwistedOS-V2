@@ -1,3 +1,9 @@
+/**
+ * File: Console.cpp
+ * Author: Marwan Mostafa
+ * Description: Bootloader console output implementation.
+ */
+
 #include <Console.hpp>
 #include <printf.hpp>
 

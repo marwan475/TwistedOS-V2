@@ -1,3 +1,9 @@
+/**
+ * File: bootloader.cpp
+ * Author: Marwan Mostafa
+ * Description: Main UEFI bootloader entry point and setup flow.
+ */
+
 #include <CommonUtils.hpp>
 #include <Console.hpp>
 #include <FileSystem.hpp>

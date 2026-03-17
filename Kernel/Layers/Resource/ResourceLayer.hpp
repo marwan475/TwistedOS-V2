@@ -1,3 +1,9 @@
+/**
+ * File: ResourceLayer.hpp
+ * Author: Marwan Mostafa
+ * Description: Resource layer coordination interface declarations.
+ */
+
 #pragma once
 
 #include "KernelHeapManager.hpp"

@@ -1,3 +1,9 @@
+/**
+ * File: VirtualMemoryManager.hpp
+ * Author: Marwan Mostafa
+ * Description: Virtual memory paging management declarations.
+ */
+
 #pragma once
 
 #include <Memory/PhysicalMemoryManager.hpp>

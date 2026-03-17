@@ -1,3 +1,9 @@
+/**
+ * File: FrameBufferConsole.hpp
+ * Author: Marwan Mostafa
+ * Description: Framebuffer-backed kernel console declarations.
+ */
+
 #pragma once
 
 #include <stdint.h>

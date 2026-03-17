@@ -1,3 +1,7 @@
+# File: twistedos_gdb.py
+# Author: Marwan Mostafa
+# Description: GDB helper commands and utilities for TwistedOS.
+
 import gdb
 
 

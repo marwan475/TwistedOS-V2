@@ -1,3 +1,9 @@
+/**
+ * File: SynchronizationManager.hpp
+ * Author: Marwan Mostafa
+ * Description: Kernel synchronization primitive declarations.
+ */
+
 #pragma once
 
 #include "IntrusiveQueue.hpp"

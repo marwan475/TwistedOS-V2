@@ -1,3 +1,9 @@
+/**
+ * File: ELFManager.hpp
+ * Author: Marwan Mostafa
+ * Description: ELF parsing and loading logic declarations.
+ */
+
 #pragma once
 
 #include <stdint.h>

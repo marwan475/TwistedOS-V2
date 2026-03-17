@@ -1,3 +1,9 @@
+/**
+ * File: LogicLayer.cpp
+ * Author: Marwan Mostafa
+ * Description: Logic layer orchestration implementation.
+ */
+
 #include "LogicLayer.hpp"
 
 #include "Layers/Resource/ResourceLayer.hpp"

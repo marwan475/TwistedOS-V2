@@ -1,3 +1,9 @@
+/**
+ * File: KernelHeapAllocations.hpp
+ * Author: Marwan Mostafa
+ * Description: Tracked kernel heap allocation declarations.
+ */
+
 #pragma once
 
 #include <stddef.h>

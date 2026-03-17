@@ -1,3 +1,7 @@
+; File: syscall.asm
+; Author: Marwan Mostafa
+; Description: System call entry and return assembly routines.
+
 bits 64
 default rel
 

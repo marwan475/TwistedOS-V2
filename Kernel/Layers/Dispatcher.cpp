@@ -1,3 +1,9 @@
+/**
+ * File: Dispatcher.cpp
+ * Author: Marwan Mostafa
+ * Description: Cross-layer dispatcher implementation.
+ */
+
 #include "Dispatcher.hpp"
 
 #include <Memory/KernelHeapAllocations.hpp>

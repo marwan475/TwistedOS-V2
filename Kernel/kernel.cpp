@@ -1,3 +1,9 @@
+/**
+ * File: kernel.cpp
+ * Author: Marwan Mostafa
+ * Description: Main kernel entry and initialization flow.
+ */
+
 
 #include "../utils/KernelParameters.hpp"
 #include "Layers/Dispatcher.hpp"

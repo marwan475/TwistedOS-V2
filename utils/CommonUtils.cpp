@@ -1,3 +1,9 @@
+/**
+ * File: CommonUtils.cpp
+ * Author: Marwan Mostafa
+ * Description: Common low-level utility function implementations.
+ */
+
 #include <CommonUtils.hpp>
 
 void kmemset(void* dest, int value, size_t count)

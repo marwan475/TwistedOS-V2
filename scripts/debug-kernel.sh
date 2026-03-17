@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+# File: debug-kernel.sh
+# Author: Marwan Mostafa
+# Description: Script for launching kernel debugging with GDB/QEMU.
+
 
 set -euo pipefail
 

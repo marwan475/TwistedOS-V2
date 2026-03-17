@@ -1,3 +1,9 @@
+/**
+ * File: KernelHeapManager.cpp
+ * Author: Marwan Mostafa
+ * Description: Kernel heap allocation manager implementation.
+ */
+
 #include "KernelHeapManager.hpp"
 
 #include <stddef.h>

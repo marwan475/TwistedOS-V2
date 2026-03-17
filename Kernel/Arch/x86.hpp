@@ -1,3 +1,9 @@
+/**
+ * File: x86.hpp
+ * Author: Marwan Mostafa
+ * Description: x86-64 architecture-specific kernel declarations.
+ */
+
 #pragma once
 
 #include <stddef.h>

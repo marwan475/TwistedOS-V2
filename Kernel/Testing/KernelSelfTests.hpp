@@ -1,3 +1,9 @@
+/**
+ * File: KernelSelfTests.hpp
+ * Author: Marwan Mostafa
+ * Description: Kernel self-test declarations.
+ */
+
 #pragma once
 
 #include <stdint.h>
