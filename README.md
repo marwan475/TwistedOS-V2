@@ -19,6 +19,7 @@ Developed
     - init GDT
     - init IDT
     - remap PIC
+    - init syscall instruction
     - init timer
     - Physical memory manager using memory map
     - Virtual memory manager
@@ -40,7 +41,7 @@ Developed
         - Creates RamFileSystemManager
             - Load files from initramfs
         - VirtualAddresSpace
-            - Creates and manaeges virtual address space for user processes
+            - Creates and manages virtual address space for user processes
     - Logic Layer
         - Creates Process manager
             - Stores array of Process structs using id to index
@@ -51,6 +52,8 @@ Developed
             - Schedules Process using timer interrupt
         - Creates Syncronization Manager
             - Sleep processes for certian amount of timer ticks
+        - Creates ELFManager
+            - Use to parse and map ELFs to user virtual address space
     - Translation Layer
         - TODO (How User process will interract with the kernel)
         - Translate User Requests/System calls to Kernel services
