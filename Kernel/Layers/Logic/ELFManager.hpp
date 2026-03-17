@@ -54,12 +54,12 @@ public:
     ELFManager();
     ~ELFManager();
 
-    ELFHeader                  ParseELF(uint64_t PhysicalAddress) const;
-    bool                       ValidateELF(const ELFHeader& Header) const;
-    bool                       ValidateELF64(const ELFHeader& Header) const;
-    bool                       ValidateProgramHeaderTable(const ELFHeader& Header, uint64_t ImageSize) const;
-    const ELFProgramHeader64*  GetProgramHeaderTable(uint64_t PhysicalAddress, const ELFHeader& Header) const;
-    bool                       IsLoadableSegment(const ELFProgramHeader64& ProgramHeader) const;
-    bool                       IsWritableSegment(const ELFProgramHeader64& ProgramHeader) const;
-    bool                       ValidateProgramSegment(const ELFProgramHeader64& ProgramHeader, uint64_t ImageSize) const;
+    ELFHeader                 ParseELF(uint64_t PhysicalAddress) const;
+    bool                      ValidateELF(const ELFHeader& Header) const;
+    bool                      ValidateELF64(const ELFHeader& Header) const;
+    bool                      ValidateProgramHeaderTable(const ELFHeader& Header, uint64_t ImageSize) const;
+    const ELFProgramHeader64* GetProgramHeaderTable(uint64_t PhysicalAddress, const ELFHeader& Header) const;
+    bool                      IsLoadableSegment(const ELFProgramHeader64& ProgramHeader) const;
+    bool                      IsWritableSegment(const ELFProgramHeader64& ProgramHeader) const;
+    bool                      ValidateProgramSegment(const ELFProgramHeader64& ProgramHeader, uint64_t ImageSize) const;
 };

@@ -101,8 +101,7 @@ VirtualAddressSpace::VirtualAddressSpace()
 VirtualAddressSpace::VirtualAddressSpace(uint64_t CodePhysicalAddress, uint64_t CodeSize, uint64_t CodeVirtualAddressStart, uint64_t HeapPhysicalAddress, uint64_t HeapSize,
                                          uint64_t HeapVirtualAddressStart, uint64_t StackPhysicalAddress, uint64_t StackSize, uint64_t StackVirtualAddressStart)
     : CodePhysicalAddress(CodePhysicalAddress), CodeSize(CodeSize), CodeVirtualAddressStart(CodeVirtualAddressStart), HeapPhysicalAddress(HeapPhysicalAddress), HeapSize(HeapSize),
-      HeapVirtualAddressStart(HeapVirtualAddressStart), StackPhysicalAddress(StackPhysicalAddress), StackSize(StackSize), StackVirtualAddressStart(StackVirtualAddressStart),
-      PageMapL4TableAddr(0)
+      HeapVirtualAddressStart(HeapVirtualAddressStart), StackPhysicalAddress(StackPhysicalAddress), StackSize(StackSize), StackVirtualAddressStart(StackVirtualAddressStart), PageMapL4TableAddr(0)
 {
 }
 
@@ -313,8 +312,7 @@ uint64_t VirtualAddressSpace::GetPageMapL4TableAddr() const
  * Returns:
  *   VirtualAddressSpaceELF - Constructed ELF virtual address space instance.
  */
-VirtualAddressSpaceELF::VirtualAddressSpaceELF()
-    : VirtualAddressSpace(), MemoryRegions{}, MemoryRegionCount(0)
+VirtualAddressSpaceELF::VirtualAddressSpaceELF() : VirtualAddressSpace(), MemoryRegions{}, MemoryRegionCount(0)
 {
 }
 
@@ -336,8 +334,7 @@ VirtualAddressSpaceELF::VirtualAddressSpaceELF()
  */
 VirtualAddressSpaceELF::VirtualAddressSpaceELF(uint64_t CodePhysicalAddress, uint64_t CodeSize, uint64_t CodeVirtualAddressStart, uint64_t HeapPhysicalAddress, uint64_t HeapSize,
                                                uint64_t HeapVirtualAddressStart, uint64_t StackPhysicalAddress, uint64_t StackSize, uint64_t StackVirtualAddressStart)
-    : VirtualAddressSpace(CodePhysicalAddress, CodeSize, CodeVirtualAddressStart, HeapPhysicalAddress, HeapSize, HeapVirtualAddressStart, StackPhysicalAddress, StackSize,
-                          StackVirtualAddressStart),
+    : VirtualAddressSpace(CodePhysicalAddress, CodeSize, CodeVirtualAddressStart, HeapPhysicalAddress, HeapSize, HeapVirtualAddressStart, StackPhysicalAddress, StackSize, StackVirtualAddressStart),
       MemoryRegions{}, MemoryRegionCount(0)
 {
 }
@@ -426,8 +423,8 @@ bool VirtualAddressSpaceELF::Init(uint64_t PageMapL4TableAddr, PhysicalMemoryMan
         }
     }
 
-    if (!MapUserRange(VMM, GetHeapPhysicalAddress(), GetHeapVirtualAddressStart(), GetHeapSize(), true) ||
-        !MapUserRange(VMM, GetStackPhysicalAddress(), GetStackVirtualAddressStart(), GetStackSize(), true))
+    if (!MapUserRange(VMM, GetHeapPhysicalAddress(), GetHeapVirtualAddressStart(), GetHeapSize(), true)
+        || !MapUserRange(VMM, GetStackPhysicalAddress(), GetStackVirtualAddressStart(), GetStackSize(), true))
     {
         return false;
     }

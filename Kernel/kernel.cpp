@@ -4,7 +4,6 @@
  * Description: Main kernel entry and initialization flow.
  */
 
-
 #include "../utils/KernelParameters.hpp"
 #include "Layers/Dispatcher.hpp"
 #include "Layers/Resource/ResourceLayer.hpp"
@@ -32,7 +31,7 @@ extern "C"
 {
     /**
      * Function: KernelEntry
-    * Description: Initializes core x86 CPU features, sets up memory managers, maps the kernel heap into the higher half, then enters the dispatcher.
+     * Description: Initializes core x86 CPU requirements, sets up memory managers, maps the kernel heap into the higher half, then enters the dispatcher.
      * Parameters:
      *   KernelParameters KernelArgs - Boot parameters provided by the bootloader, including graphics mode, memory map, paging, and initramfs metadata.
      * Returns:

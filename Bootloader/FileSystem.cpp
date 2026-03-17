@@ -11,7 +11,7 @@ namespace
 {
 constexpr UINTN BYTES_PER_MIB = 1024 * 1024;
 constexpr UINTN BYTES_PER_GIB = 1024 * 1024 * 1024;
-}
+} // namespace
 
 /**
  * Function: FileSystem::FileSystem
@@ -114,7 +114,7 @@ void PrintMemoryMap(MemoryMapInfo MemoryMap, Console* efiConsole)
     efiConsole->printf_("Memory map: Size %u, Descriptor size: %u, # of descriptors: %u, key: %x\r\n", MemoryMap.MemoryMapSize, MemoryMap.DescriptorSize,
                         MemoryMap.MemoryMapSize / MemoryMap.DescriptorSize, MemoryMap.MapKey);
 
-    UINTN usable_bytes = 0; 
+    UINTN usable_bytes = 0;
     for (UINTN i = 0; i < MemoryMap.MemoryMapSize / MemoryMap.DescriptorSize; i++)
     {
         EFI_MEMORY_DESCRIPTOR* desc = (EFI_MEMORY_DESCRIPTOR*) ((UINT8*) MemoryMap.MemoryMap + (i * MemoryMap.DescriptorSize));

@@ -173,7 +173,7 @@ void* ProcessManager::KillProcess(uint8_t Id)
     {
         return nullptr; // Invalid process ID
     }
-    Processes[Id].Status = PROCESS_TERMINATED;
+    Processes[Id].Status   = PROCESS_TERMINATED;
     Processes[Id].FileType = FILE_TYPE_RAW_BINARY;
     return Processes[Id].StackPointer;
 }

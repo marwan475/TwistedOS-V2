@@ -70,8 +70,8 @@ private:
 
 public:
     VirtualAddressSpaceELF();
-    VirtualAddressSpaceELF(uint64_t CodePhysicalAddress, uint64_t CodeSize, uint64_t CodeVirtualAddressStart, uint64_t HeapPhysicalAddress, uint64_t HeapSize,
-                           uint64_t HeapVirtualAddressStart, uint64_t StackPhysicalAddress, uint64_t StackSize, uint64_t StackVirtualAddressStart);
+    VirtualAddressSpaceELF(uint64_t CodePhysicalAddress, uint64_t CodeSize, uint64_t CodeVirtualAddressStart, uint64_t HeapPhysicalAddress, uint64_t HeapSize, uint64_t HeapVirtualAddressStart,
+                           uint64_t StackPhysicalAddress, uint64_t StackSize, uint64_t StackVirtualAddressStart);
     ~VirtualAddressSpaceELF() override;
 
     const ELFMemoryRegion* GetMemoryRegions() const;

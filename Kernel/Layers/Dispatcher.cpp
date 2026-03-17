@@ -11,10 +11,10 @@
 
 namespace
 {
-constexpr uint64_t TIMER_INTERRUPT_VECTOR      = 32;
-constexpr uint64_t SYSCALL_INTERRUPT_VECTOR    = 128;
-constexpr uint64_t SCHEDULER_TICK_INTERVAL     = 100;
-}
+constexpr uint64_t TIMER_INTERRUPT_VECTOR   = 32;
+constexpr uint64_t SYSCALL_INTERRUPT_VECTOR = 128;
+constexpr uint64_t SCHEDULER_TICK_INTERVAL  = 100;
+} // namespace
 
 Dispatcher* Dispatcher::ActiveDispatcher = nullptr;
 uint64_t    Ticks                        = 0;

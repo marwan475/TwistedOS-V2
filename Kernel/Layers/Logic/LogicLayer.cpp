@@ -102,7 +102,6 @@ LogicLayer::~LogicLayer()
     {
         delete ELF;
     }
-
 }
 
 /**
@@ -253,8 +252,8 @@ uint8_t LogicLayer::CreateKernelProcess(void (*EntryPoint)())
 
     CpuState State = {};
     State.rip      = reinterpret_cast<uint64_t>(EntryPoint);
-    State.rflags   = INITIAL_PROCESS_RFLAGS;   // Bit1 always set, IF enabled
-    State.rbp      = 0;                        // bottom of stack frame
+    State.rflags   = INITIAL_PROCESS_RFLAGS;                                      // Bit1 always set, IF enabled
+    State.rbp      = 0;                                                           // bottom of stack frame
     State.rsp      = (StackTop & ~STACK_ALIGNMENT_MASK) - STACK_RETURN_SLOT_SIZE; // SysV entry alignment without a real CALL
 
     *reinterpret_cast<uint64_t*>(State.rsp) = 0;
@@ -288,10 +287,10 @@ uint8_t LogicLayer::CreateUserProcess(uint64_t CodeAddr, uint64_t CodeSize)
     }
 
     // Check if code is raw binary or ELF by looking for ELF magic number
-    ELFHeader Header                = {};
-    VirtualAddressSpace* AddressSpace = nullptr;
-    bool IsELF                        = false;
-    uint64_t UserEntryPoint           = USER_PROCESS_VIRTUAL_BASE;
+    ELFHeader            Header         = {};
+    VirtualAddressSpace* AddressSpace   = nullptr;
+    bool                 IsELF          = false;
+    uint64_t             UserEntryPoint = USER_PROCESS_VIRTUAL_BASE;
 
     if (ELF != nullptr)
     {
@@ -301,7 +300,7 @@ uint8_t LogicLayer::CreateUserProcess(uint64_t CodeAddr, uint64_t CodeSize)
 
     if (IsELF)
     {
-        AddressSpace = MapELF(CodeAddr, CodeSize, Header);
+        AddressSpace   = MapELF(CodeAddr, CodeSize, Header);
         UserEntryPoint = Header.Entry;
     }
     else
@@ -318,18 +317,13 @@ uint8_t LogicLayer::CreateUserProcess(uint64_t CodeAddr, uint64_t CodeSize)
 
     CpuState State = {};
     State.rip      = UserEntryPoint;
-    State.rflags   = INITIAL_PROCESS_RFLAGS;   // Bit1 always set, IF enabled
-    State.rbp      = 0;                        // bottom of stack frame
+    State.rflags   = INITIAL_PROCESS_RFLAGS;                                      // Bit1 always set, IF enabled
+    State.rbp      = 0;                                                           // bottom of stack frame
     State.rsp      = (StackTop & ~STACK_ALIGNMENT_MASK) - STACK_RETURN_SLOT_SIZE; // SysV entry alignment without a real CALL
 
     State.cs   = USER_CS;
     State.ss   = USER_SS;
-    uint8_t Id = PM->CreateUserProcess(
-        reinterpret_cast<void*>(AddressSpace->GetStackVirtualAddressStart()),
-        State,
-        AddressSpace,
-        IsELF ? FILE_TYPE_ELF : FILE_TYPE_RAW_BINARY
-    );
+    uint8_t Id = PM->CreateUserProcess(reinterpret_cast<void*>(AddressSpace->GetStackVirtualAddressStart()), State, AddressSpace, IsELF ? FILE_TYPE_ELF : FILE_TYPE_RAW_BINARY);
 
     if (Id != PROCESS_ID_INVALID)
     {
@@ -363,9 +357,8 @@ VirtualAddressSpace* LogicLayer::MapRawBinary(uint64_t CodeAddr, uint64_t CodeSi
     uint64_t ProcessHeapVirtualAddrStart  = USER_PROCESS_VIRTUAL_BASE + (CodePages * PAGE_SIZE);
     uint64_t ProcessStackVirtualAddrStart = (USER_PROCESS_VIRTUAL_STACK_TOP + 1) - USER_PROCESS_STACK_SIZE;
 
-    VirtualAddressSpace* AddressSpace =
-        new VirtualAddressSpace(CodeAddr, CodeSize, USER_PROCESS_VIRTUAL_BASE, reinterpret_cast<uint64_t>(ProcessHeap), USER_PROCESS_HEAP_SIZE, ProcessHeapVirtualAddrStart,
-                                reinterpret_cast<uint64_t>(ProcessStack), USER_PROCESS_STACK_SIZE, ProcessStackVirtualAddrStart);
+    VirtualAddressSpace* AddressSpace = new VirtualAddressSpace(CodeAddr, CodeSize, USER_PROCESS_VIRTUAL_BASE, reinterpret_cast<uint64_t>(ProcessHeap), USER_PROCESS_HEAP_SIZE,
+                                                                ProcessHeapVirtualAddrStart, reinterpret_cast<uint64_t>(ProcessStack), USER_PROCESS_STACK_SIZE, ProcessStackVirtualAddrStart);
 
     if (AddressSpace == nullptr)
     {
@@ -413,7 +406,7 @@ VirtualAddressSpace* LogicLayer::MapELF(uint64_t CodeAddr, uint64_t CodeSize, co
 
     uint64_t LowestVirtualAddress = 0;
     uint64_t HighestVirtualEnd    = 0;
-    bool HasLoadableSegment       = false;
+    bool     HasLoadableSegment   = false;
 
     for (uint16_t ProgramHeaderIndex = 0; ProgramHeaderIndex < Header.ProgramHeaderEntryCount; ++ProgramHeaderIndex)
     {
@@ -463,9 +456,8 @@ VirtualAddressSpace* LogicLayer::MapELF(uint64_t CodeAddr, uint64_t CodeSize, co
         return nullptr;
     }
 
-    VirtualAddressSpaceELF* AddressSpace =
-        new VirtualAddressSpaceELF(CodeAddr, CodeSize, LowestVirtualAddress, reinterpret_cast<uint64_t>(ProcessHeap), USER_PROCESS_HEAP_SIZE, ProcessHeapVirtualAddrStart,
-                                   reinterpret_cast<uint64_t>(ProcessStack), USER_PROCESS_STACK_SIZE, ProcessStackVirtualAddrStart);
+    VirtualAddressSpaceELF* AddressSpace = new VirtualAddressSpaceELF(CodeAddr, CodeSize, LowestVirtualAddress, reinterpret_cast<uint64_t>(ProcessHeap), USER_PROCESS_HEAP_SIZE,
+                                                                      ProcessHeapVirtualAddrStart, reinterpret_cast<uint64_t>(ProcessStack), USER_PROCESS_STACK_SIZE, ProcessStackVirtualAddrStart);
 
     if (AddressSpace == nullptr)
     {
@@ -530,13 +522,13 @@ void LogicLayer::CleanUpRawBinary(VirtualAddressSpace* AddressSpace)
         return;
     }
 
-    uint64_t CodePhysAddr       = AddressSpace->GetCodePhysicalAddress();
-    uint64_t CodeSize           = AddressSpace->GetCodeSize();
-    uint64_t HeapPhysAddr       = AddressSpace->GetHeapPhysicalAddress();
-    uint64_t HeapSize           = AddressSpace->GetHeapSize();
-    uint64_t StackPhysAddr      = AddressSpace->GetStackPhysicalAddress();
-    uint64_t StackSize          = AddressSpace->GetStackSize();
-    uint64_t ProcessPageMapL4   = AddressSpace->GetPageMapL4TableAddr();
+    uint64_t CodePhysAddr     = AddressSpace->GetCodePhysicalAddress();
+    uint64_t CodeSize         = AddressSpace->GetCodeSize();
+    uint64_t HeapPhysAddr     = AddressSpace->GetHeapPhysicalAddress();
+    uint64_t HeapSize         = AddressSpace->GetHeapSize();
+    uint64_t StackPhysAddr    = AddressSpace->GetStackPhysicalAddress();
+    uint64_t StackSize        = AddressSpace->GetStackSize();
+    uint64_t ProcessPageMapL4 = AddressSpace->GetPageMapL4TableAddr();
 
     if (CodePhysAddr != 0 && CodeSize != 0)
     {
@@ -582,7 +574,7 @@ void LogicLayer::CleanUpELF(VirtualAddressSpace* AddressSpace)
 
     VirtualAddressSpaceELF* ELFAddressSpace = static_cast<VirtualAddressSpaceELF*>(AddressSpace);
     const ELFMemoryRegion*  Regions         = ELFAddressSpace->GetMemoryRegions();
-    size_t                  RegionCount      = ELFAddressSpace->GetMemoryRegionCount();
+    size_t                  RegionCount     = ELFAddressSpace->GetMemoryRegionCount();
 
     uint64_t RangeStarts[16] = {};
     uint64_t RangeEnds[16]   = {};
@@ -651,7 +643,6 @@ void LogicLayer::CleanUpELF(VirtualAddressSpace* AddressSpace)
             PMM->FreePagesFromDescriptor(reinterpret_cast<void*>(Start), (End - Start) / PAGE_SIZE);
         }
     }
-
 
     uint64_t CodePhysAddr     = AddressSpace->GetCodePhysicalAddress();
     uint64_t CodeSize         = AddressSpace->GetCodeSize();

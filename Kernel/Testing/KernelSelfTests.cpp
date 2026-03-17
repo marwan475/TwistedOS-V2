@@ -663,8 +663,7 @@ void KernelValidatorTask()
             case SELF_TEST_PHASE_MULTITASK_SETUP:
             {
                 // Spawn runtime actors for user-process creation and scheduling checks.
-                ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_(
-                        "[SelfTest] [ELF and Raw Binary User creation] test started (includes syscall instruction validation)\n");
+                ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("[SelfTest] [ELF and Raw Binary User creation] test started (includes syscall instruction validation)\n");
                 ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("[SelfTest] [Multitasking and Sleep] test started\n");
                 if (!SetupMultitaskingTest(ActiveDispatcher))
                 {
@@ -686,8 +685,7 @@ void KernelValidatorTask()
                 if (State.BurstLoops >= State.NextMultitaskProgressBurstLoops)
                 {
                     ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_(
-                            "[SelfTest] [Multitasking and Sleep] progress: fast=%llu medium=%llu slow=%llu burst=%llu/%llu syscall1=%llu/%u syscall2=%llu/%u\n",
-                            (unsigned long long) State.FastCycles,
+                            "[SelfTest] [Multitasking and Sleep] progress: fast=%llu medium=%llu slow=%llu burst=%llu/%llu syscall1=%llu/%u syscall2=%llu/%u\n", (unsigned long long) State.FastCycles,
                             (unsigned long long) State.MediumCycles, (unsigned long long) State.SlowCycles, (unsigned long long) State.BurstLoops, (unsigned long long) BURST_MIN_LOOPS,
                             (unsigned long long) State.SyscallOneCount, (unsigned) USER_PROCESS_INSTANCE_COUNT, (unsigned long long) State.SyscallTwoCount, (unsigned) USER_PROCESS_INSTANCE_COUNT);
 
@@ -697,8 +695,7 @@ void KernelValidatorTask()
                 if (UserChecksPassed() && !State.UserCreationResultLogged)
                 {
                     LogTestResult(ActiveDispatcher, "ELF and Raw Binary User creation", true);
-                    ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("[SelfTest] syscall instruction validation: syscall1=%llu syscall2=%llu\n",
-                                                                                (unsigned long long) State.SyscallOneCount,
+                    ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("[SelfTest] syscall instruction validation: syscall1=%llu syscall2=%llu\n", (unsigned long long) State.SyscallOneCount,
                                                                                 (unsigned long long) State.SyscallTwoCount);
                     State.UserCreationResultLogged = true;
                 }
@@ -707,8 +704,8 @@ void KernelValidatorTask()
                 {
                     LogTestResult(ActiveDispatcher, "Multitasking and Sleep", true);
                     ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("[SelfTest] multitasking and sleep details: fast=%llu medium=%llu slow=%llu burst=%llu\n",
-                                                                                (unsigned long long) State.FastCycles, (unsigned long long) State.MediumCycles,
-                                                                                (unsigned long long) State.SlowCycles, (unsigned long long) State.BurstLoops);
+                                                                                (unsigned long long) State.FastCycles, (unsigned long long) State.MediumCycles, (unsigned long long) State.SlowCycles,
+                                                                                (unsigned long long) State.BurstLoops);
                     State.MultitaskSleepResultLogged = true;
                 }
 

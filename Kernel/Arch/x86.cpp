@@ -167,14 +167,14 @@ static void (*const ISRHandlers[256])() = {
         ISR240, ISR241, ISR242, ISR243, ISR244, ISR245, ISR246, ISR247, ISR248, ISR249, ISR250, ISR251, ISR252, ISR253, ISR254, ISR255,
 };
 
-    /**
-     * Function: ISR_init
-     * Description: Initializes all IDT vectors and configures user-accessible syscall interrupt gate.
-     * Parameters:
-     *   None
-     * Returns:
-     *   void - No return value.
-     */
+/**
+ * Function: ISR_init
+ * Description: Initializes all IDT vectors and configures user-accessible syscall interrupt gate.
+ * Parameters:
+ *   None
+ * Returns:
+ *   void - No return value.
+ */
 static void ISR_init()
 {
     DisableIDTEntry(0); // Avoid Compiler Warning

@@ -51,8 +51,7 @@ struct PageMappingFlags
     bool UserAccess;
     bool Writeable;
 
-    PageMappingFlags(bool UserAccess = false, bool Writeable = true)
-        : UserAccess(UserAccess), Writeable(Writeable)
+    PageMappingFlags(bool UserAccess = false, bool Writeable = true) : UserAccess(UserAccess), Writeable(Writeable)
     {
     }
 };

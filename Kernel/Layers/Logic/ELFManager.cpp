@@ -8,14 +8,14 @@
 
 namespace
 {
-constexpr uint8_t  ELF_MAGIC_0 = 0x7F;
-constexpr uint8_t  ELF_MAGIC_1 = 'E';
-constexpr uint8_t  ELF_MAGIC_2 = 'L';
-constexpr uint8_t  ELF_MAGIC_3 = 'F';
-constexpr uint8_t  ELF_CLASS_64 = 2;
-constexpr uint8_t  ELF_DATA_LSB = 1;
-constexpr uint32_t ELF_VERSION_CURRENT = 1;
-constexpr uint32_t ELF_PROGRAM_HEADER_LOAD = 1;
+constexpr uint8_t  ELF_MAGIC_0                   = 0x7F;
+constexpr uint8_t  ELF_MAGIC_1                   = 'E';
+constexpr uint8_t  ELF_MAGIC_2                   = 'L';
+constexpr uint8_t  ELF_MAGIC_3                   = 'F';
+constexpr uint8_t  ELF_CLASS_64                  = 2;
+constexpr uint8_t  ELF_DATA_LSB                  = 1;
+constexpr uint32_t ELF_VERSION_CURRENT           = 1;
+constexpr uint32_t ELF_PROGRAM_HEADER_LOAD       = 1;
 constexpr uint32_t ELF_PROGRAM_HEADER_FLAG_WRITE = 0x2;
 
 /**
