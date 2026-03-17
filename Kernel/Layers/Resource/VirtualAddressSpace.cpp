@@ -15,7 +15,7 @@ uint64_t GetRequiredPageCount(uint64_t VirtualAddress, uint64_t Size)
     return (PageOffset + Size + PAGE_SIZE - 1) / PAGE_SIZE;
 }
 
-bool MapUserRange(VirtualMemoryManager& VMM, uint64_t PhysicalAddress, uint64_t VirtualAddress, uint64_t Size)
+bool MapUserRange(VirtualMemoryManager& VMM, uint64_t PhysicalAddress, uint64_t VirtualAddress, uint64_t Size, bool Writable)
 {
     uint64_t Pages = GetRequiredPageCount(VirtualAddress, Size);
     if (Pages == 0)
@@ -31,7 +31,7 @@ bool MapUserRange(VirtualMemoryManager& VMM, uint64_t PhysicalAddress, uint64_t 
         uint64_t PhysicalPage = MappedPhysicalAddress + (PageIndex * PAGE_SIZE);
         uint64_t VirtualPage  = MappedVirtualAddress + (PageIndex * PAGE_SIZE);
 
-        if (!VMM.MapPage(PhysicalPage, VirtualPage, true))
+        if (!VMM.MapPage(PhysicalPage, VirtualPage, PageMappingFlags(true, Writable)))
         {
             return false;
         }
@@ -127,9 +127,9 @@ bool VirtualAddressSpace::Init(uint64_t PageMapL4TableAddr, PhysicalMemoryManage
     uint64_t HeapPages  = (HeapSize + PAGE_SIZE - 1) / PAGE_SIZE;
     uint64_t StackPages = (StackSize + PAGE_SIZE - 1) / PAGE_SIZE;
 
-    VMM.MapRange(CodePhysicalAddress, CodeVirtualAddressStart, CodePages, true);
-    VMM.MapRange(HeapPhysicalAddress, HeapVirtualAddressStart, HeapPages, true);
-    VMM.MapRange(StackPhysicalAddress, StackVirtualAddressStart, StackPages, true);
+    MapUserRange(VMM, CodePhysicalAddress, CodeVirtualAddressStart, CodePages * PAGE_SIZE, true);
+    MapUserRange(VMM, HeapPhysicalAddress, HeapVirtualAddressStart, HeapPages * PAGE_SIZE, true);
+    MapUserRange(VMM, StackPhysicalAddress, StackVirtualAddressStart, StackPages * PAGE_SIZE, true);
 
     SetPageMapL4TableAddr(PageMapL4TableAddr);
 
@@ -191,14 +191,14 @@ bool VirtualAddressSpaceELF::Init(uint64_t PageMapL4TableAddr, PhysicalMemoryMan
     for (size_t RegionIndex = 0; RegionIndex < MemoryRegionCount; ++RegionIndex)
     {
         const ELFMemoryRegion& Region = MemoryRegions[RegionIndex];
-        if (!MapUserRange(VMM, Region.PhysicalAddress, Region.VirtualAddress, Region.Size))
+        if (!MapUserRange(VMM, Region.PhysicalAddress, Region.VirtualAddress, Region.Size, Region.Writable))
         {
             return false;
         }
     }
 
-    if (!MapUserRange(VMM, GetHeapPhysicalAddress(), GetHeapVirtualAddressStart(), GetHeapSize()) ||
-        !MapUserRange(VMM, GetStackPhysicalAddress(), GetStackVirtualAddressStart(), GetStackSize()))
+    if (!MapUserRange(VMM, GetHeapPhysicalAddress(), GetHeapVirtualAddressStart(), GetHeapSize(), true) ||
+        !MapUserRange(VMM, GetStackPhysicalAddress(), GetStackVirtualAddressStart(), GetStackSize(), true))
     {
         return false;
     }

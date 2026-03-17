@@ -95,6 +95,23 @@ def _default_sync_manager():
     return sync_manager
 
 
+def _resolve_process_by_id(process_manager, process_id):
+    manager_obj = _dereference(process_manager)
+    processes = _field(manager_obj, "Processes")
+    process_count = processes.type.range()[1] + 1
+
+    for index in range(process_count):
+        process = processes[index]
+        if int(_field(process, "Id")) == process_id:
+            return process
+
+    raise gdb.GdbError("process with id {} not found".format(process_id))
+
+
+def _as_int(value):
+    return int(_dereference(value)) if _strip_typedefs(value.type).code == gdb.TYPE_CODE_REF else int(value)
+
+
 class ArxCommand(gdb.Command):
     def __init__(self, name):
         super().__init__(name, gdb.COMMAND_USER)
@@ -221,12 +238,108 @@ class ArxKernelHelpCommand(ArxCommand):
         gdb.write("  twistedos-processes [process_manager_expr]\n")
         gdb.write("  twistedos-ready-queue [scheduler_expr]\n")
         gdb.write("  twistedos-sleep-queue [sync_manager_expr]\n")
+        gdb.write("  twistedos-address-space <process_id> [process_manager_expr]\n")
         gdb.write("If no expression is provided, commands resolve objects from Dispatcher::ActiveDispatcher.\n")
+
+
+class ArxAddressSpaceCommand(ArxCommand):
+    def __init__(self):
+        super().__init__("twistedos-address-space")
+
+    def invoke(self, arg, from_tty):
+        args = [part for part in arg.split() if part]
+        if len(args) == 0:
+            raise gdb.GdbError("usage: twistedos-address-space <process_id> [process_manager_expr]")
+
+        process_id = _as_int(gdb.parse_and_eval(args[0]))
+        process_manager_expr = " ".join(args[1:])
+        process_manager = self._resolve_target(process_manager_expr, _default_process_manager)
+
+        process = _resolve_process_by_id(process_manager, process_id)
+        address_space = _field(process, "AddressSpace")
+
+        gdb.write(
+            "AddressSpace pid={} process_manager={} process_level={}\n".format(
+                process_id,
+                _pointer_string(process_manager),
+                int(_field(process, "Level")),
+            )
+        )
+
+        if int(address_space) == 0:
+            gdb.write("  <no address space>\n")
+            return
+
+        address_space_obj = _dereference(address_space)
+        dynamic_type = _strip_typedefs(address_space_obj.dynamic_type)
+        type_name = dynamic_type.name if dynamic_type.name else str(dynamic_type)
+
+        gdb.write("  type={} ptr={}\n".format(type_name, _pointer_string(address_space)))
+
+        code_pa = int(_field(address_space_obj, "CodePhysicalAddress"))
+        code_size = int(_field(address_space_obj, "CodeSize"))
+        code_va = int(_field(address_space_obj, "CodeVirtualAddressStart"))
+
+        heap_pa = int(_field(address_space_obj, "HeapPhysicalAddress"))
+        heap_size = int(_field(address_space_obj, "HeapSize"))
+        heap_va = int(_field(address_space_obj, "HeapVirtualAddressStart"))
+
+        stack_pa = int(_field(address_space_obj, "StackPhysicalAddress"))
+        stack_size = int(_field(address_space_obj, "StackSize"))
+        stack_va = int(_field(address_space_obj, "StackVirtualAddressStart"))
+
+        gdb.write("  code : pa=0x{:x} va=0x{:x} size=0x{:x}\n".format(code_pa, code_va, code_size))
+        gdb.write("  heap : pa=0x{:x} va=0x{:x} size=0x{:x}\n".format(heap_pa, heap_va, heap_size))
+        gdb.write("  stack: pa=0x{:x} va=0x{:x} size=0x{:x}\n".format(stack_pa, stack_va, stack_size))
+
+        if "VirtualAddressSpaceELF" not in type_name:
+            return
+
+        address_space_elf = _dereference(gdb.parse_and_eval("(VirtualAddressSpaceELF*)({})".format(int(address_space))))
+        memory_region_count = int(_field(address_space_elf, "MemoryRegionCount"))
+        memory_regions = _field(address_space_elf, "MemoryRegions")
+
+        gdb.write("  elf header:\n")
+        try:
+            header = _dereference(gdb.parse_and_eval("*(ELFHeader*)({})".format(code_pa)))
+            magic = [_as_int(header["Magic"][i]) for i in range(4)]
+            gdb.write(
+                "    magic={:02x} {:02x} {:02x} {:02x} entry=0x{:x} phoff=0x{:x} phnum={} machine=0x{:x}\n".format(
+                    magic[0],
+                    magic[1],
+                    magic[2],
+                    magic[3],
+                    int(header["Entry"]),
+                    int(header["ProgramHeaderOffset"]),
+                    int(header["ProgramHeaderEntryCount"]),
+                    int(header["Machine"]),
+                )
+            )
+        except Exception as error:
+            gdb.write("    <unavailable: {}>\n".format(error))
+
+        gdb.write("  elf memory regions (count={}):\n".format(memory_region_count))
+        if memory_region_count == 0:
+            gdb.write("    <none>\n")
+            return
+
+        for index in range(memory_region_count):
+            region = memory_regions[index]
+            gdb.write(
+                "    [{}] pa=0x{:x} va=0x{:x} size=0x{:x} writable={}\n".format(
+                    index,
+                    int(_field(region, "PhysicalAddress")),
+                    int(_field(region, "VirtualAddress")),
+                    int(_field(region, "Size")),
+                    "yes" if int(_field(region, "Writable")) else "no",
+                )
+            )
 
 
 ArxProcessesCommand()
 ArxReadyQueueCommand()
 ArxSleepQueueCommand()
+ArxAddressSpaceCommand()
 ArxKernelHelpCommand()
 
 gdb.write("Loaded TwistedOS GDB helpers. Run 'twistedos-help' for commands.\n")

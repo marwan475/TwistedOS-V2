@@ -292,7 +292,7 @@ bool RunMemoryTest(Dispatcher* ActiveDispatcher)
     {
         uint64_t TestVirtualAddr = (Resource->GetKernelHeapVirtualAddrEnd() + (512 * PAGE_SIZE)) & ~(PAGE_SIZE - 1);
 
-        bool Mapped = Resource->GetVMM()->MapPage(reinterpret_cast<uint64_t>(PhysicalForVirtualTest), TestVirtualAddr, false);
+        bool Mapped = Resource->GetVMM()->MapPage(reinterpret_cast<uint64_t>(PhysicalForVirtualTest), TestVirtualAddr, PageMappingFlags(false, true));
         if (Mapped)
         {
             bool Unmapped         = Resource->GetVMM()->UnmapPage(TestVirtualAddr);

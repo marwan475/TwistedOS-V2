@@ -5,7 +5,7 @@ VirtualMemoryManager::VirtualMemoryManager(UINTN PageMapL4TableAddr, PhysicalMem
 {
 }
 
-bool VirtualMemoryManager::MapPage(UINTN PhysicalAddr, UINTN VirtualAddr, bool UserAccess)
+bool VirtualMemoryManager::MapPage(UINTN PhysicalAddr, UINTN VirtualAddr, const PageMappingFlags& Flags)
 {
     VirtualAddress Vaddr;
     Vaddr.value = VirtualAddr;
@@ -30,12 +30,12 @@ bool VirtualMemoryManager::MapPage(UINTN PhysicalAddr, UINTN VirtualAddr, bool U
 
         PageDirectoryPointerTable.fields.present     = 1;
         PageDirectoryPointerTable.fields.writeable   = 1;
-        PageDirectoryPointerTable.fields.user_access = UserAccess;
+        PageDirectoryPointerTable.fields.user_access = Flags.UserAccess;
 
         PageMapL4Table[PageMapL4TableIndex] = PageDirectoryPointerTable;
         PmL4Entry                           = PageMapL4Table[PageMapL4TableIndex];
     }
-    else if (UserAccess && !PmL4Entry.fields.user_access)
+    else if (Flags.UserAccess && !PmL4Entry.fields.user_access)
     {
         PmL4Entry.fields.user_access        = 1;
         PageMapL4Table[PageMapL4TableIndex] = PmL4Entry;
@@ -57,12 +57,12 @@ bool VirtualMemoryManager::MapPage(UINTN PhysicalAddr, UINTN VirtualAddr, bool U
 
         PageDirectoryTable.fields.present     = 1;
         PageDirectoryTable.fields.writeable   = 1;
-        PageDirectoryTable.fields.user_access = UserAccess;
+        PageDirectoryTable.fields.user_access = Flags.UserAccess;
 
         PageDirectoryPointerTable[PageDirectoryPointerTableIndex] = PageDirectoryTable;
         PDPTEntry                                                 = PageDirectoryPointerTable[PageDirectoryPointerTableIndex];
     }
-    else if (UserAccess && !PDPTEntry.fields.user_access)
+    else if (Flags.UserAccess && !PDPTEntry.fields.user_access)
     {
         PDPTEntry.fields.user_access                              = 1;
         PageDirectoryPointerTable[PageDirectoryPointerTableIndex] = PDPTEntry;
@@ -84,12 +84,12 @@ bool VirtualMemoryManager::MapPage(UINTN PhysicalAddr, UINTN VirtualAddr, bool U
 
         PageTable.fields.present     = 1;
         PageTable.fields.writeable   = 1;
-        PageTable.fields.user_access = UserAccess;
+        PageTable.fields.user_access = Flags.UserAccess;
 
         PageDirectoryTable[PageDirectoryTableIndex] = PageTable;
         PDTEntry                                    = PageDirectoryTable[PageDirectoryTableIndex];
     }
-    else if (UserAccess && !PDTEntry.fields.user_access)
+    else if (Flags.UserAccess && !PDTEntry.fields.user_access)
     {
         PDTEntry.fields.user_access                 = 1;
         PageDirectoryTable[PageDirectoryTableIndex] = PDTEntry;
@@ -100,15 +100,15 @@ bool VirtualMemoryManager::MapPage(UINTN PhysicalAddr, UINTN VirtualAddr, bool U
     NewPTEntry.value           = PhysicalAddr & PHYS_PAGE_ADDR_MASK;
 
     NewPTEntry.fields.present     = 1;
-    NewPTEntry.fields.writeable   = 1;
-    NewPTEntry.fields.user_access = UserAccess;
+    NewPTEntry.fields.writeable   = Flags.Writeable;
+    NewPTEntry.fields.user_access = Flags.UserAccess;
 
     PageTable[PageTableIndex] = NewPTEntry;
 
     return true;
 }
 
-UINTN VirtualMemoryManager::MapRange(UINTN PhysicalAddr, UINTN VirtualAddr, UINTN Pages, bool UserAccess)
+UINTN VirtualMemoryManager::MapRange(UINTN PhysicalAddr, UINTN VirtualAddr, UINTN Pages, const PageMappingFlags& Flags)
 {
     UINTN RangeStartPhysical = PhysicalAddr & PHYS_PAGE_ADDR_MASK;
     UINTN RangeStartVirtual  = VirtualAddr & PHYS_PAGE_ADDR_MASK;
@@ -116,7 +116,7 @@ UINTN VirtualMemoryManager::MapRange(UINTN PhysicalAddr, UINTN VirtualAddr, UINT
     for (UINTN i = 0; i < Pages; i++)
     {
         UINTN Offset = i * PAGE_SIZE;
-        MapPage(RangeStartPhysical + Offset, RangeStartVirtual + Offset, UserAccess);
+        MapPage(RangeStartPhysical + Offset, RangeStartVirtual + Offset, Flags);
     }
 
     return RangeStartVirtual + (Pages * PAGE_SIZE);

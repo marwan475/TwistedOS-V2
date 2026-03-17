@@ -40,6 +40,17 @@ typedef union
     } __attribute__((__packed__)) fields;
 } PageTableEntry;
 
+struct PageMappingFlags
+{
+    bool UserAccess;
+    bool Writeable;
+
+    PageMappingFlags(bool UserAccess = false, bool Writeable = true)
+        : UserAccess(UserAccess), Writeable(Writeable)
+    {
+    }
+};
+
 class VirtualMemoryManager
 {
 private:
@@ -48,9 +59,9 @@ private:
 
 public:
     VirtualMemoryManager(UINTN PageMapL4TableAddr, PhysicalMemoryManager& PMM);
-    bool            MapPage(UINTN PhysicalAddr, UINTN VirtualAddr, bool UserAccess);
+    bool            MapPage(UINTN PhysicalAddr, UINTN VirtualAddr, const PageMappingFlags& Flags);
     bool            UnmapPage(UINTN VirtualAddr);
-    UINTN           MapRange(UINTN PhysicalAddr, UINTN VirtualAddr, UINTN Pages, bool UserAccess);
+    UINTN           MapRange(UINTN PhysicalAddr, UINTN VirtualAddr, UINTN Pages, const PageMappingFlags& Flags);
     UINTN           UnmapRange(UINTN VirtualAddr, UINTN Pages);
     PageTableEntry* CopyPageMapL4Table();
 };

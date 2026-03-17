@@ -89,7 +89,7 @@ extern "C"
 
         UINTN KernelHeapVirtualAddrStart = KERNEL_HEAP_START;
 
-        UINTN KernelHeapVirtualAddrEnd = VMM.MapRange((UINTN) KernelHeapPhysicalAddr, KernelHeapVirtualAddrStart, KERNEL_HEAP_PAGES, false);
+        UINTN KernelHeapVirtualAddrEnd = VMM.MapRange((UINTN) KernelHeapPhysicalAddr, KernelHeapVirtualAddrStart, KERNEL_HEAP_PAGES, PageMappingFlags(false, true));
         Console.printf_("Kernel heap mapped to virtual address range: %p - %p\n", KernelHeapVirtualAddrStart, KernelHeapVirtualAddrEnd);
 
         kmemset((void*) KernelHeapVirtualAddrStart, 0, KERNEL_HEAP_PAGES * PAGE_SIZE);

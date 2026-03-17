@@ -187,7 +187,7 @@ uint8_t LogicLayer::CreateUserProcess(uint64_t CodeAddr, uint64_t CodeSize)
 
     State.cs   = USER_CS;
     State.ss   = USER_SS;
-    uint8_t Id = PM->CreateUserProcess(reinterpret_cast<void*>(AddressSpace->GetStackPhysicalAddress()), State, AddressSpace);
+    uint8_t Id = PM->CreateUserProcess(reinterpret_cast<void*>(AddressSpace->GetStackVirtualAddressStart()), State, AddressSpace);
 
     if (Id != 0xFF)
     {
