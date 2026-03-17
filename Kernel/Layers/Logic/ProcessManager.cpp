@@ -24,7 +24,7 @@ void ReleaseProcessFileTable(Process& ProcessEntry)
         ProcessEntry.FileTable[FileIndex] = nullptr;
     }
 }
-}
+} // namespace
 
 /**
  * Function: ProcessManager::ProcessManager

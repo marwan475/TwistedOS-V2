@@ -14,6 +14,7 @@ constexpr int64_t LINUX_ERR_EFAULT = -14;
 constexpr int64_t LINUX_ERR_ENOENT = -2;
 constexpr int64_t LINUX_ERR_EMFILE = -24;
 constexpr int64_t LINUX_ERR_EINVAL = -22;
+constexpr int64_t LINUX_ERR_EBADF  = -9;
 
 constexpr uint64_t LINUX_O_ACCMODE = 0x3;
 
@@ -33,7 +34,7 @@ FileFlags DecodeAccessFlags(uint64_t Flags)
 
     return READ;
 }
-}
+} // namespace
 
 /**
  * Function: TranslationLayer::TranslationLayer
@@ -110,15 +111,50 @@ int64_t TranslationLayer::HandleOpenSystemCall(const char* Path, uint64_t Flags)
     {
         if (CurrentProcess->FileTable[FileDescriptor] == nullptr)
         {
-            File* NewFile              = new File;
-            NewFile->FileDescriptor    = FileDescriptor;
-            NewFile->Node              = NodeDentry->inode;
-            NewFile->CurrentOffset     = 0;
-            NewFile->AccessFlags       = DecodeAccessFlags(Flags);
+            File* NewFile                             = new File;
+            NewFile->FileDescriptor                   = FileDescriptor;
+            NewFile->Node                             = NodeDentry->inode;
+            NewFile->CurrentOffset                    = 0;
+            NewFile->AccessFlags                      = DecodeAccessFlags(Flags);
             CurrentProcess->FileTable[FileDescriptor] = NewFile;
             return static_cast<int64_t>(FileDescriptor);
         }
     }
 
     return LINUX_ERR_EMFILE;
+}
+
+int64_t TranslationLayer::HandleCloseSystemCall(uint64_t FileDescriptor)
+{
+    if (Logic == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    ProcessManager* PM = Logic->GetProcessManager();
+    if (PM == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    Process* CurrentProcess = PM->GetRunningProcess();
+    if (CurrentProcess == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    if (FileDescriptor >= MAX_OPEN_FILES_PER_PROCESS)
+    {
+        return LINUX_ERR_EBADF;
+    }
+
+    File* OpenFile = CurrentProcess->FileTable[FileDescriptor];
+    if (OpenFile == nullptr)
+    {
+        return LINUX_ERR_EBADF;
+    }
+
+    delete OpenFile;
+    CurrentProcess->FileTable[FileDescriptor] = nullptr;
+    return 0;
 }

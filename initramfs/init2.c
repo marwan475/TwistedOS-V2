@@ -4,6 +4,7 @@ enum LinuxSyscallNumber
 {
     LINUX_SYS_WRITE        = 1,
     LINUX_SYS_OPEN         = 2,
+    LINUX_SYS_CLOSE        = 3,
     LINUX_SYS_GETPID       = 39,
     LINUX_SYS_GETTID       = 186,
     LINUX_SYS_CLOCKGETTIME = 228,
@@ -87,6 +88,11 @@ static long test_open_missing_file(void)
     return syscall2(LINUX_SYS_OPEN, (u64) path, LINUX_O_RDONLY);
 }
 
+static long test_close_file(long fd)
+{
+    return syscall6(LINUX_SYS_CLOSE, (u64) fd, 0, 0, 0, 0, 0);
+}
+
 static __attribute__((noreturn)) void linux_exit(int code)
 {
     (void) syscall6(LINUX_SYS_EXIT, (u64) code, 0, 0, 0, 0, 0);
@@ -101,11 +107,17 @@ void _start()
 {
     volatile long open_existing_fd    = test_open_existing_file();
     volatile long open_missing_result = test_open_missing_file();
+    volatile long close_result         = -1;
+    volatile long double_close_result  = -1;
 
-    static const char open_success_message[] = "open('/init2') passed\n";
-    static const char open_failure_message[] = "open('/init2') failed\n";
+    static const char open_success_message[]   = "open('/init2') passed\n";
+    static const char open_failure_message[]   = "open('/init2') failed\n";
     static const char enoent_success_message[] = "open('/no_such_file') returned -ENOENT\n";
     static const char enoent_failure_message[] = "open('/no_such_file') unexpected result\n";
+    static const char close_success_message[]  = "close(fd) returned 0\n";
+    static const char close_failure_message[]  = "close(fd) failed\n";
+    static const char ebadf_success_message[]  = "close(fd again) returned -EBADF\n";
+    static const char ebadf_failure_message[]  = "close(fd again) unexpected result\n";
 
     if (open_existing_fd >= 0)
     {
@@ -125,8 +137,34 @@ void _start()
         (void) write_text(enoent_failure_message, sizeof(enoent_failure_message) - 1);
     }
 
+    if (open_existing_fd >= 0)
+    {
+        close_result        = test_close_file(open_existing_fd);
+        double_close_result = test_close_file(open_existing_fd);
+
+        if (close_result == 0)
+        {
+            (void) write_text(close_success_message, sizeof(close_success_message) - 1);
+        }
+        else
+        {
+            (void) write_text(close_failure_message, sizeof(close_failure_message) - 1);
+        }
+
+        if (double_close_result == -9)
+        {
+            (void) write_text(ebadf_success_message, sizeof(ebadf_success_message) - 1);
+        }
+        else
+        {
+            (void) write_text(ebadf_failure_message, sizeof(ebadf_failure_message) - 1);
+        }
+    }
+
     (void) open_existing_fd;
     (void) open_missing_result;
+    (void) close_result;
+    (void) double_close_result;
 
     linux_exit(0);
 }
