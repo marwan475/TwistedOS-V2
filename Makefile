@@ -70,6 +70,7 @@ INIT2_SRC = initramfs/init2.c
 INIT2_OBJ = $(BUILD)initramfs_init2.o
 INIT2_ELF = $(BUILD)initramfs_init2.elf
 INIT2_BIN = $(ROOTFS_DIR)/init2
+INIT2_CC = gcc
 INIT_CFLAGS = \
 	-ffreestanding \
 	-fno-pic \
@@ -155,10 +156,8 @@ $(INIT_BIN): $(INIT_SRC) $(INIT_LD) | build
 	$(KERNEL_LD) -nostdlib -static -T $(INIT_LD) $(INIT_OBJ) -o $(INIT_ELF)
 	objcopy -O binary $(INIT_ELF) $(INIT_BIN)
 
-$(INIT2_BIN): $(INIT2_SRC) $(INIT_LD) | build
-	$(KERNEL_CC) $(INIT_CFLAGS) -x c -c $(INIT2_SRC) -o $(INIT2_OBJ)
-	$(KERNEL_LD) -nostdlib -static -T $(INIT_LD) $(INIT2_OBJ) -o $(INIT2_ELF)
-	cp $(INIT2_ELF) $(INIT2_BIN)
+$(INIT2_BIN): $(INIT2_SRC) | build
+	$(INIT2_CC) -static -nostdlib -fno-pie -no-pie -fno-stack-protector -fno-stack-clash-protection -Wl,-e,_start $(INIT2_SRC) -o $(INIT2_BIN)
 
 $(INITRAMFS): $(INIT_BIN) $(INIT2_BIN)
 	chmod +x $(INIT_BIN) $(INIT2_BIN)

@@ -1,5 +1,20 @@
 typedef unsigned long u64;
 
+enum LinuxSyscallNumber
+{
+    LINUX_SYS_WRITE        = 1,
+    LINUX_SYS_GETPID       = 39,
+    LINUX_SYS_GETTID       = 186,
+    LINUX_SYS_CLOCKGETTIME = 228,
+    LINUX_SYS_EXIT         = 60,
+};
+
+struct LinuxTimespec
+{
+    long tv_sec;
+    long tv_nsec;
+};
+
 static inline long syscall6(u64 number, u64 arg1, u64 arg2, u64 arg3, u64 arg4, u64 arg5, u64 arg6)
 {
     register u64 r10 __asm__("r10") = arg4;
@@ -15,32 +30,64 @@ static inline long syscall6(u64 number, u64 arg1, u64 arg2, u64 arg3, u64 arg4, 
     return result;
 }
 
-static long test_syscall_alpha(void)
+static inline long syscall0(u64 number)
 {
-    return syscall6(2, 111, 222, 333, 444, 555, 456);
+    return syscall6(number, 0, 0, 0, 0, 0, 0);
 }
 
-static long test_syscall_beta(void)
+static inline long syscall2(u64 number, u64 arg1, u64 arg2)
 {
-    return syscall6(7, 10, 20, 30, 40, 50, 60);
+    return syscall6(number, arg1, arg2, 0, 0, 0, 0);
 }
 
-static long test_syscall_gamma(void)
+static inline long syscall3(u64 number, u64 arg1, u64 arg2, u64 arg3)
 {
-    return syscall6(12, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF);
+    return syscall6(number, arg1, arg2, arg3, 0, 0, 0);
 }
 
-void _start()
+static long test_write_banner(void)
 {
-    volatile long result_alpha = test_syscall_alpha();
-    volatile long result_beta = test_syscall_beta();
-    volatile long result_gamma = test_syscall_gamma();
-    (void)result_alpha;
-    (void)result_beta;
-    (void)result_gamma;
+    static const char message[] = "init2 linux static syscall smoke\n";
+    return syscall3(LINUX_SYS_WRITE, 1, (u64)message, sizeof(message) - 1);
+}
+
+static long test_getpid(void)
+{
+    return syscall0(LINUX_SYS_GETPID);
+}
+
+static long test_gettid(void)
+{
+    return syscall0(LINUX_SYS_GETTID);
+}
+
+static long test_clock_gettime(void)
+{
+    struct LinuxTimespec ts;
+    return syscall2(LINUX_SYS_CLOCKGETTIME, 0, (u64)&ts);
+}
+
+static __attribute__((noreturn)) void linux_exit(int code)
+{
+    (void)syscall6(LINUX_SYS_EXIT, (u64)code, 0, 0, 0, 0, 0);
 
     while (1)
     {
         __asm__ __volatile__("pause");
     }
+}
+
+void _start()
+{
+    volatile long write_result = test_write_banner();
+    volatile long pid_result   = test_getpid();
+    volatile long tid_result   = test_gettid();
+    volatile long time_result  = test_clock_gettime();
+
+    (void)write_result;
+    (void)pid_result;
+    (void)tid_result;
+    (void)time_result;
+
+    linux_exit(0);
 }
