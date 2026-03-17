@@ -70,5 +70,6 @@ public:
     VirtualFileSystem();
     ~VirtualFileSystem();
     void MountInitRamFileSystem(RamFileSystemManager* ramFileSystemManager);
+    Dentry* Lookup(const char* path);
     void PrintVFS(FrameBufferConsole* Console);
 };

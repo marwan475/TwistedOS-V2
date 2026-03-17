@@ -308,6 +308,58 @@ uint8_t LogicLayer::CreateKernelProcess(void (*EntryPoint)())
 }
 
 /**
+ * Function: LogicLayer::CreateUserProcessFromVFS
+ * Description: Looks up a file in the VFS by path and creates a user process from its image.
+ * Parameters:
+ *   const char* FilePath - VFS path to the executable file.
+ * Returns:
+ *   uint8_t - Process ID or 0xFF on failure.
+ */
+uint8_t LogicLayer::CreateUserProcessFromVFS(const char* FilePath)
+{
+    if (VFS == nullptr || FilePath == nullptr || Resource == nullptr)
+    {
+        return PROCESS_ID_INVALID;
+    }
+
+    Dentry* Entry = VFS->Lookup(FilePath);
+    if (Entry == nullptr || Entry->inode == nullptr)
+    {
+        return PROCESS_ID_INVALID;
+    }
+
+    if (Entry->inode->NodeType != INODE_FILE)
+    {
+        return PROCESS_ID_INVALID;
+    }
+
+    if (Entry->inode->NodeData == nullptr || Entry->inode->NodeSize == 0)
+    {
+        return PROCESS_ID_INVALID;
+    }
+
+    uint64_t CodeSize = Entry->inode->NodeSize;
+    uint64_t Pages    = (CodeSize + PAGE_SIZE - 1) / PAGE_SIZE;
+
+    void* CopiedImage = Resource->GetPMM()->AllocatePagesFromDescriptor(Pages);
+    if (CopiedImage == nullptr)
+    {
+        return PROCESS_ID_INVALID;
+    }
+
+    kmemset(CopiedImage, 0, Pages * PAGE_SIZE);
+    memcpy(CopiedImage, Entry->inode->NodeData, CodeSize);
+
+    uint8_t ProcessId = CreateUserProcess(reinterpret_cast<uint64_t>(CopiedImage), CodeSize);
+    if (ProcessId == PROCESS_ID_INVALID)
+    {
+        Resource->GetPMM()->FreePagesFromDescriptor(CopiedImage, Pages);
+    }
+
+    return ProcessId;
+}
+
+/**
  * Function: LogicLayer::CreateUserProcess
  * Description: Creates a user process from raw binary or ELF image and schedules it.
  * Parameters:

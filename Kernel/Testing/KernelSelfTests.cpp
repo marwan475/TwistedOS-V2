@@ -8,7 +8,6 @@
 
 #include <CommonUtils.hpp>
 #include <Layers/Dispatcher.hpp>
-#include <Layers/Logic/ELFManager.hpp>
 
 void KernelValidatorTask();
 
@@ -111,35 +110,6 @@ KernelSelfTestState State = {
         false,
         false,
 };
-
-uint8_t CreateUserProcessFromInitramfs(Dispatcher* ActiveDispatcher, const char* Path, bool RequireElfImage);
-
-/**
- * Function: ValidateImageAsElf
- * Description: Parses and validates an in-memory image as an ELF binary.
- * Parameters:
- *   Dispatcher* ActiveDispatcher - Dispatcher used to access the ELF manager.
- *   const void* Data - Pointer to the in-memory image data.
- *   uint64_t Size - Size of the image data in bytes.
- * Returns:
- *   bool - true if the image is a valid ELF file; otherwise false.
- */
-bool ValidateImageAsElf(Dispatcher* ActiveDispatcher, const void* Data, uint64_t Size)
-{
-    if (ActiveDispatcher == nullptr || Data == nullptr || Size < sizeof(ELFHeader))
-    {
-        return false;
-    }
-
-    ELFManager* ElfManager = ActiveDispatcher->GetLogicLayer()->GetELFManager();
-    if (ElfManager == nullptr)
-    {
-        return false;
-    }
-
-    ELFHeader Header = ElfManager->ParseELF(reinterpret_cast<uint64_t>(Data));
-    return ElfManager->ValidateELF(Header);
-}
 
 /**
  * Function: RequireDispatcher
@@ -505,62 +475,21 @@ bool SetupMultitaskingTest(Dispatcher* ActiveDispatcher)
 
     for (uint32_t index = 0; index < USER_PROCESS_INSTANCE_COUNT; ++index)
     {
-        if (CreateUserProcessFromInitramfs(ActiveDispatcher, "/init", false) == INVALID_PROCESS_ID)
+        uint8_t InitPid = ActiveDispatcher->GetLogicLayer()->CreateUserProcessFromVFS("/init");
+        if (InitPid == INVALID_PROCESS_ID)
         {
             return false;
         }
+        RegisterTestProcess(InitPid);
 
-        if (CreateUserProcessFromInitramfs(ActiveDispatcher, "/init2", true) == INVALID_PROCESS_ID)
+        uint8_t Init2Pid = ActiveDispatcher->GetLogicLayer()->CreateUserProcessFromVFS("/init2");
+        if (Init2Pid == INVALID_PROCESS_ID)
         {
             return false;
         }
+        RegisterTestProcess(Init2Pid);
     }
     return true;
-}
-
-/**
- * Function: CreateUserProcessFromInitramfs
- * Description: Loads a user image from initramfs, validates format policy, and creates a user process.
- * Parameters:
- *   Dispatcher* ActiveDispatcher - Dispatcher used for file loading, logging, and process creation.
- *   const char* Path - Initramfs path to the user image.
- *   bool RequireElfImage - Whether image must validate as ELF before process creation.
- * Returns:
- *   uint8_t - Created process ID, or INVALID_PROCESS_ID on failure.
- */
-uint8_t CreateUserProcessFromInitramfs(Dispatcher* ActiveDispatcher, const char* Path, bool RequireElfImage)
-{
-    uint64_t FileSize = 0;
-    void*    FileData = ActiveDispatcher->GetResourceLayer()->LoadFileFromInitramfs(Path, &FileSize);
-
-    if (FileData == nullptr || FileSize == 0)
-    {
-        ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("[SelfTest] [UserCreate] load failed path=%s size=%llu\n", Path, (unsigned long long) FileSize);
-        return INVALID_PROCESS_ID;
-    }
-
-    bool ElfImage = ValidateImageAsElf(ActiveDispatcher, FileData, FileSize);
-    ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("[SelfTest] [UserCreate] image path=%s size=%llu format=%s expected=%s\n", Path, (unsigned long long) FileSize,
-                                                                ElfImage ? "elf" : "raw-binary", RequireElfImage ? "elf" : "raw-or-elf");
-
-    if (RequireElfImage && !ElfImage)
-    {
-        ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("[SelfTest] [UserCreate] rejected non-elf image path=%s\n", Path);
-        return INVALID_PROCESS_ID;
-    }
-
-    uint8_t UserProcessId = ActiveDispatcher->GetLogicLayer()->CreateUserProcess(reinterpret_cast<uint64_t>(FileData), static_cast<uint64_t>(FileSize));
-    if (UserProcessId == INVALID_PROCESS_ID)
-    {
-        ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("[SelfTest] [UserCreate] create user process failed path=%s\n", Path);
-        return INVALID_PROCESS_ID;
-    }
-
-    ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("[SelfTest] [UserCreate] created user process path=%s pid=%u\n", Path, (unsigned) UserProcessId);
-
-    RegisterTestProcess(UserProcessId);
-
-    return UserProcessId;
 }
 
 } // namespace

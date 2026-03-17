@@ -574,6 +574,61 @@ void VirtualFileSystem::MountInitRamFileSystem(RamFileSystemManager* ramFileSyst
 }
 
 /**
+ * Function: Lookup
+ * Description: Resolves a path to its corresponding dentry in the mounted VFS tree.
+ * Parameters:
+ *   const char* path - Path to resolve.
+ * Returns:
+ *   Dentry* - Matching dentry pointer, or nullptr when not found.
+ */
+Dentry* VirtualFileSystem::Lookup(const char* path)
+{
+	if (Root == nullptr || path == nullptr)
+	{
+		return nullptr;
+	}
+
+	const char* NormalizedPath = NormalizePathStart(path);
+	if (IsRootAliasPath(NormalizedPath))
+	{
+		return Root;
+	}
+
+	Dentry* Current             = Root;
+	const char* SegmentStart    = NormalizedPath;
+
+	while (*SegmentStart != STRING_TERMINATOR)
+	{
+		while (*SegmentStart == PATH_SEPARATOR)
+		{
+			++SegmentStart;
+		}
+
+		if (*SegmentStart == STRING_TERMINATOR)
+		{
+			break;
+		}
+
+		const char* SegmentEnd = SegmentStart;
+		while (*SegmentEnd != STRING_TERMINATOR && *SegmentEnd != PATH_SEPARATOR)
+		{
+			++SegmentEnd;
+		}
+
+		uint64_t SegmentLength = static_cast<uint64_t>(SegmentEnd - SegmentStart);
+		Current                = FindChildBySegment(Current, SegmentStart, SegmentLength);
+		if (Current == nullptr)
+		{
+			return nullptr;
+		}
+
+		SegmentStart = SegmentEnd;
+	}
+
+	return Current;
+}
+
+/**
  * Function: PrintVFS
  * Description: Prints the currently mounted VFS tree to the provided console.
  * Parameters:
