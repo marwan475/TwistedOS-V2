@@ -31,6 +31,7 @@ public:
     void Initialize(ResourceLayer* Resource);
 
     ResourceLayer* GetResourceLayer() const;
+    ELFManager*    GetELFManger() const;
     void           InitializeProcessManager();
     void           InitializeScheduler();
     void           InitializeSynchronizationManager();

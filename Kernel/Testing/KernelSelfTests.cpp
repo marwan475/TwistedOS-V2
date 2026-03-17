@@ -63,6 +63,8 @@ struct KernelSelfTestState
     bool MemoryVirtualOk;
     bool MemoryPhysicalOk;
     bool MemoryHeapOk;
+    bool UserCreationResultLogged;
+    bool MultitaskSleepResultLogged;
 
     uint32_t TestsPassed;
     uint32_t TestsFailed;
@@ -92,6 +94,8 @@ KernelSelfTestState State = {
         false,
         false,
         false,
+        false,
+        false,
         0,
         0,
         false,
@@ -102,16 +106,21 @@ KernelSelfTestState State = {
 
 uint8_t CreateUserProcessFromInitramfs(Dispatcher* ActiveDispatcher, const char* Path, bool RequireElfImage);
 
-bool ValidateImageAsElf(const void* Data, uint64_t Size)
+bool ValidateImageAsElf(Dispatcher* ActiveDispatcher, const void* Data, uint64_t Size)
 {
-    if (Data == nullptr || Size < sizeof(ELFHeader))
+    if (ActiveDispatcher == nullptr || Data == nullptr || Size < sizeof(ELFHeader))
     {
         return false;
     }
 
-    ELFManager ElfManager = {};
-    ELFHeader  Header     = ElfManager.ParseELF(reinterpret_cast<uint64_t>(Data));
-    return ElfManager.ValidateELF(Header);
+    ELFManager* ElfManager = ActiveDispatcher->GetLogicLayer()->GetELFManger();
+    if (ElfManager == nullptr)
+    {
+        return false;
+    }
+
+    ELFHeader Header = ElfManager->ParseELF(reinterpret_cast<uint64_t>(Data));
+    return ElfManager->ValidateELF(Header);
 }
 
 Dispatcher* RequireDispatcher()
@@ -158,6 +167,8 @@ void ResetMultitaskCounters()
     State.SyscallOneCount                 = 0;
     State.SyscallTwoCount                 = 0;
     State.NextMultitaskProgressBurstLoops = 200;
+    State.UserCreationResultLogged        = false;
+    State.MultitaskSleepResultLogged      = false;
 }
 
 void KernelSleepFastTask()
@@ -370,28 +381,28 @@ uint8_t CreateUserProcessFromInitramfs(Dispatcher* ActiveDispatcher, const char*
 
     if (FileData == nullptr || FileSize == 0)
     {
-        ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("[SelfTest] [ELF] load failed path=%s size=%llu\n", Path, (unsigned long long) FileSize);
+        ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("[SelfTest] [UserCreate] load failed path=%s size=%llu\n", Path, (unsigned long long) FileSize);
         return INVALID_PROCESS_ID;
     }
 
-    bool ElfImage = ValidateImageAsElf(FileData, FileSize);
-    ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("[SelfTest] [ELF] image path=%s size=%llu magic=%s expected=%s\n", Path, (unsigned long long) FileSize,
-                                                                ElfImage ? "elf" : "non-elf", RequireElfImage ? "elf" : "any");
+    bool ElfImage = ValidateImageAsElf(ActiveDispatcher, FileData, FileSize);
+    ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("[SelfTest] [UserCreate] image path=%s size=%llu format=%s expected=%s\n", Path, (unsigned long long) FileSize,
+                                                                ElfImage ? "elf" : "raw-binary", RequireElfImage ? "elf" : "raw-or-elf");
 
     if (RequireElfImage && !ElfImage)
     {
-        ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("[SelfTest] [ELF] rejected non-elf image path=%s\n", Path);
+        ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("[SelfTest] [UserCreate] rejected non-elf image path=%s\n", Path);
         return INVALID_PROCESS_ID;
     }
 
     uint8_t UserProcessId = ActiveDispatcher->GetLogicLayer()->CreateUserProcess(reinterpret_cast<uint64_t>(FileData), static_cast<uint64_t>(FileSize));
     if (UserProcessId == INVALID_PROCESS_ID)
     {
-        ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("[SelfTest] [ELF] create user process failed path=%s\n", Path);
+        ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("[SelfTest] [UserCreate] create user process failed path=%s\n", Path);
         return INVALID_PROCESS_ID;
     }
 
-    ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("[SelfTest] [ELF] created user process path=%s pid=%u\n", Path, (unsigned) UserProcessId);
+    ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("[SelfTest] [UserCreate] created user process path=%s pid=%u\n", Path, (unsigned) UserProcessId);
 
     RegisterTestProcess(UserProcessId);
 
@@ -452,7 +463,8 @@ void KernelValidatorTask()
     // Validator owns the test lifecycle and can be extended to run more suites
     // in sequence. It intentionally drives setup/monitor/teardown centrally.
     Dispatcher* ActiveDispatcher = RequireDispatcher();
-    ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("[SelfTest] start\n");
+    ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("[SelfTest] suite start: validator process running and monitoring test cases\n");
+    ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("[SelfTest] test cases: Memory | ELF and Raw Binary User creation (syscall validation) | Multitasking and Sleep\n");
 
     while (1)
     {
@@ -478,16 +490,19 @@ void KernelValidatorTask()
 
             case SELF_TEST_PHASE_MULTITASK_SETUP:
             {
-                // Spawn all runtime actors needed to stress scheduler behavior.
-                ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("[SelfTest] [Multitask] test started\n");
+                // Spawn runtime actors for user-process creation and scheduling checks.
+                ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_(
+                        "[SelfTest] [ELF and Raw Binary User creation] test started (includes syscall instruction validation)\n");
+                ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("[SelfTest] [Multitasking and Sleep] test started\n");
                 if (!SetupMultitaskingTest(ActiveDispatcher))
                 {
-                    LogTestResult(ActiveDispatcher, "Multitask", false);
+                    LogTestResult(ActiveDispatcher, "ELF and Raw Binary User creation", false);
+                    LogTestResult(ActiveDispatcher, "Multitasking and Sleep", false);
                     State.Phase = SELF_TEST_PHASE_FAILED;
                     break;
                 }
 
-                ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("[SelfTest] [Multitask] monitoring: burst target=%llu\n", (unsigned long long) BURST_MIN_LOOPS);
+                ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("[SelfTest] [Multitasking and Sleep] monitoring: burst target=%llu\n", (unsigned long long) BURST_MIN_LOOPS);
 
                 State.Phase = SELF_TEST_PHASE_MULTITASK_MONITOR;
             }
@@ -499,20 +514,34 @@ void KernelValidatorTask()
                 if (State.BurstLoops >= State.NextMultitaskProgressBurstLoops)
                 {
                     ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_(
-                            "[SelfTest] [Multitask] progress: fast=%llu medium=%llu slow=%llu burst=%llu/%llu syscall1=%llu/%u syscall2=%llu/%u\n", (unsigned long long) State.FastCycles,
+                            "[SelfTest] [Multitasking and Sleep] progress: fast=%llu medium=%llu slow=%llu burst=%llu/%llu syscall1=%llu/%u syscall2=%llu/%u\n",
+                            (unsigned long long) State.FastCycles,
                             (unsigned long long) State.MediumCycles, (unsigned long long) State.SlowCycles, (unsigned long long) State.BurstLoops, (unsigned long long) BURST_MIN_LOOPS,
                             (unsigned long long) State.SyscallOneCount, (unsigned) USER_PROCESS_INSTANCE_COUNT, (unsigned long long) State.SyscallTwoCount, (unsigned) USER_PROCESS_INSTANCE_COUNT);
 
                     State.NextMultitaskProgressBurstLoops += 200;
                 }
 
-                if (KernelChecksPassed() && UserChecksPassed())
+                if (UserChecksPassed() && !State.UserCreationResultLogged)
                 {
-                    LogTestResult(ActiveDispatcher, "Multitask", true);
-                    ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("[SelfTest] multitask details: fast=%llu medium=%llu slow=%llu burst=%llu syscall1=%llu syscall2=%llu\n",
-                                                                                (unsigned long long) State.FastCycles, (unsigned long long) State.MediumCycles, (unsigned long long) State.SlowCycles,
-                                                                                (unsigned long long) State.BurstLoops, (unsigned long long) State.SyscallOneCount,
+                    LogTestResult(ActiveDispatcher, "ELF and Raw Binary User creation", true);
+                    ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("[SelfTest] syscall instruction validation: syscall1=%llu syscall2=%llu\n",
+                                                                                (unsigned long long) State.SyscallOneCount,
                                                                                 (unsigned long long) State.SyscallTwoCount);
+                    State.UserCreationResultLogged = true;
+                }
+
+                if (KernelChecksPassed() && !State.MultitaskSleepResultLogged)
+                {
+                    LogTestResult(ActiveDispatcher, "Multitasking and Sleep", true);
+                    ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("[SelfTest] multitasking and sleep details: fast=%llu medium=%llu slow=%llu burst=%llu\n",
+                                                                                (unsigned long long) State.FastCycles, (unsigned long long) State.MediumCycles,
+                                                                                (unsigned long long) State.SlowCycles, (unsigned long long) State.BurstLoops);
+                    State.MultitaskSleepResultLogged = true;
+                }
+
+                if (State.UserCreationResultLogged && State.MultitaskSleepResultLogged)
+                {
                     KillAllTestProcessesExceptValidator(ActiveDispatcher);
                     State.Passed = true;
                     State.Phase  = SELF_TEST_PHASE_COMPLETE;

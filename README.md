@@ -58,6 +58,14 @@ Developed
     - Debug print to Qemu serial (make DEBUG=1)
     - debug kernel source using gdb (make debug)
     - gdb extention to view important kernel structures
+- Testing
+    - Kernel has a self test suite that creates a process that runs and monitors various test cases
+    - Test Cases
+        - Memory
+        - ELF and Raw Binary User creation
+            - syscall instruction validation
+        - Multitasking and Sleep
+
 
 
 

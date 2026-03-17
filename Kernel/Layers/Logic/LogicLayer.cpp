@@ -59,6 +59,11 @@ ResourceLayer* LogicLayer::GetResourceLayer() const
     return Resource;
 }
 
+ELFManager* LogicLayer::GetELFManger() const
+{
+    return ELF;
+}
+
 void LogicLayer::InitializeProcessManager()
 {
     if (PM != nullptr)
