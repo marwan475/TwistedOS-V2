@@ -156,4 +156,5 @@ make format
 - https://wiki.osdev.org/Model_Specific_Registers
 - https://wiki.osdev.org/ELF
 - https://wiki.osdev.org/Exceptions
+- https://www.kernel.org/doc/html/v5.4/filesystems/vfs.html
 - CMPT 432 Advanced Operating Systems
