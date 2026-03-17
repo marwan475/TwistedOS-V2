@@ -60,6 +60,9 @@ TwistedOS currently boots through UEFI into a higher-half x86_64 kernel with phy
             - Sleeps processes for a certain amount of timer ticks
         - Creates `ELFManager`
             - Used to parse and map ELFs to user virtual address space
+        - VirtualFileSystem
+            - Mounts on initramfs
+            - Ability to execute binary from vfs (Create user process from vfs)
     - Translation layer
         - TODO: how user processes will interact with the kernel
         - Translates user requests and system calls to kernel services
