@@ -252,10 +252,12 @@ extern "C" void ISRHANDLER(Registers* reg)
             uint64_t FaultAddress = 0;
             __asm__ __volatile__("mov %%cr2, %0" : "=r"(FaultAddress));
 
-            FrameBufferConsole* ActiveConsole = FrameBufferConsole::GetActive();
-            if (ActiveConsole != nullptr)
+            Dispatcher*        ActiveDispatcher = Dispatcher::GetActive();
+            if (ActiveDispatcher != nullptr)
             {
-                ActiveConsole->printf_("Page fault: cr2=%p rip=%p err=%p cs=%p rsp=%p\n", (void*) FaultAddress, (void*) reg->rip, (void*) reg->error_code, (void*) reg->cs, (void*) reg->rsp);
+
+        
+                ActiveDispatcher->GetResourceLayer()->GetTTY()->printf_("Page fault: cr2=%p rip=%p err=%p cs=%p rsp=%p\n", (void*) FaultAddress, (void*) reg->rip, (void*) reg->error_code, (void*) reg->cs, (void*) reg->rsp);
             }
 
             while (1)

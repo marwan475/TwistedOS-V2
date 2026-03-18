@@ -4,7 +4,7 @@ The goal is to build a semi-POSIX-compliant x86_64 operating system.
 
 ## Summary
 
-TwistedOS currently boots through UEFI into a higher-half x86_64 kernel with physical and virtual memory management, process scheduling, sleep support, and user-process address-space isolation with syscall instruction support. It can load and run ELF binaries from the VirtualFileSystem mounted on initramfs, with a kernel self-test suite and QEMU/GDB-based debug tooling for validation and inspection.
+X86_64 OS that boots via UEFI into a higher-half kernel with PMM, VMM, scheduling, sleep, isolated user address spaces, ELF loading from initramfs-backed VFS, and a layered kernel architecture of a dispatcher thats called on all entrypoints to the kernel and routes reqeust to translation layer → logic layer → resource layer.
 
 ## Developed
 
@@ -63,9 +63,16 @@ TwistedOS currently boots through UEFI into a higher-half x86_64 kernel with phy
         - VirtualFileSystem
             - Mounts on initramfs
             - Ability to execute binary from vfs (Create user process from vfs)
+            - Register devices in vfs (/dev)
     - Translation layer
-        - TODO: how user processes will interact with the kernel
         - Translates user requests and system calls to kernel services
+        - POSIX request translations
+            - Implemented syscalls
+                - open
+                - close
+                - read
+                - write
+                - execve
 - Debug support
     - Debug print to QEMU serial (`make DEBUG=1`)
     - Debug kernel source using GDB (`make debug`)
@@ -160,4 +167,5 @@ make format
 - https://wiki.osdev.org/ELF
 - https://wiki.osdev.org/Exceptions
 - https://www.kernel.org/doc/html/v5.4/filesystems/vfs.html
+- https://man7.org/linux/man-pages/
 - CMPT 432 Advanced Operating Systems

@@ -73,6 +73,10 @@ INIT2_OBJ = $(BUILD)initramfs_init2.o
 INIT2_ELF = $(BUILD)initramfs_init2.elf
 INIT2_BIN = $(ROOTFS_DIR)/init2
 INIT2_CC = gcc
+TEST1_SRC = initramfs/Test1.c
+TEST1_BIN = $(ROOTFS_DIR)/Test1
+TEST2_SRC = initramfs/Test2.c
+TEST2_BIN = $(ROOTFS_DIR)/Test2
 INIT_CFLAGS = \
 	-ffreestanding \
 	-fno-pic \
@@ -113,7 +117,7 @@ QEMU_FULL = \
 all: bin build $(EFI) $(KERNEL) $(INITRAMFS) $(IMG) $(DRIVE)
 
 clean:
-	rm -rf $(BIN) $(BUILD) $(OUTPUT) *.pcap $(INIT_BIN) $(INIT2_BIN)
+	rm -rf $(BIN) $(BUILD) $(OUTPUT) *.pcap $(INIT_BIN) $(INIT2_BIN) $(TEST1_BIN) $(TEST2_BIN)
 
 build:
 	mkdir $(BUILD)
@@ -166,8 +170,14 @@ $(INIT_BIN): $(INIT_SRC) $(INIT_LD) | build
 $(INIT2_BIN): $(INIT2_SRC) | build
 	$(INIT2_CC) -static -nostdlib -fno-pie -no-pie -fno-stack-protector -fno-stack-clash-protection -Wl,-e,_start $(INIT2_SRC) -o $(INIT2_BIN)
 
-$(INITRAMFS): $(INIT_BIN) $(INIT2_BIN)
-	chmod +x $(INIT_BIN) $(INIT2_BIN)
+$(TEST1_BIN): $(TEST1_SRC) | build
+	$(INIT2_CC) -static -nostdlib -fno-pie -no-pie -fno-stack-protector -fno-stack-clash-protection -Wl,-e,_start $(TEST1_SRC) -o $(TEST1_BIN)
+
+$(TEST2_BIN): $(TEST2_SRC) | build
+	$(INIT2_CC) -static -nostdlib -fno-pie -no-pie -fno-stack-protector -fno-stack-clash-protection -Wl,-e,_start $(TEST2_SRC) -o $(TEST2_BIN)
+
+$(INITRAMFS): $(INIT_BIN) $(INIT2_BIN) $(TEST1_BIN) $(TEST2_BIN)
+	chmod +x $(INIT_BIN) $(INIT2_BIN) $(TEST1_BIN) $(TEST2_BIN)
 	(cd $(ROOTFS_DIR) && find . -print | cpio -o -H newc) > $(BIN)$@
 
 $(IMG): $(EFI) $(KERNEL) $(INITRAMFS)
@@ -197,7 +207,7 @@ $(DRIVE):
 	fi
 
 
-qemu: all
+qemu: 
 	$(QEMU) $(QEMU_FULL)
 
 qemu-debug qemu-basic-debug gdb-kernel debug: DEBUG=1
@@ -210,7 +220,7 @@ qemu-debug: all
 		-gdb tcp::$(QEMU_GDB_PORT) \
 		-S -no-reboot -no-shutdown
 
-qemu-basic: all
+qemu-basic: 
 	$(QEMU) $(QEMU_COMMON)
 
 qemu-basic-debug: all

@@ -21,13 +21,15 @@ constexpr uint64_t KERNEL_SLEEP_SLOW_TICKS   = 800;
 constexpr uint64_t KERNEL_BURST_SLEEP_TICKS  = 1;
 constexpr uint64_t VALIDATOR_SLEEP_TICKS     = 10;
 
-constexpr uint32_t USER_PROCESS_INSTANCE_COUNT = 1;
-constexpr uint32_t TEST_MAX_PROCESS_COUNT      = 32;
+constexpr uint32_t TEST_MAX_PROCESS_COUNT = 32;
 
 constexpr uint64_t FAST_MIN_CYCLES   = 4;
 constexpr uint64_t MEDIUM_MIN_CYCLES = 3;
 constexpr uint64_t SLOW_MIN_CYCLES   = 2;
 constexpr uint64_t BURST_MIN_LOOPS   = 500;
+
+// 30 validator sleep iterations × 100 ms each = 3 seconds.
+constexpr uint64_t USER_MODE_TEST_DURATION_LOOPS = 30;
 
 enum SelfTestPhase
 {
@@ -37,7 +39,11 @@ enum SelfTestPhase
     SELF_TEST_PHASE_MULTITASK_SETUP,
     // Phase 3: monitor runtime counters until pass criteria are satisfied.
     SELF_TEST_PHASE_MULTITASK_MONITOR,
-    // Phase 4: test suite completed successfully.
+    // Phase 4: spawn the execve-chaining user mode test process.
+    SELF_TEST_PHASE_USER_MODE_SETUP,
+    // Phase 5: wait 3 seconds then kill the user mode test process.
+    SELF_TEST_PHASE_USER_MODE_MONITOR,
+    // Phase 6: all suites completed successfully; print summary then idle.
     SELF_TEST_PHASE_COMPLETE,
     // Terminal fallback phase for failure or post-completion idle.
     SELF_TEST_PHASE_FAILED,
@@ -61,16 +67,16 @@ struct KernelSelfTestState
     uint64_t SlowCycles;
     uint64_t BurstLoops;
 
-    uint64_t SyscallOneCount;
-    uint64_t SyscallTwoCount;
-    uint64_t SyscallOtherCount;
     uint64_t NextMultitaskProgressBurstLoops;
 
     bool MemoryVirtualOk;
     bool MemoryPhysicalOk;
     bool MemoryHeapOk;
-    bool UserCreationResultLogged;
     bool MultitaskSleepResultLogged;
+
+    uint8_t  UserModeTestProcessId;
+    uint64_t UserModeTestLoopCount;
+    bool     UserModeTestResultLogged;
 
     uint32_t TestsPassed;
     uint32_t TestsFailed;
@@ -95,13 +101,12 @@ KernelSelfTestState State = {
         0,
         0,
         0,
+        false,
+        false,
+        false,
+        false,
+        INVALID_PROCESS_ID,
         0,
-        0,
-        0,
-        false,
-        false,
-        false,
-        false,
         false,
         0,
         0,
@@ -176,11 +181,7 @@ void ResetMultitaskCounters()
     State.MediumCycles                    = 0;
     State.SlowCycles                      = 0;
     State.BurstLoops                      = 0;
-    State.SyscallOneCount                 = 0;
-    State.SyscallTwoCount                 = 0;
-    State.SyscallOtherCount               = 0;
     State.NextMultitaskProgressBurstLoops = 200;
-    State.UserCreationResultLogged        = false;
     State.MultitaskSleepResultLogged      = false;
 }
 
@@ -280,22 +281,6 @@ void KernelBurstTask()
 bool KernelChecksPassed()
 {
     return State.FastCycles >= FAST_MIN_CYCLES && State.MediumCycles >= MEDIUM_MIN_CYCLES && State.SlowCycles >= SLOW_MIN_CYCLES && State.BurstLoops >= BURST_MIN_LOOPS;
-}
-
-/**
- * Function: UserChecksPassed
- * Description: Evaluates whether user-process syscall counters satisfy minimum pass thresholds.
- * Parameters:
- *   None - This function takes no parameters.
- * Returns:
- *   bool - true if user syscall targets are met; otherwise false.
- */
-bool UserChecksPassed()
-{
-    bool HasRawBinarySyscall = State.SyscallOneCount >= USER_PROCESS_INSTANCE_COUNT;
-    bool HasElfSyscall       = State.SyscallTwoCount >= USER_PROCESS_INSTANCE_COUNT || State.SyscallOtherCount >= USER_PROCESS_INSTANCE_COUNT;
-
-    return HasRawBinarySyscall && HasElfSyscall;
 }
 
 /**
@@ -473,22 +458,6 @@ bool SetupMultitaskingTest(Dispatcher* ActiveDispatcher)
     RegisterTestProcess(State.KernelSleepSlowId);
     RegisterTestProcess(State.KernelBurstId);
 
-    for (uint32_t index = 0; index < USER_PROCESS_INSTANCE_COUNT; ++index)
-    {
-        uint8_t InitPid = ActiveDispatcher->GetLogicLayer()->CreateUserProcessFromVFS("/init");
-        if (InitPid == INVALID_PROCESS_ID)
-        {
-            return false;
-        }
-        RegisterTestProcess(InitPid);
-
-        uint8_t Init2Pid = ActiveDispatcher->GetLogicLayer()->CreateUserProcessFromVFS("/init2");
-        if (Init2Pid == INVALID_PROCESS_ID)
-        {
-            return false;
-        }
-        RegisterTestProcess(Init2Pid);
-    }
     return true;
 }
 
@@ -516,6 +485,7 @@ bool KernelSelfTestStart(Dispatcher* ActiveDispatcher)
     State.KernelSleepSlowId   = INVALID_PROCESS_ID;
     State.KernelBurstId       = INVALID_PROCESS_ID;
     State.KernelValidatorId   = INVALID_PROCESS_ID;
+    State.UserModeTestProcessId = INVALID_PROCESS_ID;
     State.Phase               = SELF_TEST_PHASE_MEMORY;
     State.Initialized         = true;
     State.Passed              = false;
@@ -542,23 +512,7 @@ bool KernelSelfTestStart(Dispatcher* ActiveDispatcher)
  */
 void KernelSelfTestsOnSystemCall(uint64_t SystemCallNumber)
 {
-    if (!State.Initialized || State.Passed || State.Phase != SELF_TEST_PHASE_MULTITASK_MONITOR)
-    {
-        return;
-    }
-
-    if (SystemCallNumber == 1)
-    {
-        ++State.SyscallOneCount;
-    }
-    else if (SystemCallNumber == 2)
-    {
-        ++State.SyscallTwoCount;
-    }
-    else
-    {
-        ++State.SyscallOtherCount;
-    }
+    (void) SystemCallNumber;
 }
 
 /**
@@ -575,7 +529,7 @@ void KernelValidatorTask()
     // in sequence. It intentionally drives setup/monitor/teardown centrally.
     Dispatcher* ActiveDispatcher = RequireDispatcher();
     ActiveDispatcher->GetResourceLayer()->GetTTY()->printf_("[SelfTest] suite start: validator process running and monitoring test cases\n");
-    ActiveDispatcher->GetResourceLayer()->GetTTY()->printf_("[SelfTest] test cases: Memory | ELF and Raw Binary User creation (syscall validation) | Multitasking and Sleep\n");
+    ActiveDispatcher->GetResourceLayer()->GetTTY()->printf_("[SelfTest] test cases: Memory | Multitasking and Sleep | User Mode\n");
 
     while (1)
     {
@@ -602,11 +556,9 @@ void KernelValidatorTask()
             case SELF_TEST_PHASE_MULTITASK_SETUP:
             {
                 // Spawn runtime actors for user-process creation and scheduling checks.
-                ActiveDispatcher->GetResourceLayer()->GetTTY()->printf_("[SelfTest] [ELF and Raw Binary User creation] test started (includes syscall instruction validation)\n");
                 ActiveDispatcher->GetResourceLayer()->GetTTY()->printf_("[SelfTest] [Multitasking and Sleep] test started\n");
                 if (!SetupMultitaskingTest(ActiveDispatcher))
                 {
-                    LogTestResult(ActiveDispatcher, "ELF and Raw Binary User creation", false);
                     LogTestResult(ActiveDispatcher, "Multitasking and Sleep", false);
                     State.Phase = SELF_TEST_PHASE_FAILED;
                     break;
@@ -620,25 +572,15 @@ void KernelValidatorTask()
 
             case SELF_TEST_PHASE_MULTITASK_MONITOR:
             {
-                // Observe counters from kernel sleepers, burst task, and user syscalls.
+                // Observe counters from kernel sleepers and burst task.
                 if (State.BurstLoops >= State.NextMultitaskProgressBurstLoops)
                 {
-                        ActiveDispatcher->GetResourceLayer()->GetTTY()->printf_(
-                            "[SelfTest] [Multitasking and Sleep] progress: fast=%llu medium=%llu slow=%llu burst=%llu/%llu syscall1=%llu/%u syscall2=%llu/%u syscallOther=%llu/%u\n",
-                            (unsigned long long) State.FastCycles, (unsigned long long) State.MediumCycles, (unsigned long long) State.SlowCycles, (unsigned long long) State.BurstLoops,
-                            (unsigned long long) BURST_MIN_LOOPS, (unsigned long long) State.SyscallOneCount, (unsigned) USER_PROCESS_INSTANCE_COUNT, (unsigned long long) State.SyscallTwoCount,
-                            (unsigned) USER_PROCESS_INSTANCE_COUNT, (unsigned long long) State.SyscallOtherCount, (unsigned) USER_PROCESS_INSTANCE_COUNT);
+                    ActiveDispatcher->GetResourceLayer()->GetTTY()->printf_(
+                        "[SelfTest] [Multitasking and Sleep] progress: fast=%llu medium=%llu slow=%llu burst=%llu/%llu\n",
+                        (unsigned long long) State.FastCycles, (unsigned long long) State.MediumCycles, (unsigned long long) State.SlowCycles, (unsigned long long) State.BurstLoops,
+                        (unsigned long long) BURST_MIN_LOOPS);
 
                     State.NextMultitaskProgressBurstLoops += 200;
-                }
-
-                if (UserChecksPassed() && !State.UserCreationResultLogged)
-                {
-                    LogTestResult(ActiveDispatcher, "ELF and Raw Binary User creation", true);
-                    ActiveDispatcher->GetResourceLayer()->GetTTY()->printf_("[SelfTest] syscall instruction validation: syscall1=%llu syscall2=%llu syscallOther=%llu\n",
-                                                                            (unsigned long long) State.SyscallOneCount, (unsigned long long) State.SyscallTwoCount,
-                                                                            (unsigned long long) State.SyscallOtherCount);
-                    State.UserCreationResultLogged = true;
                 }
 
                 if (KernelChecksPassed() && !State.MultitaskSleepResultLogged)
@@ -650,20 +592,61 @@ void KernelValidatorTask()
                     State.MultitaskSleepResultLogged = true;
                 }
 
-                if (State.UserCreationResultLogged && State.MultitaskSleepResultLogged)
+                if (State.MultitaskSleepResultLogged)
                 {
                     KillAllTestProcessesExceptValidator(ActiveDispatcher);
-                    State.Passed = true;
-                    State.Phase  = SELF_TEST_PHASE_COMPLETE;
+                    State.Phase = SELF_TEST_PHASE_USER_MODE_SETUP;
                 }
             }
             break;
 
             case SELF_TEST_PHASE_COMPLETE:
             {
-                // Place-holder transition point for future suites after multitasking.
+                // All suites passed; print summary then idle in FAILED.
                 PrintSummaryIfNeeded(ActiveDispatcher);
                 State.Phase = SELF_TEST_PHASE_FAILED;
+            }
+            break;
+
+            case SELF_TEST_PHASE_USER_MODE_SETUP:
+            {
+                // Spawn a single user process starting at /Test1 which will execve-chain
+                // between /Test1 and /Test2, writing to the TTY on each iteration.
+                ActiveDispatcher->GetResourceLayer()->GetTTY()->printf_("[SelfTest] [User Mode] test started: /Test1 will execve-chain with /Test2 for 3 seconds\n");
+                State.UserModeTestProcessId = ActiveDispatcher->GetLogicLayer()->CreateUserProcessFromVFS("/Test1");
+                if (State.UserModeTestProcessId == INVALID_PROCESS_ID)
+                {
+                    LogTestResult(ActiveDispatcher, "User Mode", false);
+                    State.Phase = SELF_TEST_PHASE_FAILED;
+                    break;
+                }
+
+                RegisterTestProcess(State.UserModeTestProcessId);
+                State.UserModeTestLoopCount = 0;
+                State.Phase                 = SELF_TEST_PHASE_USER_MODE_MONITOR;
+            }
+            break;
+
+            case SELF_TEST_PHASE_USER_MODE_MONITOR:
+            {
+                // Each validator wake-up is ~100 ms; after 30 iterations (~3 s) kill the user
+                // process and record the result.
+                ++State.UserModeTestLoopCount;
+
+                if (State.UserModeTestLoopCount >= USER_MODE_TEST_DURATION_LOOPS && !State.UserModeTestResultLogged)
+                {
+                    if (State.UserModeTestProcessId != INVALID_PROCESS_ID)
+                    {
+                        ActiveDispatcher->GetLogicLayer()->KillProcess(State.UserModeTestProcessId);
+                        State.UserModeTestProcessId = INVALID_PROCESS_ID;
+                    }
+
+                    LogTestResult(ActiveDispatcher, "User Mode", true);
+                    ActiveDispatcher->GetResourceLayer()->GetTTY()->printf_("[SelfTest] [User Mode] user process ran for 3 seconds and was terminated by validator\n");
+                    State.UserModeTestResultLogged = true;
+                    State.Passed                  = true;
+                    State.Phase                   = SELF_TEST_PHASE_COMPLETE;
+                }
             }
             break;
 

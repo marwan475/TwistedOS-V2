@@ -1014,6 +1014,11 @@ void LogicLayer::KillProcess(uint8_t Id)
     }
 
     Sched->RemoveFromReadyQueue(Id);
+
+    if (Sync != nullptr)
+    {
+        Sync->RemoveFromSleepQueue(Id);
+    }
 }
 
 bool LogicLayer::CopyFromUserToKernel(const void* UserSource, void* KernelDestination, uint64_t Count)
