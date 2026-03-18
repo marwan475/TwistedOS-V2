@@ -108,7 +108,8 @@ extern "C"
 
         kmemset((void*) KernelHeapVirtualAddrStart, 0, KERNEL_HEAP_PAGES * PAGE_SIZE);
 
-        DispatcherParameters Params = {&PMM, &VMM, &Console, (uint64_t) KernelHeapVirtualAddrStart, (uint64_t) KernelHeapVirtualAddrEnd, KernelArgs.InitramfsAddress, KernelArgs.InitramfsSize};
+        DispatcherParameters Params = {&PMM, &VMM, &Console, (uint64_t) KernelHeapVirtualAddrStart, (uint64_t) KernelHeapVirtualAddrEnd,
+                                       KernelArgs.GopMode, KernelArgs.InitramfsAddress, KernelArgs.InitramfsSize};
         DispatcherEntry(Params);
     }
 
@@ -146,11 +147,11 @@ extern "C"
             ActiveDispatcher->GetLogicLayer()->GetVirtualFileSystem()->RegisterDevice("/dev/tty", Terminal, Terminal->GetFileOperations());
         }
 
-        ActiveDispatcher->GetLogicLayer()->GetVirtualFileSystem()->PrintVFS(ActiveDispatcher->GetResourceLayer()->GetConsole());
+        ActiveDispatcher->GetLogicLayer()->GetVirtualFileSystem()->PrintVFS(ActiveDispatcher->GetResourceLayer()->GetTTY());
 
         if (!KernelSelfTestStart(ActiveDispatcher))
         {
-            ActiveDispatcher->GetResourceLayer()->GetConsole()->printf_("KernelSelfTestStart setup failed\n");
+            ActiveDispatcher->GetResourceLayer()->GetTTY()->printf_("KernelSelfTestStart setup failed\n");
             while (1)
                 __asm__ __volatile__("hlt");
         }

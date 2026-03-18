@@ -52,6 +52,11 @@ void ResourceLayer::Initialize(PhysicalMemoryManager* PMM, VirtualMemoryManager*
     this->InitramfsSize              = InitramfsSize;
 }
 
+void ResourceLayer::InitializeFrameBuffer(const EFI_GRAPHICS_OUTPUT_PROTOCOL_MODE& GopMode)
+{
+    FB.Initialize(GopMode);
+}
+
 /**
  * Function: ResourceLayer::GetPMM
  * Description: Returns the physical memory manager.
@@ -89,6 +94,11 @@ VirtualMemoryManager* ResourceLayer::GetVMM() const
 FrameBufferConsole* ResourceLayer::GetConsole() const
 {
     return Console;
+}
+
+FrameBuffer* ResourceLayer::GetFrameBuffer()
+{
+    return &FB;
 }
 
 /**
@@ -177,14 +187,26 @@ void ResourceLayer::InitializeTTY()
         Terminal = nullptr;
     }
 
-    Terminal = new TTY(Console);
+    uint32_t InitialCursorX = 0;
+    uint32_t InitialCursorY = 0;
+
+    if (Console != nullptr)
+    {
+        InitialCursorX = Console->GetCursorX();
+        InitialCursorY = Console->GetCursorY();
+    }
+
+    Terminal = new TTY(&FB, InitialCursorX, InitialCursorY);
 
     if (InputKeyboard != nullptr)
     {
         InputKeyboard->SetTTY(Terminal);
     }
 
-    Console->printf_("TTY Initialized\n");
+    if (Terminal != nullptr)
+    {
+        Terminal->printf_("TTY Initialized\n");
+    }
 }
 
 void ResourceLayer::InitializeKeyboard()

@@ -317,6 +317,16 @@ int FrameBufferConsole::dbgprintf_(const char* format, ...)
     return ret;
 }
 
+uint32_t FrameBufferConsole::GetCursorX() const
+{
+    return cursorX;
+}
+
+uint32_t FrameBufferConsole::GetCursorY() const
+{
+    return cursorY;
+}
+
 /**
  * Function: FrameBufferConsole::SetActive
  * Description: Sets the global active console instance used by low-level output hooks.

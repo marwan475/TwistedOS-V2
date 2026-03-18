@@ -7,9 +7,9 @@
 #include "VirtualFileSystem.hpp"
 
 #include "../Resource/RamFileSystemManager.hpp"
+#include "../Resource/TTY.hpp"
 
 #include <CommonUtils.hpp>
-#include <Logging/FrameBufferConsole.hpp>
 
 namespace
 {
@@ -566,14 +566,14 @@ const char* FileTypeToString(FileType Type)
  * Description: Recursively prints a dentry subtree to the provided console.
  * Parameters:
  *   const Dentry* Entry - Current dentry to print.
- *   FrameBufferConsole* Console - Target console.
+ *   TTY* Terminal - Target terminal.
  *   uint64_t Depth - Current tree depth.
  * Returns:
  *   void - Does not return a value.
  */
-void PrintDentryTree(const Dentry* Entry, FrameBufferConsole* Console, uint64_t Depth)
+void PrintDentryTree(const Dentry* Entry, TTY* Terminal, uint64_t Depth)
 {
-    if (Entry == nullptr || Console == nullptr)
+    if (Entry == nullptr || Terminal == nullptr)
     {
         return;
     }
@@ -581,7 +581,7 @@ void PrintDentryTree(const Dentry* Entry, FrameBufferConsole* Console, uint64_t 
     uint64_t IndentSpaces = Depth * INDENT_SPACES_PER_LEVEL;
     for (uint64_t SpaceIndex = 0; SpaceIndex < IndentSpaces; ++SpaceIndex)
     {
-        Console->printf_(" ");
+        Terminal->printf_(" ");
     }
 
     const char* EntryName = Entry->name;
@@ -598,11 +598,11 @@ void PrintDentryTree(const Dentry* Entry, FrameBufferConsole* Console, uint64_t 
         NodeSize = Entry->inode->NodeSize;
     }
 
-    Console->printf_("%s [%s] size=%llu\n", EntryName, TypeText, static_cast<unsigned long long>(NodeSize));
+    Terminal->printf_("%s [%s] size=%llu\n", EntryName, TypeText, static_cast<unsigned long long>(NodeSize));
 
     for (uint64_t ChildIndex = 0; ChildIndex < Entry->child_count; ++ChildIndex)
     {
-        PrintDentryTree(Entry->children[ChildIndex], Console, Depth + 1);
+        PrintDentryTree(Entry->children[ChildIndex], Terminal, Depth + 1);
     }
 }
 } // namespace
@@ -753,23 +753,23 @@ Dentry* VirtualFileSystem::Lookup(const char* path)
  * Function: PrintVFS
  * Description: Prints the currently mounted VFS tree to the provided console.
  * Parameters:
- *   FrameBufferConsole* Console - Target console for VFS output.
+ *   TTY* Terminal - Target terminal for VFS output.
  * Returns:
  *   void - Does not return a value.
  */
-void VirtualFileSystem::PrintVFS(FrameBufferConsole* Console)
+void VirtualFileSystem::PrintVFS(TTY* Terminal)
 {
-    if (Console == nullptr)
+    if (Terminal == nullptr)
     {
         return;
     }
 
     if (Root == nullptr)
     {
-        Console->printf_("VFS is empty\n");
+        Terminal->printf_("VFS is empty\n");
         return;
     }
 
-    Console->printf_("VFS tree:\n");
-    PrintDentryTree(Root, Console, ROOT_TREE_DEPTH);
+    Terminal->printf_("VFS tree:\n");
+    PrintDentryTree(Root, Terminal, ROOT_TREE_DEPTH);
 }

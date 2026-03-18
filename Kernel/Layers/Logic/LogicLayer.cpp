@@ -254,7 +254,7 @@ void LogicLayer::InitializeProcessManager()
     }
 
     PM = new ProcessManager();
-    Resource->GetConsole()->printf_("Process Manager Initialized\n");
+    Resource->GetTTY()->printf_("Process Manager Initialized\n");
 }
 
 /**
@@ -273,7 +273,7 @@ void LogicLayer::InitializeScheduler()
     }
 
     Sched = new Scheduler();
-    Resource->GetConsole()->printf_("Scheduler Initialized\n");
+    Resource->GetTTY()->printf_("Scheduler Initialized\n");
 }
 
 /**
@@ -292,7 +292,7 @@ void LogicLayer::InitializeSynchronizationManager()
     }
 
     Sync = new SynchronizationManager();
-    Resource->GetConsole()->printf_("Synchronization Manager Initialized\n");
+    Resource->GetTTY()->printf_("Synchronization Manager Initialized\n");
 }
 
 /**
@@ -311,7 +311,7 @@ void LogicLayer::InitializeELFManager()
     }
 
     ELF = new ELFManager();
-    Resource->GetConsole()->printf_("ELF Manager Initialized\n");
+    Resource->GetTTY()->printf_("ELF Manager Initialized\n");
 }
 
 /**
@@ -330,7 +330,7 @@ void LogicLayer::InitializeVirtualFileSystem()
     }
 
     VFS = new VirtualFileSystem();
-    Resource->GetConsole()->printf_("Virtual File System Initialized\n");
+    Resource->GetTTY()->printf_("Virtual File System Initialized\n");
 }
 
 /**

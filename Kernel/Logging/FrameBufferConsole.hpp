@@ -34,6 +34,8 @@ public:
     void PutChar(char c);
     int  printf_(const char* format, ...);
     int  dbgprintf_(const char* format, ...);
+    uint32_t GetCursorX() const;
+    uint32_t GetCursorY() const;
 
     static void                SetActive(FrameBufferConsole* console);
     static FrameBufferConsole* GetActive();

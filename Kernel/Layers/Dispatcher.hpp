@@ -7,6 +7,7 @@
 #pragma once
 
 #include <Logging/FrameBufferConsole.hpp>
+#include <uefi.hpp>
 #include <stdint.h>
 
 class PhysicalMemoryManager;
@@ -23,6 +24,7 @@ struct DispatcherParameters
     FrameBufferConsole*    Console;
     uint64_t               KernelHeapVirtualAddrStart;
     uint64_t               KernelHeapVirtualAddrEnd;
+    EFI_GRAPHICS_OUTPUT_PROTOCOL_MODE GopMode;
     uint64_t               InitramfsAddress;
     uint64_t               InitramfsSize;
 };

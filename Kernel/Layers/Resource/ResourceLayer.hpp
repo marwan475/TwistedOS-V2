@@ -6,6 +6,7 @@
 
 #pragma once
 
+#include "FrameBuffer.hpp"
 #include "KernelHeapManager.hpp"
 #include "Keyboard.hpp"
 #include "RamFileSystemManager.hpp"
@@ -30,6 +31,7 @@ private:
     uint64_t               KernelHeapVirtualAddrEnd;
     uint64_t               InitramfsAddress;
     uint64_t               InitramfsSize;
+    FrameBuffer            FB;
     KernelHeapManager      KHM;
     RamFileSystemManager   RFS;
     TTY*                   Terminal;
@@ -39,10 +41,12 @@ public:
     ResourceLayer();
     void Initialize(PhysicalMemoryManager* PMM, VirtualMemoryManager* VMM, FrameBufferConsole* Console, uint64_t KernelHeapVirtualAddrStart, uint64_t KernelHeapVirtualAddrEnd,
                     uint64_t InitramfsAddress, uint64_t InitramfsSize);
+    void InitializeFrameBuffer(const EFI_GRAPHICS_OUTPUT_PROTOCOL_MODE& GopMode);
 
     PhysicalMemoryManager* GetPMM() const;
     VirtualMemoryManager*  GetVMM() const;
     FrameBufferConsole*    GetConsole() const;
+    FrameBuffer*           GetFrameBuffer();
     uint64_t               GetKernelHeapVirtualAddrStart() const;
     uint64_t               GetKernelHeapVirtualAddrEnd() const;
     RamFileSystemManager*  GetRamFileSystemManager();

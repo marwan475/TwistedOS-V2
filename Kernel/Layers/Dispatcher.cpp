@@ -68,7 +68,9 @@ Dispatcher* Dispatcher::GetActive()
  */
 void Dispatcher::InitResourceLayer(const DispatcherParameters& Params)
 {
-    Resource.Initialize(Params.PMM, Params.VMM, Params.Console, Params.KernelHeapVirtualAddrStart, Params.KernelHeapVirtualAddrEnd, Params.InitramfsAddress, Params.InitramfsSize);
+    Resource.Initialize(Params.PMM, Params.VMM, Params.Console, Params.KernelHeapVirtualAddrStart, Params.KernelHeapVirtualAddrEnd, Params.InitramfsAddress,
+                        Params.InitramfsSize);
+    Resource.InitializeFrameBuffer(Params.GopMode);
     Resource.InitializeKernelHeapManager();
     KernelUseDispatcherAllocator();
     Resource.InitializeRamFileSystemManager();
@@ -120,16 +122,16 @@ void Dispatcher::InitializeLayers(const DispatcherParameters& Params)
 {
     Params.Console->printf_("Initializing Resource Layer\n");
     InitResourceLayer(Params);
-    Resource.GetConsole()->printf_("Resource Layer initialized\n");
+    Resource.GetTTY()->printf_("Resource Layer initialized\n");
 
     // Can use new operator post resource layer init
-    Resource.GetConsole()->printf_("Initializing Logic Layer\n");
+    Resource.GetTTY()->printf_("Initializing Logic Layer\n");
     InitLogicLayer();
-    Resource.GetConsole()->printf_("Logic Layer initialized\n");
+    Resource.GetTTY()->printf_("Logic Layer initialized\n");
 
-    Resource.GetConsole()->printf_("Initializing Translation Layer\n");
+    Resource.GetTTY()->printf_("Initializing Translation Layer\n");
     InitTranslationLayer();
-    Resource.GetConsole()->printf_("Translation Layer initialized\n");
+    Resource.GetTTY()->printf_("Translation Layer initialized\n");
 }
 
 /**
@@ -169,11 +171,11 @@ void Dispatcher::InterruptHandler(uint64_t InterruptNumber)
         break;
         case SYSCALL_INTERRUPT_VECTOR:
         {
-            Resource.GetConsole()->printf_("User syscall interrupt received (int 0x80)\n");
+            Resource.GetTTY()->printf_("User syscall interrupt received (int 0x80)\n");
         }
         break;
         default:
-            Resource.GetConsole()->printf_("Unhandled interrupt: %lu\n", InterruptNumber);
+            Resource.GetTTY()->printf_("Unhandled interrupt: %lu\n", InterruptNumber);
             while (1)
             {
                 __asm__ __volatile__("hlt");

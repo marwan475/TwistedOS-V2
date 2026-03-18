@@ -9,7 +9,7 @@
 #include <stdint.h>
 
 class RamFileSystemManager;
-class FrameBufferConsole;
+class TTY;
 
 enum FileType
 {
@@ -76,5 +76,5 @@ public:
     void    MountInitRamFileSystem(RamFileSystemManager* ramFileSystemManager);
     bool    RegisterDevice(const char* path, void* deviceData, FileOperations* fileOperations);
     Dentry* Lookup(const char* path);
-    void    PrintVFS(FrameBufferConsole* Console);
+    void    PrintVFS(TTY* Terminal);
 };

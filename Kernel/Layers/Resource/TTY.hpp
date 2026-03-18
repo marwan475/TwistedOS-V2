@@ -8,7 +8,7 @@
 
 #include <stdint.h>
 
-#include <Logging/FrameBufferConsole.hpp>
+#include "FrameBuffer.hpp"
 
 struct File;
 struct FileOperations;
@@ -16,21 +16,32 @@ struct FileOperations;
 class TTY
 {
 private:
+    static constexpr uint32_t FONT_WIDTH  = 8;
+    static constexpr uint32_t FONT_HEIGHT = 16;
     static constexpr uint64_t KEYBOARD_BUFFER_CAPACITY = 1024;
 
-    FrameBufferConsole* Console;
-    char                KeyboardBuffer[KEYBOARD_BUFFER_CAPACITY];
-    uint64_t            BufferHead;
-    uint64_t            BufferTail;
-    uint64_t            BufferedBytes;
+    FrameBuffer* FrameBufferDevice;
+    uint32_t     CursorX;
+    uint32_t     CursorY;
+    uint32_t     TextColor;
+    uint32_t     BackgroundColor;
+    char         KeyboardBuffer[KEYBOARD_BUFFER_CAPACITY];
+    uint64_t     BufferHead;
+    uint64_t     BufferTail;
+    uint64_t     BufferedBytes;
+
+    void ClearScreen();
+    void DrawChar(uint32_t X, uint32_t Y, char Character);
+    void PutChar(char Character);
 
     static FileOperations TerminalFileOperations;
 
 public:
-    explicit TTY(FrameBufferConsole* Console);
+    explicit TTY(FrameBuffer* FrameBuffer, uint32_t InitialCursorX = 0, uint32_t InitialCursorY = 0);
 
     int64_t Read(File* OpenFile, void* Buffer, uint64_t Count);
     int64_t Write(File* OpenFile, const void* Buffer, uint64_t Count);
+    int     printf_(const char* Format, ...);
 
     uint64_t PushKeyboardInput(const char* Buffer, uint64_t Count);
     uint64_t PushKeyboardInputChar(char Character);
