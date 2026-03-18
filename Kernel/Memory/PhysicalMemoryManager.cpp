@@ -330,16 +330,37 @@ void PhysicalMemoryManager::InitializeMemoryDescriptors()
 
     for (uint64_t i = 0; i < DescriptorCount; i++)
     {
-        if (i <= CurrentDescriptor)
-            continue; // skip descriptors that have been used by bootloader
-
         EFI_MEMORY_DESCRIPTOR* Desc = (EFI_MEMORY_DESCRIPTOR*) ((uint8_t*) MemoryMap.MemoryMap + (i * MemoryMap.DescriptorSize));
 
-        if (Desc->Type == EfiConventionalMemory && Desc->NumberOfPages > MemoryDescriptorInfo.TotalNumberOfPages)
+        if (Desc->Type != EfiConventionalMemory)
         {
-            MemoryDescriptorInfo.PhysicalAddressStart = Desc->PhysicalStart;
-            MemoryDescriptorInfo.TotalNumberOfPages   = Desc->NumberOfPages;
-            MemoryDescriptorInfo.NumberOfFreePages    = Desc->NumberOfPages;
+            continue;
+        }
+
+        uint64_t CandidatePhysicalStart = Desc->PhysicalStart;
+        uint64_t CandidatePages         = Desc->NumberOfPages;
+
+        if (i < CurrentDescriptor)
+        {
+            continue;
+        }
+
+        if (i == CurrentDescriptor)
+        {
+            if (RemainingPagesInDescriptor == 0)
+            {
+                continue;
+            }
+
+            CandidatePhysicalStart = NextPageAddress;
+            CandidatePages         = RemainingPagesInDescriptor;
+        }
+
+        if (CandidatePages > MemoryDescriptorInfo.TotalNumberOfPages)
+        {
+            MemoryDescriptorInfo.PhysicalAddressStart = CandidatePhysicalStart;
+            MemoryDescriptorInfo.TotalNumberOfPages   = CandidatePages;
+            MemoryDescriptorInfo.NumberOfFreePages    = CandidatePages;
             MemoryDescriptorInfo.BitMap               = NULL;
         }
     }

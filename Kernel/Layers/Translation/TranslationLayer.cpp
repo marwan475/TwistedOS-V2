@@ -12,6 +12,7 @@ namespace
 {
 constexpr int64_t LINUX_ERR_EFAULT = -14;
 constexpr int64_t LINUX_ERR_ENOENT = -2;
+constexpr int64_t LINUX_ERR_ENOMEM = -12;
 constexpr int64_t LINUX_ERR_EMFILE = -24;
 constexpr int64_t LINUX_ERR_EINVAL = -22;
 constexpr int64_t LINUX_ERR_EBADF  = -9;
@@ -374,13 +375,21 @@ int64_t TranslationLayer::HandleExecveSystemCall(const char* Path, const char* c
         return LINUX_ERR_EFAULT;
     }
 
-    char KernelPathBuffer[SYSCALL_PATH_MAX] = {};
-    if (!CopyUserCString(Logic, Path, KernelPathBuffer, sizeof(KernelPathBuffer)))
+    char* KernelPathBuffer = reinterpret_cast<char*>(Logic->kmalloc(SYSCALL_PATH_MAX));
+    if (KernelPathBuffer == nullptr)
     {
+        return LINUX_ERR_ENOMEM;
+    }
+
+    if (!CopyUserCString(Logic, Path, KernelPathBuffer, SYSCALL_PATH_MAX))
+    {
+        Logic->kfree(KernelPathBuffer);
         return LINUX_ERR_EFAULT;
     }
 
     uint8_t ChangedProcessId = Logic->ChangeProcessExecution(CurrentProcess->Id, KernelPathBuffer);
+    Logic->kfree(KernelPathBuffer);
+
     if (ChangedProcessId == PROCESS_ID_INVALID)
     {
         return LINUX_ERR_ENOENT;

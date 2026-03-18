@@ -135,6 +135,67 @@ bool IsUserAddressRangeAccessible(const Process* CurrentProcess, uint64_t Addres
 
     return false;
 }
+
+void FreePageTableHierarchy(PhysicalMemoryManager* PMM, uint64_t PageMapL4TableAddr)
+{
+    if (PMM == nullptr || PageMapL4TableAddr == 0)
+    {
+        return;
+    }
+
+    PageTableEntry* PML4 = reinterpret_cast<PageTableEntry*>(PageMapL4TableAddr);
+
+    for (uint64_t PML4Index = 0; PML4Index < 512; ++PML4Index)
+    {
+        PageTableEntry PML4Entry = PML4[PML4Index];
+        if (!PML4Entry.fields.present)
+        {
+            continue;
+        }
+
+        PageTableEntry* PDPT = reinterpret_cast<PageTableEntry*>(PML4Entry.value & PHYS_PAGE_ADDR_MASK);
+        if (PDPT == nullptr)
+        {
+            continue;
+        }
+
+        for (uint64_t PDPTIndex = 0; PDPTIndex < 512; ++PDPTIndex)
+        {
+            PageTableEntry PDPTEntry = PDPT[PDPTIndex];
+            if (!PDPTEntry.fields.present)
+            {
+                continue;
+            }
+
+            PageTableEntry* PD = reinterpret_cast<PageTableEntry*>(PDPTEntry.value & PHYS_PAGE_ADDR_MASK);
+            if (PD == nullptr)
+            {
+                continue;
+            }
+
+            for (uint64_t PDIndex = 0; PDIndex < 512; ++PDIndex)
+            {
+                PageTableEntry PDEntry = PD[PDIndex];
+                if (!PDEntry.fields.present)
+                {
+                    continue;
+                }
+
+                PageTableEntry* PT = reinterpret_cast<PageTableEntry*>(PDEntry.value & PHYS_PAGE_ADDR_MASK);
+                if (PT != nullptr)
+                {
+                    PMM->FreePagesFromDescriptor(reinterpret_cast<void*>(PT), 1);
+                }
+            }
+
+            PMM->FreePagesFromDescriptor(reinterpret_cast<void*>(PD), 1);
+        }
+
+        PMM->FreePagesFromDescriptor(reinterpret_cast<void*>(PDPT), 1);
+    }
+
+    PMM->FreePagesFromDescriptor(reinterpret_cast<void*>(PageMapL4TableAddr), 1);
+}
 } // namespace
 
 namespace
@@ -265,6 +326,42 @@ ProcessManager* LogicLayer::GetProcessManager() const
 VirtualFileSystem* LogicLayer::GetVirtualFileSystem() const
 {
     return VFS;
+}
+
+/**
+ * Function: LogicLayer::kmalloc
+ * Description: Allocates kernel memory through the resource layer allocator.
+ * Parameters:
+ *   uint64_t Size - Number of bytes to allocate.
+ * Returns:
+ *   void* - Pointer to allocated memory or nullptr when unavailable.
+ */
+void* LogicLayer::kmalloc(uint64_t Size)
+{
+    if (Resource == nullptr)
+    {
+        return nullptr;
+    }
+
+    return Resource->kmalloc(Size);
+}
+
+/**
+ * Function: LogicLayer::kfree
+ * Description: Frees previously allocated kernel memory through the resource layer allocator.
+ * Parameters:
+ *   void* Pointer - Pointer to memory to free.
+ * Returns:
+ *   void - No return value.
+ */
+void LogicLayer::kfree(void* Pointer)
+{
+    if (Resource == nullptr || Pointer == nullptr)
+    {
+        return;
+    }
+
+    Resource->kfree(Pointer);
 }
 
 /**
@@ -872,10 +969,7 @@ void LogicLayer::CleanUpRawBinary(VirtualAddressSpace* AddressSpace)
         PMM->FreePagesFromDescriptor(reinterpret_cast<void*>(StackPhysAddr), (StackSize + PAGE_SIZE - 1) / PAGE_SIZE);
     }
 
-    if (ProcessPageMapL4 != 0)
-    {
-        PMM->FreePagesFromDescriptor(reinterpret_cast<void*>(ProcessPageMapL4), 1);
-    }
+    FreePageTableHierarchy(PMM, ProcessPageMapL4);
 }
 
 /**
@@ -971,19 +1065,11 @@ void LogicLayer::CleanUpELF(VirtualAddressSpace* AddressSpace)
         }
     }
 
-    uint64_t CodePhysAddr     = AddressSpace->GetCodePhysicalAddress();
-    uint64_t CodeSize         = AddressSpace->GetCodeSize();
-    uint64_t CodePages        = (CodeSize + PAGE_SIZE - 1) / PAGE_SIZE;
     uint64_t HeapPhysAddr     = AddressSpace->GetHeapPhysicalAddress();
     uint64_t HeapSize         = AddressSpace->GetHeapSize();
     uint64_t StackPhysAddr    = AddressSpace->GetStackPhysicalAddress();
     uint64_t StackSize        = AddressSpace->GetStackSize();
     uint64_t ProcessPageMapL4 = AddressSpace->GetPageMapL4TableAddr();
-
-    if (CodePhysAddr != 0 && CodeSize != 0)
-    {
-        PMM->FreePagesFromDescriptor(reinterpret_cast<void*>(CodePhysAddr), CodePages);
-    }
 
     if (HeapPhysAddr != 0 && HeapSize != 0)
     {
@@ -995,10 +1081,7 @@ void LogicLayer::CleanUpELF(VirtualAddressSpace* AddressSpace)
         PMM->FreePagesFromDescriptor(reinterpret_cast<void*>(StackPhysAddr), (StackSize + PAGE_SIZE - 1) / PAGE_SIZE);
     }
 
-    if (ProcessPageMapL4 != 0)
-    {
-        PMM->FreePagesFromDescriptor(reinterpret_cast<void*>(ProcessPageMapL4), 1);
-    }
+    FreePageTableHierarchy(PMM, ProcessPageMapL4);
 }
 
 /**

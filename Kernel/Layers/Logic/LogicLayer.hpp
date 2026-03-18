@@ -44,6 +44,8 @@ public:
     ELFManager*        GetELFManager() const;
     ProcessManager*    GetProcessManager() const;
     VirtualFileSystem* GetVirtualFileSystem() const;
+    void*              kmalloc(uint64_t Size);
+    void               kfree(void* Pointer);
     void               InitializeProcessManager();
     void               InitializeScheduler();
     void               InitializeSynchronizationManager();

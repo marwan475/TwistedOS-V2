@@ -44,7 +44,7 @@ bool VirtualMemoryManager::MapPage(UINTN PhysicalAddr, UINTN VirtualAddr, const 
 
     if (!PmL4Entry.fields.present)
     {
-        void* PageDirectoryPointerTableAddr = PMM.AllocatePagesFromMemoryMap(1);
+        void* PageDirectoryPointerTableAddr = PMM.AllocatePagesFromDescriptor(1);
         if (PageDirectoryPointerTableAddr == NULL)
             return false;
 
@@ -71,7 +71,7 @@ bool VirtualMemoryManager::MapPage(UINTN PhysicalAddr, UINTN VirtualAddr, const 
 
     if (!PDPTEntry.fields.present)
     {
-        void* PageDirectoryTableAddr = PMM.AllocatePagesFromMemoryMap(1);
+        void* PageDirectoryTableAddr = PMM.AllocatePagesFromDescriptor(1);
         if (PageDirectoryTableAddr == NULL)
             return false;
 
@@ -98,7 +98,7 @@ bool VirtualMemoryManager::MapPage(UINTN PhysicalAddr, UINTN VirtualAddr, const 
 
     if (!PDTEntry.fields.present)
     {
-        void* PageTableAddr = PMM.AllocatePagesFromMemoryMap(1);
+        void* PageTableAddr = PMM.AllocatePagesFromDescriptor(1);
         if (PageTableAddr == NULL)
             return false;
 
@@ -234,7 +234,7 @@ UINTN VirtualMemoryManager::UnmapRange(UINTN VirtualAddr, UINTN Pages)
  */
 PageTableEntry* VirtualMemoryManager::CopyPageMapL4Table()
 {
-    void* NewPML4Addr = PMM.AllocatePagesFromMemoryMap(1);
+    void* NewPML4Addr = PMM.AllocatePagesFromDescriptor(1);
     if (NewPML4Addr == NULL)
     {
         return NULL;
@@ -251,7 +251,7 @@ PageTableEntry* VirtualMemoryManager::CopyPageMapL4Table()
             continue;
         }
 
-        void* NewPDPTAddr = PMM.AllocatePagesFromMemoryMap(1);
+        void* NewPDPTAddr = PMM.AllocatePagesFromDescriptor(1);
         if (NewPDPTAddr == NULL)
         {
             return NULL;
@@ -270,7 +270,7 @@ PageTableEntry* VirtualMemoryManager::CopyPageMapL4Table()
                 continue;
             }
 
-            void* NewPDAddr = PMM.AllocatePagesFromMemoryMap(1);
+            void* NewPDAddr = PMM.AllocatePagesFromDescriptor(1);
             if (NewPDAddr == NULL)
             {
                 return NULL;
@@ -289,7 +289,7 @@ PageTableEntry* VirtualMemoryManager::CopyPageMapL4Table()
                     continue;
                 }
 
-                void* NewPTAddr = PMM.AllocatePagesFromMemoryMap(1);
+                void* NewPTAddr = PMM.AllocatePagesFromDescriptor(1);
                 if (NewPTAddr == NULL)
                 {
                     return NULL;
