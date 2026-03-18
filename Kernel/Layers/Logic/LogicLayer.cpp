@@ -488,6 +488,11 @@ uint8_t LogicLayer::CreateNullProcess()
 uint8_t LogicLayer::CreateKernelProcess(void (*EntryPoint)())
 {
     void*    ProcessStack = Resource->kmalloc(KERNEL_PROCESS_STACK_SIZE);
+    if (ProcessStack == nullptr)
+    {
+        return PROCESS_ID_INVALID;
+    }
+
     uint64_t StackTop     = reinterpret_cast<uint64_t>(ProcessStack) + KERNEL_PROCESS_STACK_SIZE;
 
     CpuState State = {};
@@ -505,6 +510,10 @@ uint8_t LogicLayer::CreateKernelProcess(void (*EntryPoint)())
     if (Id != PROCESS_ID_INVALID)
     {
         Sched->AddToReadyQueue(Id);
+    }
+    else
+    {
+        Resource->kfree(ProcessStack);
     }
 
     return Id;
@@ -775,6 +784,16 @@ VirtualAddressSpace* LogicLayer::MapRawBinary(uint64_t CodeAddr, uint64_t CodeSi
     void* ProcessHeap  = Resource->GetPMM()->AllocatePagesFromDescriptor(USER_PROCESS_HEAP_SIZE / PAGE_SIZE);
     if (ProcessStack == nullptr || ProcessHeap == nullptr)
     {
+        if (ProcessStack != nullptr)
+        {
+            Resource->GetPMM()->FreePagesFromDescriptor(ProcessStack, USER_PROCESS_STACK_SIZE / PAGE_SIZE);
+        }
+
+        if (ProcessHeap != nullptr)
+        {
+            Resource->GetPMM()->FreePagesFromDescriptor(ProcessHeap, USER_PROCESS_HEAP_SIZE / PAGE_SIZE);
+        }
+
         return nullptr;
     }
 
@@ -786,18 +805,24 @@ VirtualAddressSpace* LogicLayer::MapRawBinary(uint64_t CodeAddr, uint64_t CodeSi
 
     if (AddressSpace == nullptr)
     {
+        Resource->GetPMM()->FreePagesFromDescriptor(ProcessHeap, USER_PROCESS_HEAP_SIZE / PAGE_SIZE);
+        Resource->GetPMM()->FreePagesFromDescriptor(ProcessStack, USER_PROCESS_STACK_SIZE / PAGE_SIZE);
         return nullptr;
     }
 
     uint64_t ProcessPageMapL4TableAddr = reinterpret_cast<uint64_t>(Resource->GetVMM()->CopyPageMapL4Table());
     if (ProcessPageMapL4TableAddr == 0)
     {
+        Resource->GetPMM()->FreePagesFromDescriptor(ProcessHeap, USER_PROCESS_HEAP_SIZE / PAGE_SIZE);
+        Resource->GetPMM()->FreePagesFromDescriptor(ProcessStack, USER_PROCESS_STACK_SIZE / PAGE_SIZE);
         delete AddressSpace;
         return nullptr;
     }
 
     if (!AddressSpace->Init(ProcessPageMapL4TableAddr, *Resource->GetPMM()))
     {
+        Resource->GetPMM()->FreePagesFromDescriptor(ProcessHeap, USER_PROCESS_HEAP_SIZE / PAGE_SIZE);
+        Resource->GetPMM()->FreePagesFromDescriptor(ProcessStack, USER_PROCESS_STACK_SIZE / PAGE_SIZE);
         delete AddressSpace;
         return nullptr;
     }
@@ -870,6 +895,16 @@ VirtualAddressSpace* LogicLayer::MapELF(uint64_t CodeAddr, uint64_t CodeSize, co
     void* ProcessHeap  = Resource->GetPMM()->AllocatePagesFromDescriptor(USER_PROCESS_HEAP_SIZE / PAGE_SIZE);
     if (ProcessStack == nullptr || ProcessHeap == nullptr)
     {
+        if (ProcessStack != nullptr)
+        {
+            Resource->GetPMM()->FreePagesFromDescriptor(ProcessStack, USER_PROCESS_STACK_SIZE / PAGE_SIZE);
+        }
+
+        if (ProcessHeap != nullptr)
+        {
+            Resource->GetPMM()->FreePagesFromDescriptor(ProcessHeap, USER_PROCESS_HEAP_SIZE / PAGE_SIZE);
+        }
+
         return nullptr;
     }
 
@@ -877,6 +912,8 @@ VirtualAddressSpace* LogicLayer::MapELF(uint64_t CodeAddr, uint64_t CodeSize, co
     uint64_t ProcessStackVirtualAddrStart = (USER_PROCESS_VIRTUAL_STACK_TOP + 1) - USER_PROCESS_STACK_SIZE;
     if (ProcessHeapVirtualAddrStart + USER_PROCESS_HEAP_SIZE > ProcessStackVirtualAddrStart)
     {
+        Resource->GetPMM()->FreePagesFromDescriptor(ProcessHeap, USER_PROCESS_HEAP_SIZE / PAGE_SIZE);
+        Resource->GetPMM()->FreePagesFromDescriptor(ProcessStack, USER_PROCESS_STACK_SIZE / PAGE_SIZE);
         return nullptr;
     }
 
@@ -885,6 +922,8 @@ VirtualAddressSpace* LogicLayer::MapELF(uint64_t CodeAddr, uint64_t CodeSize, co
 
     if (AddressSpace == nullptr)
     {
+        Resource->GetPMM()->FreePagesFromDescriptor(ProcessHeap, USER_PROCESS_HEAP_SIZE / PAGE_SIZE);
+        Resource->GetPMM()->FreePagesFromDescriptor(ProcessStack, USER_PROCESS_STACK_SIZE / PAGE_SIZE);
         return nullptr;
     }
 
@@ -904,6 +943,8 @@ VirtualAddressSpace* LogicLayer::MapELF(uint64_t CodeAddr, uint64_t CodeSize, co
 
         if (!AddressSpace->AddMemoryRegion(Region))
         {
+            Resource->GetPMM()->FreePagesFromDescriptor(ProcessHeap, USER_PROCESS_HEAP_SIZE / PAGE_SIZE);
+            Resource->GetPMM()->FreePagesFromDescriptor(ProcessStack, USER_PROCESS_STACK_SIZE / PAGE_SIZE);
             delete AddressSpace;
             return nullptr;
         }
@@ -912,12 +953,16 @@ VirtualAddressSpace* LogicLayer::MapELF(uint64_t CodeAddr, uint64_t CodeSize, co
     uint64_t ProcessPageMapL4TableAddr = reinterpret_cast<uint64_t>(Resource->GetVMM()->CopyPageMapL4Table());
     if (ProcessPageMapL4TableAddr == 0)
     {
+        Resource->GetPMM()->FreePagesFromDescriptor(ProcessHeap, USER_PROCESS_HEAP_SIZE / PAGE_SIZE);
+        Resource->GetPMM()->FreePagesFromDescriptor(ProcessStack, USER_PROCESS_STACK_SIZE / PAGE_SIZE);
         delete AddressSpace;
         return nullptr;
     }
 
     if (!AddressSpace->Init(ProcessPageMapL4TableAddr, *Resource->GetPMM()))
     {
+        Resource->GetPMM()->FreePagesFromDescriptor(ProcessHeap, USER_PROCESS_HEAP_SIZE / PAGE_SIZE);
+        Resource->GetPMM()->FreePagesFromDescriptor(ProcessStack, USER_PROCESS_STACK_SIZE / PAGE_SIZE);
         delete AddressSpace;
         return nullptr;
     }

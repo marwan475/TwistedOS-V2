@@ -576,7 +576,7 @@ bool RamFileSystemManager::FindFile(const char* Path, const void** Data, uint64_
 
 /**
  * Function: RamFileSystemManager::ParseAndPrintInitramfs
- * Description: Enumerates and prints initramfs contents and status of /init file.
+ * Description: Enumerates and prints initramfs contents and status of key test executables.
  * Parameters:
  *   FrameBufferConsole* Console - Console used for output.
  * Returns:
@@ -599,14 +599,4 @@ void RamFileSystemManager::ParseAndPrintInitramfs(FrameBufferConsole* Console) c
 
     Console->printf_("Initramfs entries: %llu\n", static_cast<unsigned long long>(Context.EntryCount));
 
-    const void* InitData = nullptr;
-    uint64_t    InitSize = 0;
-    if (FindFile("/init", &InitData, &InitSize, nullptr))
-    {
-        Console->printf_("Initramfs file /init found at %p (%llu bytes)\n", InitData, static_cast<unsigned long long>(InitSize));
-    }
-    else
-    {
-        Console->printf_("Initramfs file /init was not found\n");
-    }
 }

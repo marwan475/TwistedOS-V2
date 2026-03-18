@@ -63,31 +63,11 @@ INITRAMFS = initramfs.cpio
 IMG = $(OUTPUT)
 DRIVE = TwistedDrive.img
 ROOTFS_DIR = initramfs/rootfs
-INIT_SRC = initramfs/init.c
-INIT_LD = initramfs/init.ld
-INIT_OBJ = $(BUILD)initramfs_init.o
-INIT_ELF = $(BUILD)initramfs_init.elf
-INIT_BIN = $(ROOTFS_DIR)/init
-INIT2_SRC = initramfs/init2.c
-INIT2_OBJ = $(BUILD)initramfs_init2.o
-INIT2_ELF = $(BUILD)initramfs_init2.elf
-INIT2_BIN = $(ROOTFS_DIR)/init2
 INIT2_CC = gcc
 TEST1_SRC = initramfs/Test1.c
 TEST1_BIN = $(ROOTFS_DIR)/Test1
 TEST2_SRC = initramfs/Test2.c
 TEST2_BIN = $(ROOTFS_DIR)/Test2
-INIT_CFLAGS = \
-	-ffreestanding \
-	-fno-pic \
-	-fno-pie \
-	-mno-red-zone \
-	-nostdlib \
-	-fno-stack-protector \
-	-g \
-	-O0 \
-	-Wall \
-	-Wextra
 ESP_SIZE = 64
 SECTORS = $(shell echo $$(( $(ESP_SIZE) * 2048 )))
 GDB = gdb
@@ -117,7 +97,7 @@ QEMU_FULL = \
 all: bin build $(EFI) $(KERNEL) $(INITRAMFS) $(IMG) $(DRIVE)
 
 clean:
-	rm -rf $(BIN) $(BUILD) $(OUTPUT) *.pcap $(INIT_BIN) $(INIT2_BIN) $(TEST1_BIN) $(TEST2_BIN)
+	rm -rf $(BIN) $(BUILD) $(OUTPUT) *.pcap $(TEST1_BIN) $(TEST2_BIN)
 
 build:
 	mkdir $(BUILD)
@@ -162,22 +142,14 @@ $(KERNEL): Kernel/kernel.cpp Kernel/Testing/KernelSelfTests.cpp Kernel/Layers/Di
 	objcopy -O binary --set-section-flags .bss=alloc,load,contents $(BUILD)kernel.elf $(BIN)$@
 
 
-$(INIT_BIN): $(INIT_SRC) $(INIT_LD) | build
-	$(KERNEL_CC) $(INIT_CFLAGS) -x c -c $(INIT_SRC) -o $(INIT_OBJ)
-	$(KERNEL_LD) -nostdlib -static -T $(INIT_LD) $(INIT_OBJ) -o $(INIT_ELF)
-	objcopy -O binary $(INIT_ELF) $(INIT_BIN)
-
-$(INIT2_BIN): $(INIT2_SRC) | build
-	$(INIT2_CC) -static -nostdlib -fno-pie -no-pie -fno-stack-protector -fno-stack-clash-protection -Wl,-e,_start $(INIT2_SRC) -o $(INIT2_BIN)
-
 $(TEST1_BIN): $(TEST1_SRC) | build
 	$(INIT2_CC) -static -nostdlib -fno-pie -no-pie -fno-stack-protector -fno-stack-clash-protection -Wl,-e,_start $(TEST1_SRC) -o $(TEST1_BIN)
 
 $(TEST2_BIN): $(TEST2_SRC) | build
 	$(INIT2_CC) -static -nostdlib -fno-pie -no-pie -fno-stack-protector -fno-stack-clash-protection -Wl,-e,_start $(TEST2_SRC) -o $(TEST2_BIN)
 
-$(INITRAMFS): $(INIT_BIN) $(INIT2_BIN) $(TEST1_BIN) $(TEST2_BIN)
-	chmod +x $(INIT_BIN) $(INIT2_BIN) $(TEST1_BIN) $(TEST2_BIN)
+$(INITRAMFS): $(TEST1_BIN) $(TEST2_BIN)
+	chmod +x $(TEST1_BIN) $(TEST2_BIN)
 	(cd $(ROOTFS_DIR) && find . -print | cpio -o -H newc) > $(BIN)$@
 
 $(IMG): $(EFI) $(KERNEL) $(INITRAMFS)
