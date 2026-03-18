@@ -118,9 +118,29 @@ int64_t DefaultWriteFileOperation(File* OpenFile, const void* Buffer, uint64_t C
     return static_cast<int64_t>(BytesToWrite);
 }
 
+int64_t DefaultSeekFileOperation(File* OpenFile, int64_t Offset, int32_t Whence)
+{
+    (void) OpenFile;
+    (void) Offset;
+    (void) Whence;
+    return LINUX_ERR_ENOSYS;
+}
+
+int64_t DefaultMemoryMapFileOperation(File* OpenFile, uint64_t Length, uint64_t Offset, VirtualAddressSpace* AddressSpace, uint64_t* Address)
+{
+    (void) OpenFile;
+    (void) Length;
+    (void) Offset;
+    (void) AddressSpace;
+    (void) Address;
+    return LINUX_ERR_ENOSYS;
+}
+
 FileOperations DefaultFileOperations = {
     &DefaultReadFileOperation,
     &DefaultWriteFileOperation,
+    &DefaultSeekFileOperation,
+    &DefaultMemoryMapFileOperation,
 };
 
 /**

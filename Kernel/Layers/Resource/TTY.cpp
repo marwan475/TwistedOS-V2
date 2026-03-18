@@ -21,6 +21,7 @@ constexpr int64_t LINUX_ERR_EFAULT = -14;
 constexpr int64_t LINUX_ERR_EINVAL = -22;
 constexpr int64_t LINUX_ERR_ENODEV = -19;
 constexpr int64_t LINUX_ERR_ENOSPC = -28;
+constexpr int64_t LINUX_ERR_ENOSYS = -38;
 
 #ifdef DEBUG_BUILD
 static inline void outb(uint16_t port, uint8_t value)
@@ -78,6 +79,8 @@ static void SerialWriteBuffer(const char* Buffer, int Count)
 FileOperations TTY::TerminalFileOperations = {
     &TTY::ReadFileOperation,
     &TTY::WriteFileOperation,
+    &TTY::SeekFileOperation,
+    &TTY::MemoryMapFileOperation,
 };
 
 TTY::TTY(FrameBuffer* FrameBuffer, uint32_t InitialCursorX, uint32_t InitialCursorY)
@@ -348,4 +351,22 @@ int64_t TTY::WriteFileOperation(File* OpenFile, const void* Buffer, uint64_t Cou
     }
 
     return Terminal->Write(OpenFile, Buffer, Count);
+}
+
+int64_t TTY::SeekFileOperation(File* OpenFile, int64_t Offset, int32_t Whence)
+{
+    (void) OpenFile;
+    (void) Offset;
+    (void) Whence;
+    return LINUX_ERR_ENOSYS;
+}
+
+int64_t TTY::MemoryMapFileOperation(File* OpenFile, uint64_t Length, uint64_t Offset, VirtualAddressSpace* AddressSpace, uint64_t* Address)
+{
+    (void) OpenFile;
+    (void) Length;
+    (void) Offset;
+    (void) AddressSpace;
+    (void) Address;
+    return LINUX_ERR_ENOSYS;
 }

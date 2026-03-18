@@ -50,4 +50,6 @@ public:
 
     static int64_t ReadFileOperation(File* OpenFile, void* Buffer, uint64_t Count);
     static int64_t WriteFileOperation(File* OpenFile, const void* Buffer, uint64_t Count);
+    static int64_t SeekFileOperation(File* OpenFile, int64_t Offset, int32_t Whence);
+    static int64_t MemoryMapFileOperation(File* OpenFile, uint64_t Length, uint64_t Offset, VirtualAddressSpace* AddressSpace, uint64_t* Address);
 };

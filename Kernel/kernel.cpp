@@ -142,9 +142,15 @@ extern "C"
         ActiveDispatcher->GetLogicLayer()->GetVirtualFileSystem()->MountInitRamFileSystem(ActiveDispatcher->GetResourceLayer()->GetRamFileSystemManager());
 
         TTY* Terminal = ActiveDispatcher->GetResourceLayer()->GetTTY();
+        FrameBuffer* FB = ActiveDispatcher->GetResourceLayer()->GetFrameBuffer();
         if (Terminal != nullptr)
         {
             ActiveDispatcher->GetLogicLayer()->GetVirtualFileSystem()->RegisterDevice("/dev/tty", Terminal, Terminal->GetFileOperations());
+        }
+
+        if (FB != nullptr)
+        {
+            ActiveDispatcher->GetLogicLayer()->GetVirtualFileSystem()->RegisterDevice("/dev/fb0", FB, FB->GetFileOperations());
         }
 
         ActiveDispatcher->GetLogicLayer()->GetVirtualFileSystem()->PrintVFS(ActiveDispatcher->GetResourceLayer()->GetTTY());

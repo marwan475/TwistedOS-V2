@@ -9,6 +9,11 @@
 #include <uefi.hpp>
 #include <stdint.h>
 
+class VirtualAddressSpace;
+
+struct File;
+struct FileOperations;
+
 class FrameBuffer
 {
 private:
@@ -21,11 +26,22 @@ private:
     EFI_PIXEL_BITMASK        PixelInformation;
     bool                     Valid;
 
+    static FileOperations FrameBufferFileOperations;
+
 public:
     FrameBuffer();
 
     void Initialize(const EFI_GRAPHICS_OUTPUT_PROTOCOL_MODE& GopMode);
     void Draw(uint32_t X, uint32_t Y, uint32_t RGBA);
+    int64_t Write(File* OpenFile, const void* Buffer, uint64_t Count);
+    int64_t Seek(File* OpenFile, int64_t Offset, int32_t Whence);
+    int64_t MemoryMap(File* OpenFile, uint64_t Length, uint64_t Offset, VirtualAddressSpace* AddressSpace, uint64_t* Address);
+
+    FileOperations* GetFileOperations();
+
+    static int64_t WriteFileOperation(File* OpenFile, const void* Buffer, uint64_t Count);
+    static int64_t SeekFileOperation(File* OpenFile, int64_t Offset, int32_t Whence);
+    static int64_t MemoryMapFileOperation(File* OpenFile, uint64_t Length, uint64_t Offset, VirtualAddressSpace* AddressSpace, uint64_t* Address);
 
     uint32_t*                GetBuffer() const;
     uint64_t                 GetBufferSizeBytes() const;
