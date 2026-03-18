@@ -70,6 +70,27 @@ bool IsRangeWithin(uint64_t RangeStart, uint64_t RangeSize, uint64_t Address, ui
     return AccessEnd <= RangeEnd;
 }
 
+bool IsRangeWithinAnyELFRegion(const VirtualAddressSpaceELF* ELFAddressSpace, uint64_t Address, uint64_t Count)
+{
+    if (ELFAddressSpace == nullptr)
+    {
+        return false;
+    }
+
+    const ELFMemoryRegion* Regions     = ELFAddressSpace->GetMemoryRegions();
+    size_t                 RegionCount = ELFAddressSpace->GetMemoryRegionCount();
+
+    for (size_t RegionIndex = 0; RegionIndex < RegionCount; ++RegionIndex)
+    {
+        if (IsRangeWithin(Regions[RegionIndex].VirtualAddress, Regions[RegionIndex].Size, Address, Count))
+        {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 bool IsUserAddressRangeAccessible(const Process* CurrentProcess, uint64_t Address, uint64_t Count)
 {
     if (CurrentProcess == nullptr)
@@ -89,7 +110,15 @@ bool IsUserAddressRangeAccessible(const Process* CurrentProcess, uint64_t Addres
 
     const VirtualAddressSpace* AddressSpace = CurrentProcess->AddressSpace;
 
-    if (IsRangeWithin(AddressSpace->GetCodeVirtualAddressStart(), AddressSpace->GetCodeSize(), Address, Count))
+    if (CurrentProcess->FileType == FILE_TYPE_ELF)
+    {
+        const VirtualAddressSpaceELF* ELFAddressSpace = static_cast<const VirtualAddressSpaceELF*>(AddressSpace);
+        if (IsRangeWithinAnyELFRegion(ELFAddressSpace, Address, Count))
+        {
+            return true;
+        }
+    }
+    else if (IsRangeWithin(AddressSpace->GetCodeVirtualAddressStart(), AddressSpace->GetCodeSize(), Address, Count))
     {
         return true;
     }

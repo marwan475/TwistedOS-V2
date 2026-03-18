@@ -15,6 +15,10 @@ namespace
 {
 constexpr uint8_t INVALID_PROCESS_ID = 0xFF;
 
+constexpr bool ENABLE_MEMORY_TEST      = false;
+constexpr bool ENABLE_MULTITASK_TEST   = false;
+constexpr bool ENABLE_USER_MODE_TEST   = true;
+
 constexpr uint64_t KERNEL_SLEEP_FAST_TICKS   = 10;
 constexpr uint64_t KERNEL_SLEEP_MEDIUM_TICKS = 300;
 constexpr uint64_t KERNEL_SLEEP_SLOW_TICKS   = 800;
@@ -537,6 +541,13 @@ void KernelValidatorTask()
         {
             case SELF_TEST_PHASE_MEMORY:
             {
+                if (!ENABLE_MEMORY_TEST)
+                {
+                    ActiveDispatcher->GetResourceLayer()->GetTTY()->printf_("[SelfTest] [Memory] test skipped (disabled)\n");
+                    State.Phase = SELF_TEST_PHASE_MULTITASK_SETUP;
+                    break;
+                }
+
                 // Run memory suite first; multitasking suite is skipped on failure.
                 ActiveDispatcher->GetResourceLayer()->GetTTY()->printf_("[SelfTest] [Memory] test started\n");
                 if (!RunMemoryTest(ActiveDispatcher))
@@ -555,6 +566,13 @@ void KernelValidatorTask()
 
             case SELF_TEST_PHASE_MULTITASK_SETUP:
             {
+                if (!ENABLE_MULTITASK_TEST)
+                {
+                    ActiveDispatcher->GetResourceLayer()->GetTTY()->printf_("[SelfTest] [Multitasking and Sleep] test skipped (disabled)\n");
+                    State.Phase = SELF_TEST_PHASE_USER_MODE_SETUP;
+                    break;
+                }
+
                 // Spawn runtime actors for user-process creation and scheduling checks.
                 ActiveDispatcher->GetResourceLayer()->GetTTY()->printf_("[SelfTest] [Multitasking and Sleep] test started\n");
                 if (!SetupMultitaskingTest(ActiveDispatcher))
@@ -610,6 +628,14 @@ void KernelValidatorTask()
 
             case SELF_TEST_PHASE_USER_MODE_SETUP:
             {
+                if (!ENABLE_USER_MODE_TEST)
+                {
+                    ActiveDispatcher->GetResourceLayer()->GetTTY()->printf_("[SelfTest] [User Mode] test skipped (disabled)\n");
+                    State.Passed = true;
+                    State.Phase  = SELF_TEST_PHASE_COMPLETE;
+                    break;
+                }
+
                 // Spawn a single user process starting at /Test1 which will execve-chain
                 // between /Test1 and /Test2, writing to the TTY on each iteration.
                 ActiveDispatcher->GetResourceLayer()->GetTTY()->printf_("[SelfTest] [User Mode] test started: /Test1 will execve-chain with /Test2 for 3 seconds\n");

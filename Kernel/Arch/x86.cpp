@@ -438,6 +438,43 @@ extern "C" uint64_t HandleSystemCallFromEntry(uint64_t Arg1, uint64_t Arg2, uint
     return static_cast<uint64_t>(-38);
 }
 
+/**
+ * Function: GetCurrentProcessCpuStateForSyscallReturn
+ * Description: Returns the running process CPU state used by syscall return logic for non-returning execve success.
+ * Parameters:
+ *   None
+ * Returns:
+ *   const CpuState* - Pointer to current running process state, or nullptr when unavailable.
+ */
+extern "C" const CpuState* GetCurrentProcessCpuStateForSyscallReturn()
+{
+    Dispatcher* ActiveDispatcher = Dispatcher::GetActive();
+    if (ActiveDispatcher == nullptr)
+    {
+        return nullptr;
+    }
+
+    LogicLayer* ActiveLogicLayer = ActiveDispatcher->GetLogicLayer();
+    if (ActiveLogicLayer == nullptr)
+    {
+        return nullptr;
+    }
+
+    ProcessManager* PM = ActiveLogicLayer->GetProcessManager();
+    if (PM == nullptr)
+    {
+        return nullptr;
+    }
+
+    Process* CurrentProcess = PM->GetRunningProcess();
+    if (CurrentProcess == nullptr)
+    {
+        return nullptr;
+    }
+
+    return &CurrentProcess->State;
+}
+
 extern "C" void SystemCallEntry();
 
 /**

@@ -10,6 +10,7 @@ section .text
 global SystemCallEntry
 
 extern HandleSystemCallFromEntry
+extern GetCurrentProcessCpuStateForSyscallReturn
 extern KernelTSS
 
 %define TSS_RSP0_LOWER_OFFSET_BYTES 4
@@ -18,7 +19,8 @@ extern KernelTSS
 
 ; /**
 ;  * Function: SystemCallEntry
-;  * Description: SYSCALL entry trampoline that saves user return context, switches to kernel stack, dispatches syscall handler, and returns to user mode.
+;  * Description: SYSCALL entry trampoline that saves user return context, switches to kernel stack, dispatches syscall handler,
+;  *              then returns either to the saved syscall frame or (for successful execve) to the current process state.
 ;  * Parameters:
 ;  *   rax, rdi, rsi, rdx, r10, r8, r9 (implicit) - Linux/SysV syscall register arguments.
 ;  * Returns:
@@ -34,6 +36,27 @@ SystemCallEntry:
     mov rcx, r10
     push rax
     call HandleSystemCallFromEntry
+
+    cmp qword [rsp], 59
+    jne .return_to_saved_syscall_frame
+
+    test rax, rax
+    jne .return_to_saved_syscall_frame
+
+    call GetCurrentProcessCpuStateForSyscallReturn
+    test rax, rax
+    jz .return_to_saved_syscall_frame
+
+    mov r11, rax
+
+    push qword [r11 + 152]
+    push qword [r11 + 136]
+    push qword [r11 + 128]
+    push qword [r11 + 144]
+    push qword [r11 + 120]
+    iretq
+
+.return_to_saved_syscall_frame:
     add rsp, 8
 
     mov rcx, [SavedSystemCallUserRIP]
