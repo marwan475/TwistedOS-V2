@@ -18,6 +18,7 @@ constexpr int64_t LINUX_ERR_EBADF  = -9;
 constexpr int64_t LINUX_ERR_ENOSYS = -38;
 
 constexpr uint64_t SYSCALL_COPY_CHUNK_SIZE = 4096;
+constexpr uint64_t SYSCALL_PATH_MAX         = 4096;
 
 constexpr uint64_t LINUX_O_ACCMODE = 0x3;
 
@@ -36,6 +37,33 @@ FileFlags DecodeAccessFlags(uint64_t Flags)
     }
 
     return READ;
+}
+
+bool CopyUserCString(LogicLayer* Logic, const char* UserString, char* KernelBuffer, uint64_t KernelBufferSize)
+{
+    if (Logic == nullptr || UserString == nullptr || KernelBuffer == nullptr || KernelBufferSize == 0)
+    {
+        return false;
+    }
+
+    for (uint64_t Index = 0; Index < KernelBufferSize; ++Index)
+    {
+        char Character = 0;
+        const void* UserCharacterAddress = reinterpret_cast<const void*>(reinterpret_cast<uint64_t>(UserString) + Index);
+        if (!Logic->CopyFromUserToKernel(UserCharacterAddress, &Character, sizeof(Character)))
+        {
+            return false;
+        }
+
+        KernelBuffer[Index] = Character;
+        if (Character == '\0')
+        {
+            return true;
+        }
+    }
+
+    KernelBuffer[KernelBufferSize - 1] = '\0';
+    return false;
 }
 } // namespace
 
@@ -321,5 +349,42 @@ int64_t TranslationLayer::HandleCloseSystemCall(uint64_t FileDescriptor)
 
     delete OpenFile;
     CurrentProcess->FileTable[FileDescriptor] = nullptr;
+    return 0;
+}
+
+int64_t TranslationLayer::HandleExecveSystemCall(const char* Path, const char* const* Argv, const char* const* Envp)
+{
+    (void) Argv;
+    (void) Envp;
+
+    if (Logic == nullptr || Path == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    ProcessManager* PM = Logic->GetProcessManager();
+    if (PM == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    Process* CurrentProcess = PM->GetRunningProcess();
+    if (CurrentProcess == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    char KernelPathBuffer[SYSCALL_PATH_MAX] = {};
+    if (!CopyUserCString(Logic, Path, KernelPathBuffer, sizeof(KernelPathBuffer)))
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    uint8_t ChangedProcessId = Logic->ChangeProcessExecution(CurrentProcess->Id, KernelPathBuffer);
+    if (ChangedProcessId == PROCESS_ID_INVALID)
+    {
+        return LINUX_ERR_ENOENT;
+    }
+
     return 0;
 }

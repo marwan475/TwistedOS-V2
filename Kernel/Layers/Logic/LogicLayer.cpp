@@ -384,6 +384,131 @@ uint8_t LogicLayer::CreateKernelProcess(void (*EntryPoint)())
     return Id;
 }
 
+uint8_t LogicLayer::ChangeProcessExecution(uint8_t Id, const char* FilePath)
+{
+    if (PM == nullptr || VFS == nullptr || Resource == nullptr || FilePath == nullptr)
+    {
+        return PROCESS_ID_INVALID;
+    }
+
+    Process* TargetProcess = PM->GetProcessById(Id);
+    if (TargetProcess == nullptr || TargetProcess->Status == PROCESS_TERMINATED)
+    {
+        return PROCESS_ID_INVALID;
+    }
+
+    if (TargetProcess->Level != PROCESS_LEVEL_USER)
+    {
+        return PROCESS_ID_INVALID;
+    }
+
+    Dentry* Entry = VFS->Lookup(FilePath);
+    if (Entry == nullptr || Entry->inode == nullptr)
+    {
+        return PROCESS_ID_INVALID;
+    }
+
+    if (Entry->inode->NodeType != INODE_FILE)
+    {
+        return PROCESS_ID_INVALID;
+    }
+
+    if (Entry->inode->NodeData == nullptr || Entry->inode->NodeSize == 0)
+    {
+        return PROCESS_ID_INVALID;
+    }
+
+    PhysicalMemoryManager* PMM = Resource->GetPMM();
+    if (PMM == nullptr)
+    {
+        return PROCESS_ID_INVALID;
+    }
+
+    uint64_t CodeSize = Entry->inode->NodeSize;
+    uint64_t Pages    = (CodeSize + PAGE_SIZE - 1) / PAGE_SIZE;
+
+    void* CopiedImage = PMM->AllocatePagesFromDescriptor(Pages);
+    if (CopiedImage == nullptr)
+    {
+        return PROCESS_ID_INVALID;
+    }
+
+    kmemset(CopiedImage, 0, Pages * PAGE_SIZE);
+    memcpy(CopiedImage, Entry->inode->NodeData, static_cast<size_t>(CodeSize));
+
+    ELFHeader            Header            = {};
+    VirtualAddressSpace* NewAddressSpace   = nullptr;
+    bool                 IsELF             = false;
+    uint64_t             NewUserEntryPoint = USER_PROCESS_VIRTUAL_BASE;
+
+    if (ELF != nullptr)
+    {
+        Header = ELF->ParseELF(reinterpret_cast<uint64_t>(CopiedImage));
+        IsELF  = ELF->ValidateELF(Header);
+    }
+
+    if (IsELF)
+    {
+        NewAddressSpace   = MapELF(reinterpret_cast<uint64_t>(CopiedImage), CodeSize, Header);
+        NewUserEntryPoint = Header.Entry;
+    }
+    else
+    {
+        NewAddressSpace = MapRawBinary(reinterpret_cast<uint64_t>(CopiedImage), CodeSize);
+    }
+
+    if (NewAddressSpace == nullptr)
+    {
+        PMM->FreePagesFromDescriptor(CopiedImage, Pages);
+        return PROCESS_ID_INVALID;
+    }
+
+    CpuState NewState = {};
+    NewState.rip      = NewUserEntryPoint;
+    NewState.rflags   = INITIAL_PROCESS_RFLAGS;
+    NewState.rbp      = 0;
+    NewState.rsp      = (USER_PROCESS_VIRTUAL_STACK_TOP & ~STACK_ALIGNMENT_MASK) - STACK_RETURN_SLOT_SIZE;
+    NewState.cs       = USER_CS;
+    NewState.ss       = USER_SS;
+
+    VirtualAddressSpace* OldAddressSpace = TargetProcess->AddressSpace;
+    FILE_TYPE            OldFileType     = TargetProcess->FileType;
+
+    TargetProcess->AddressSpace = NewAddressSpace;
+    TargetProcess->FileType     = IsELF ? FILE_TYPE_ELF : FILE_TYPE_RAW_BINARY;
+    TargetProcess->StackPointer = reinterpret_cast<void*>(NewAddressSpace->GetStackVirtualAddressStart());
+    TargetProcess->State        = NewState;
+    TargetProcess->CurrentFileSystemLocation = (Entry->parent != nullptr) ? Entry->parent : Entry;
+
+    Process* RunningProcess = PM->GetRunningProcess();
+    if (RunningProcess == TargetProcess)
+    {
+        uint64_t NewPageTable = NewAddressSpace->GetPageMapL4TableAddr();
+        if (NewPageTable != 0)
+        {
+            Resource->LoadPageTable(NewPageTable);
+        }
+        PM->UpdateCurrentProcessId(TargetProcess->Id);
+    }
+
+    if (OldAddressSpace != nullptr)
+    {
+        if (OldFileType == FILE_TYPE_ELF)
+        {
+            CleanUpELF(OldAddressSpace);
+        }
+        else
+        {
+            CleanUpRawBinary(OldAddressSpace);
+        }
+
+        delete OldAddressSpace;
+    }
+
+    return Id;
+}
+
+
 /**
  * Function: LogicLayer::CreateUserProcessFromVFS
  * Description: Looks up a file in the VFS by path and creates a user process from its image.

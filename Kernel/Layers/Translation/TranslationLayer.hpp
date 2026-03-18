@@ -25,6 +25,7 @@ public:
     int64_t HandleWriteSystemCall(uint64_t FileDescriptor, const void* Buffer, uint64_t Count);
     int64_t HandleOpenSystemCall(const char* Path, uint64_t Flags);
     int64_t HandleCloseSystemCall(uint64_t FileDescriptor);
+    int64_t HandleExecveSystemCall(const char* Path, const char* const* Argv, const char* const* Envp);
 
     LogicLayer* GetLogicLayer() const;
 };
