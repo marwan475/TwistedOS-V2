@@ -8,11 +8,12 @@ default rel
 section .text
 
 global SystemCallEntry
-global GetSavedSystemCallFrame
-global LoadSavedSystemCallCpuState
 
 extern HandleSystemCallFromEntry
 extern GetCurrentProcessCpuStateForSyscallReturn
+extern PersistCurrentSavedSystemCallFrame
+extern RestoreCurrentSavedSystemCallFrame
+extern CompleteCurrentSystemCallReturn
 extern KernelTSS
 
 %define TSS_RSP0_LOWER_OFFSET_BYTES 4
@@ -69,7 +70,16 @@ SystemCallEntry:
 
     mov rsp, qword [KernelTSS + TSS_RSP0_LOWER_OFFSET_BYTES]
 
-    mov rcx, r10
+    call PersistCurrentSavedSystemCallFrame
+
+    mov rdi, [SavedSystemCallUserRDI]
+    mov rsi, [SavedSystemCallUserRSI]
+    mov rdx, [SavedSystemCallUserRDX]
+    mov rcx, [SavedSystemCallUserR10]
+    mov r8,  [SavedSystemCallUserR8]
+    mov r9,  [SavedSystemCallUserR9]
+    mov rax, [SavedSystemCallUserRAX]
+
     push rax
     call HandleSystemCallFromEntry
 
@@ -78,6 +88,8 @@ SystemCallEntry:
 
     test rax, rax
     jne .return_to_saved_syscall_frame
+
+    call CompleteCurrentSystemCallReturn
 
     call GetCurrentProcessCpuStateForSyscallReturn
     test rax, rax
@@ -95,6 +107,9 @@ SystemCallEntry:
 .return_to_saved_syscall_frame:
     add rsp, 8
 
+    call RestoreCurrentSavedSystemCallFrame
+    call CompleteCurrentSystemCallReturn
+
     mov rcx, [SavedSystemCallUserRIP]
     mov r11, [SavedSystemCallUserRFLAGS]
     mov r10, [SavedSystemCallUserRSP]
@@ -105,94 +120,6 @@ SystemCallEntry:
     push USER_CS
     push rcx
     iretq
-
-GetSavedSystemCallFrame:
-    test rdi, rdi
-    jz .skip_rip
-    mov rax, [SavedSystemCallUserRIP]
-    mov [rdi], rax
-
-.skip_rip:
-    test rsi, rsi
-    jz .skip_rsp
-    mov rax, [SavedSystemCallUserRSP]
-    mov [rsi], rax
-
-.skip_rsp:
-    test rdx, rdx
-    jz .done_get
-    mov rax, [SavedSystemCallUserRFLAGS]
-    mov [rdx], rax
-
-.done_get:
-    ret
-
-LoadSavedSystemCallCpuState:
-    test rdi, rdi
-    jz .done_load
-
-    mov rax, [SavedSystemCallUserRAX]
-    mov [rdi + CPUSTATE_RAX], rax
-
-    xor rax, rax
-    mov [rdi + CPUSTATE_RCX], rax
-
-    mov rax, [SavedSystemCallUserRDX]
-    mov [rdi + CPUSTATE_RDX], rax
-
-    mov rax, [SavedSystemCallUserRBX]
-    mov [rdi + CPUSTATE_RBX], rax
-
-    mov rax, [SavedSystemCallUserRBP]
-    mov [rdi + CPUSTATE_RBP], rax
-
-    mov rax, [SavedSystemCallUserRSI]
-    mov [rdi + CPUSTATE_RSI], rax
-
-    mov rax, [SavedSystemCallUserRDI]
-    mov [rdi + CPUSTATE_RDI], rax
-
-    mov rax, [SavedSystemCallUserR8]
-    mov [rdi + CPUSTATE_R8], rax
-
-    mov rax, [SavedSystemCallUserR9]
-    mov [rdi + CPUSTATE_R9], rax
-
-    mov rax, [SavedSystemCallUserR10]
-    mov [rdi + CPUSTATE_R10], rax
-
-    xor rax, rax
-    mov [rdi + CPUSTATE_R11], rax
-
-    mov rax, [SavedSystemCallUserR12]
-    mov [rdi + CPUSTATE_R12], rax
-
-    mov rax, [SavedSystemCallUserR13]
-    mov [rdi + CPUSTATE_R13], rax
-
-    mov rax, [SavedSystemCallUserR14]
-    mov [rdi + CPUSTATE_R14], rax
-
-    mov rax, [SavedSystemCallUserR15]
-    mov [rdi + CPUSTATE_R15], rax
-
-    mov rax, [SavedSystemCallUserRIP]
-    mov [rdi + CPUSTATE_RIP], rax
-
-    mov rax, [SavedSystemCallUserRFLAGS]
-    mov [rdi + CPUSTATE_RFLAGS], rax
-
-    mov rax, [SavedSystemCallUserRSP]
-    mov [rdi + CPUSTATE_RSP], rax
-
-    mov rax, USER_CS
-    mov [rdi + CPUSTATE_CS], rax
-
-    mov rax, USER_SS
-    mov [rdi + CPUSTATE_SS], rax
-
-.done_load:
-    ret
 
 section .bss
 align 8

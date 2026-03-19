@@ -39,11 +39,37 @@ enum FILE_TYPE
     FILE_TYPE_ELF
 };
 
+struct ProcessSavedSystemCallFrame
+{
+    uint64_t UserRSP;
+    uint64_t UserRIP;
+    uint64_t UserRFLAGS;
+    uint64_t UserRAX;
+    uint64_t UserRDX;
+    uint64_t UserRBX;
+    uint64_t UserRBP;
+    uint64_t UserRSI;
+    uint64_t UserRDI;
+    uint64_t UserR8;
+    uint64_t UserR9;
+    uint64_t UserR10;
+    uint64_t UserR12;
+    uint64_t UserR13;
+    uint64_t UserR14;
+    uint64_t UserR15;
+};
+
 struct Process
 {
     uint8_t              Id;
     uint8_t              ParrentId;
     bool                 WaitingForChild = false;
+    bool                 WaitingForSystemCallReturn = false;
+    bool                 HasSavedSystemCallFrame = false;
+    bool                 HasPendingChildExit = false;
+    uint8_t              PendingChildId = PROCESS_ID_INVALID;
+    int32_t              PendingChildStatus = 0;
+    ProcessSavedSystemCallFrame SavedSystemCallFrame = {};
     CpuState             State;
     ProcessState         Status;
     ProcessLevel         Level;

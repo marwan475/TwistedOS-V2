@@ -487,4 +487,7 @@ extern "C"
 
     void GetSavedSystemCallFrame(uint64_t* Rip, uint64_t* Rsp, uint64_t* RFlags);
     void LoadSavedSystemCallCpuState(CpuState* State);
+    bool PersistCurrentSavedSystemCallFrame();
+    bool RestoreCurrentSavedSystemCallFrame();
+    void CompleteCurrentSystemCallReturn();
 }

@@ -41,6 +41,12 @@ ProcessManager::ProcessManager() : CurrentProcessId(PROCESS_ID_INVALID)
         Processes[index].Id           = static_cast<uint8_t>(index);
         Processes[index].ParrentId    = PROCESS_ID_INVALID;
         Processes[index].WaitingForChild = false;
+        Processes[index].WaitingForSystemCallReturn = false;
+        Processes[index].HasSavedSystemCallFrame = false;
+        Processes[index].HasPendingChildExit = false;
+        Processes[index].PendingChildId = PROCESS_ID_INVALID;
+        Processes[index].PendingChildStatus = 0;
+        Processes[index].SavedSystemCallFrame = {};
         Processes[index].Status       = PROCESS_TERMINATED;
         Processes[index].Level        = PROCESS_LEVEL_KERNEL;
         Processes[index].FileType     = FILE_TYPE_RAW_BINARY;
@@ -144,6 +150,12 @@ uint8_t ProcessManager::CreateKernelProcess(void* StackPointer, CpuState Initial
         {
             Processes[index].ParrentId    = PROCESS_ID_INVALID;
             Processes[index].WaitingForChild = false;
+            Processes[index].WaitingForSystemCallReturn = false;
+            Processes[index].HasSavedSystemCallFrame = false;
+            Processes[index].HasPendingChildExit = false;
+            Processes[index].PendingChildId = PROCESS_ID_INVALID;
+            Processes[index].PendingChildStatus = 0;
+            Processes[index].SavedSystemCallFrame = {};
             Processes[index].Status       = PROCESS_READY;
             Processes[index].Level        = PROCESS_LEVEL_KERNEL;
             Processes[index].FileType     = FILE_TYPE_RAW_BINARY;
@@ -177,6 +189,12 @@ uint8_t ProcessManager::CreateUserProcess(void* StackPointer, CpuState InitialSt
         {
             Processes[index].ParrentId    = PROCESS_ID_INVALID;
             Processes[index].WaitingForChild = false;
+            Processes[index].WaitingForSystemCallReturn = false;
+            Processes[index].HasSavedSystemCallFrame = false;
+            Processes[index].HasPendingChildExit = false;
+            Processes[index].PendingChildId = PROCESS_ID_INVALID;
+            Processes[index].PendingChildStatus = 0;
+            Processes[index].SavedSystemCallFrame = {};
             Processes[index].Status       = PROCESS_READY;
             Processes[index].Level        = PROCESS_LEVEL_USER;
             Processes[index].FileType     = FileType;
@@ -211,6 +229,12 @@ void* ProcessManager::KillProcess(uint8_t Id)
     ReleaseProcessFileTable(Processes[Id]);
     Processes[Id].ParrentId = PROCESS_ID_INVALID;
     Processes[Id].WaitingForChild = false;
+    Processes[Id].WaitingForSystemCallReturn = false;
+    Processes[Id].HasSavedSystemCallFrame = false;
+    Processes[Id].HasPendingChildExit = false;
+    Processes[Id].PendingChildId = PROCESS_ID_INVALID;
+    Processes[Id].PendingChildStatus = 0;
+    Processes[Id].SavedSystemCallFrame = {};
     Processes[Id].Status    = PROCESS_TERMINATED;
     Processes[Id].FileType  = FILE_TYPE_RAW_BINARY;
     Processes[Id].StackPointer = nullptr;

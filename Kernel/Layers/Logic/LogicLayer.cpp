@@ -1087,7 +1087,7 @@ VirtualAddressSpace* LogicLayer::MapELF(uint64_t CodeAddr, uint64_t CodeSize, co
         ELFMemoryRegion Region = {};
         Region.PhysicalAddress = CodeAddr + ProgramHeader.Offset;
         Region.VirtualAddress  = ProgramHeader.VirtualAddress;
-        Region.Size            = ProgramHeader.MemorySize;
+        Region.Size            = ProgramHeader.FileSize;
         Region.Writable        = ELF->IsWritableSegment(ProgramHeader);
 
         if (!AddressSpace->AddMemoryRegion(Region))
@@ -1191,6 +1191,10 @@ void LogicLayer::CleanUpELF(VirtualAddressSpace* AddressSpace)
     const ELFMemoryRegion*  Regions         = ELFAddressSpace->GetMemoryRegions();
     size_t                  RegionCount     = ELFAddressSpace->GetMemoryRegionCount();
 
+    uint64_t CodePhysicalBase = AlignDownToPage(AddressSpace->GetCodePhysicalAddress());
+    uint64_t CodePhysicalSize = AlignUpToPage(AddressSpace->GetCodeSize());
+    uint64_t CodePhysicalEnd  = CodePhysicalBase + CodePhysicalSize;
+
     uint64_t RangeStarts[16] = {};
     uint64_t RangeEnds[16]   = {};
     size_t   RangeCount      = 0;
@@ -1212,6 +1216,24 @@ void LogicLayer::CleanUpELF(VirtualAddressSpace* AddressSpace)
             continue;
         }
         uint64_t End = Start + (PageCount * PAGE_SIZE);
+
+        if (CodePhysicalSize != 0)
+        {
+            if (Start < CodePhysicalBase)
+            {
+                Start = CodePhysicalBase;
+            }
+
+            if (End > CodePhysicalEnd)
+            {
+                End = CodePhysicalEnd;
+            }
+
+            if (End <= Start)
+            {
+                continue;
+            }
+        }
 
         bool Merged = true;
         while (Merged)
@@ -1289,6 +1311,12 @@ void LogicLayer::CleanUpELF(VirtualAddressSpace* AddressSpace)
 void LogicLayer::KillProcess(uint8_t Id)
 {
     Process* TargetProcess = PM->GetProcessById(Id);
+    uint8_t  ParentId      = PROCESS_ID_INVALID;
+
+    if (TargetProcess != nullptr)
+    {
+        ParentId = TargetProcess->ParrentId;
+    }
 
     if (TargetProcess != nullptr && TargetProcess->Level == PROCESS_LEVEL_USER && TargetProcess->AddressSpace != nullptr)
     {
@@ -1324,6 +1352,20 @@ void LogicLayer::KillProcess(uint8_t Id)
     if (Sync != nullptr)
     {
         Sync->RemoveFromSleepQueue(Id);
+    }
+
+    Process* ParentProcess = PM->GetProcessById(ParentId);
+    if (ParentProcess != nullptr && ParentProcess->Status != PROCESS_TERMINATED)
+    {
+        ParentProcess->HasPendingChildExit = true;
+        ParentProcess->PendingChildId      = Id;
+        ParentProcess->PendingChildStatus  = 0;
+
+        if (ParentProcess->WaitingForChild)
+        {
+            ParentProcess->WaitingForChild = false;
+            UnblockProcess(ParentProcess->Id);
+        }
     }
 }
 

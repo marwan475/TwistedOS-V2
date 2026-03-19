@@ -18,6 +18,7 @@ constexpr int64_t LINUX_ERR_EMFILE = -24;
 constexpr int64_t LINUX_ERR_EINVAL = -22;
 constexpr int64_t LINUX_ERR_EBADF  = -9;
 constexpr int64_t LINUX_ERR_ENOSYS = -38;
+constexpr int64_t LINUX_ERR_ECHILD = -10;
 
 constexpr uint64_t SYSCALL_COPY_CHUNK_SIZE = 4096;
 constexpr uint64_t SYSCALL_PATH_MAX         = 4096;
@@ -65,6 +66,30 @@ bool CopyUserCString(LogicLayer* Logic, const char* UserString, char* KernelBuff
     }
 
     KernelBuffer[KernelBufferSize - 1] = '\0';
+    return false;
+}
+
+bool ProcessHasLiveChild(ProcessManager* PM, uint8_t ParentId)
+{
+    if (PM == nullptr)
+    {
+        return false;
+    }
+
+    for (size_t Index = 0; Index < PM->GetMaxProcesses(); ++Index)
+    {
+        Process* CandidateProcess = PM->GetProcessById(static_cast<uint8_t>(Index));
+        if (CandidateProcess == nullptr)
+        {
+            continue;
+        }
+
+        if (CandidateProcess->ParrentId == ParentId && CandidateProcess->Status != PROCESS_TERMINATED)
+        {
+            return true;
+        }
+    }
+
     return false;
 }
 } // namespace
@@ -434,4 +459,67 @@ int64_t TranslationLayer::HandleExecveSystemCall(const char* Path, const char* c
     }
 
     return 0;
+}
+
+int64_t TranslationLayer::HandleWaitSystemCall(int* Status)
+{
+    if (Logic == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    ProcessManager* PM = Logic->GetProcessManager();
+    if (PM == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    Process* CurrentProcess = PM->GetRunningProcess();
+    if (CurrentProcess == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    auto ConsumePendingChild = [&]() -> int64_t {
+        if (!CurrentProcess->HasPendingChildExit)
+        {
+            return PROCESS_ID_INVALID;
+        }
+
+        int32_t ChildExitStatus = CurrentProcess->PendingChildStatus;
+        if (Status != nullptr && !Logic->CopyFromKernelToUser(&ChildExitStatus, Status, sizeof(ChildExitStatus)))
+        {
+            return LINUX_ERR_EFAULT;
+        }
+
+        uint8_t ExitedChildId               = CurrentProcess->PendingChildId;
+        CurrentProcess->HasPendingChildExit = false;
+        CurrentProcess->PendingChildId      = PROCESS_ID_INVALID;
+        CurrentProcess->PendingChildStatus  = 0;
+        CurrentProcess->WaitingForChild     = false;
+        return static_cast<int64_t>(ExitedChildId);
+    };
+
+    int64_t ImmediateResult = ConsumePendingChild();
+    if (ImmediateResult != PROCESS_ID_INVALID)
+    {
+        return ImmediateResult;
+    }
+
+    if (!ProcessHasLiveChild(PM, CurrentProcess->Id))
+    {
+        return LINUX_ERR_ECHILD;
+    }
+
+    CurrentProcess->WaitingForChild = true;
+    Logic->BlockProcess(CurrentProcess->Id);
+
+    int64_t ResultAfterWake = ConsumePendingChild();
+    if (ResultAfterWake != PROCESS_ID_INVALID)
+    {
+        return ResultAfterWake;
+    }
+
+    CurrentProcess->WaitingForChild = false;
+    return LINUX_ERR_ECHILD;
 }

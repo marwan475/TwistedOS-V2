@@ -27,6 +27,7 @@ public:
     int64_t HandleCloseSystemCall(uint64_t FileDescriptor);
     int64_t HandleForkSystemCall();
     int64_t HandleExecveSystemCall(const char* Path, const char* const* Argv, const char* const* Envp);
+    int64_t HandleWaitSystemCall(int* Status);
 
     LogicLayer* GetLogicLayer() const;
 };

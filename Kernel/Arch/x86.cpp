@@ -30,6 +30,49 @@ static IDTentry       IDT[256]                                                 =
 static IDTdescription IDTDescriptor                                            = {sizeof(IDT) - 1, IDT};
 static uint8_t        KernelInterruptStack[16384] __attribute__((aligned(16))) = {};
 
+extern "C"
+{
+    uint64_t SavedSystemCallUserRSP;
+    uint64_t SavedSystemCallUserRIP;
+    uint64_t SavedSystemCallUserRFLAGS;
+    uint64_t SavedSystemCallUserRAX;
+    uint64_t SavedSystemCallUserRDX;
+    uint64_t SavedSystemCallUserRBX;
+    uint64_t SavedSystemCallUserRBP;
+    uint64_t SavedSystemCallUserRSI;
+    uint64_t SavedSystemCallUserRDI;
+    uint64_t SavedSystemCallUserR8;
+    uint64_t SavedSystemCallUserR9;
+    uint64_t SavedSystemCallUserR10;
+    uint64_t SavedSystemCallUserR12;
+    uint64_t SavedSystemCallUserR13;
+    uint64_t SavedSystemCallUserR14;
+    uint64_t SavedSystemCallUserR15;
+}
+
+static Process* GetCurrentProcessForSystemCallFrame()
+{
+    Dispatcher* ActiveDispatcher = Dispatcher::GetActive();
+    if (ActiveDispatcher == nullptr)
+    {
+        return nullptr;
+    }
+
+    LogicLayer* ActiveLogicLayer = ActiveDispatcher->GetLogicLayer();
+    if (ActiveLogicLayer == nullptr)
+    {
+        return nullptr;
+    }
+
+    ProcessManager* PM = ActiveLogicLayer->GetProcessManager();
+    if (PM == nullptr)
+    {
+        return nullptr;
+    }
+
+    return PM->GetRunningProcess();
+}
+
 /**
  * Function: LoadIDT
  * Description: Loads the processor IDT register with the provided descriptor.
@@ -448,31 +491,143 @@ extern "C" uint64_t HandleSystemCallFromEntry(uint64_t Arg1, uint64_t Arg2, uint
  */
 extern "C" const CpuState* GetCurrentProcessCpuStateForSyscallReturn()
 {
-    Dispatcher* ActiveDispatcher = Dispatcher::GetActive();
-    if (ActiveDispatcher == nullptr)
-    {
-        return nullptr;
-    }
-
-    LogicLayer* ActiveLogicLayer = ActiveDispatcher->GetLogicLayer();
-    if (ActiveLogicLayer == nullptr)
-    {
-        return nullptr;
-    }
-
-    ProcessManager* PM = ActiveLogicLayer->GetProcessManager();
-    if (PM == nullptr)
-    {
-        return nullptr;
-    }
-
-    Process* CurrentProcess = PM->GetRunningProcess();
+    Process* CurrentProcess = GetCurrentProcessForSystemCallFrame();
     if (CurrentProcess == nullptr)
     {
         return nullptr;
     }
 
     return &CurrentProcess->State;
+}
+
+extern "C" void GetSavedSystemCallFrame(uint64_t* Rip, uint64_t* Rsp, uint64_t* RFlags)
+{
+    Process* CurrentProcess = GetCurrentProcessForSystemCallFrame();
+    if (CurrentProcess == nullptr || !CurrentProcess->HasSavedSystemCallFrame)
+    {
+        return;
+    }
+
+    if (Rip != nullptr)
+    {
+        *Rip = CurrentProcess->SavedSystemCallFrame.UserRIP;
+    }
+
+    if (Rsp != nullptr)
+    {
+        *Rsp = CurrentProcess->SavedSystemCallFrame.UserRSP;
+    }
+
+    if (RFlags != nullptr)
+    {
+        *RFlags = CurrentProcess->SavedSystemCallFrame.UserRFLAGS;
+    }
+}
+
+extern "C" void LoadSavedSystemCallCpuState(CpuState* State)
+{
+    if (State == nullptr)
+    {
+        return;
+    }
+
+    Process* CurrentProcess = GetCurrentProcessForSystemCallFrame();
+    if (CurrentProcess == nullptr || !CurrentProcess->HasSavedSystemCallFrame)
+    {
+        return;
+    }
+
+    const ProcessSavedSystemCallFrame& SavedFrame = CurrentProcess->SavedSystemCallFrame;
+
+    State->rax    = SavedFrame.UserRAX;
+    State->rcx    = 0;
+    State->rdx    = SavedFrame.UserRDX;
+    State->rbx    = SavedFrame.UserRBX;
+    State->rbp    = SavedFrame.UserRBP;
+    State->rsi    = SavedFrame.UserRSI;
+    State->rdi    = SavedFrame.UserRDI;
+    State->r8     = SavedFrame.UserR8;
+    State->r9     = SavedFrame.UserR9;
+    State->r10    = SavedFrame.UserR10;
+    State->r11    = 0;
+    State->r12    = SavedFrame.UserR12;
+    State->r13    = SavedFrame.UserR13;
+    State->r14    = SavedFrame.UserR14;
+    State->r15    = SavedFrame.UserR15;
+    State->rip    = SavedFrame.UserRIP;
+    State->rflags = SavedFrame.UserRFLAGS;
+    State->rsp    = SavedFrame.UserRSP;
+    State->cs     = USER_CS;
+    State->ss     = USER_SS;
+}
+
+extern "C" bool PersistCurrentSavedSystemCallFrame()
+{
+    Process* CurrentProcess = GetCurrentProcessForSystemCallFrame();
+    if (CurrentProcess == nullptr)
+    {
+        return false;
+    }
+
+    CurrentProcess->SavedSystemCallFrame.UserRSP    = SavedSystemCallUserRSP;
+    CurrentProcess->SavedSystemCallFrame.UserRIP    = SavedSystemCallUserRIP;
+    CurrentProcess->SavedSystemCallFrame.UserRFLAGS = SavedSystemCallUserRFLAGS;
+    CurrentProcess->SavedSystemCallFrame.UserRAX    = SavedSystemCallUserRAX;
+    CurrentProcess->SavedSystemCallFrame.UserRDX    = SavedSystemCallUserRDX;
+    CurrentProcess->SavedSystemCallFrame.UserRBX    = SavedSystemCallUserRBX;
+    CurrentProcess->SavedSystemCallFrame.UserRBP    = SavedSystemCallUserRBP;
+    CurrentProcess->SavedSystemCallFrame.UserRSI    = SavedSystemCallUserRSI;
+    CurrentProcess->SavedSystemCallFrame.UserRDI    = SavedSystemCallUserRDI;
+    CurrentProcess->SavedSystemCallFrame.UserR8     = SavedSystemCallUserR8;
+    CurrentProcess->SavedSystemCallFrame.UserR9     = SavedSystemCallUserR9;
+    CurrentProcess->SavedSystemCallFrame.UserR10    = SavedSystemCallUserR10;
+    CurrentProcess->SavedSystemCallFrame.UserR12    = SavedSystemCallUserR12;
+    CurrentProcess->SavedSystemCallFrame.UserR13    = SavedSystemCallUserR13;
+    CurrentProcess->SavedSystemCallFrame.UserR14    = SavedSystemCallUserR14;
+    CurrentProcess->SavedSystemCallFrame.UserR15    = SavedSystemCallUserR15;
+    CurrentProcess->HasSavedSystemCallFrame         = true;
+    CurrentProcess->WaitingForSystemCallReturn      = true;
+    return true;
+}
+
+extern "C" bool RestoreCurrentSavedSystemCallFrame()
+{
+    Process* CurrentProcess = GetCurrentProcessForSystemCallFrame();
+    if (CurrentProcess == nullptr || !CurrentProcess->HasSavedSystemCallFrame)
+    {
+        return false;
+    }
+
+    SavedSystemCallUserRSP    = CurrentProcess->SavedSystemCallFrame.UserRSP;
+    SavedSystemCallUserRIP    = CurrentProcess->SavedSystemCallFrame.UserRIP;
+    SavedSystemCallUserRFLAGS = CurrentProcess->SavedSystemCallFrame.UserRFLAGS;
+    SavedSystemCallUserRAX    = CurrentProcess->SavedSystemCallFrame.UserRAX;
+    SavedSystemCallUserRDX    = CurrentProcess->SavedSystemCallFrame.UserRDX;
+    SavedSystemCallUserRBX    = CurrentProcess->SavedSystemCallFrame.UserRBX;
+    SavedSystemCallUserRBP    = CurrentProcess->SavedSystemCallFrame.UserRBP;
+    SavedSystemCallUserRSI    = CurrentProcess->SavedSystemCallFrame.UserRSI;
+    SavedSystemCallUserRDI    = CurrentProcess->SavedSystemCallFrame.UserRDI;
+    SavedSystemCallUserR8     = CurrentProcess->SavedSystemCallFrame.UserR8;
+    SavedSystemCallUserR9     = CurrentProcess->SavedSystemCallFrame.UserR9;
+    SavedSystemCallUserR10    = CurrentProcess->SavedSystemCallFrame.UserR10;
+    SavedSystemCallUserR12    = CurrentProcess->SavedSystemCallFrame.UserR12;
+    SavedSystemCallUserR13    = CurrentProcess->SavedSystemCallFrame.UserR13;
+    SavedSystemCallUserR14    = CurrentProcess->SavedSystemCallFrame.UserR14;
+    SavedSystemCallUserR15    = CurrentProcess->SavedSystemCallFrame.UserR15;
+    return true;
+}
+
+extern "C" void CompleteCurrentSystemCallReturn()
+{
+    Process* CurrentProcess = GetCurrentProcessForSystemCallFrame();
+    if (CurrentProcess == nullptr)
+    {
+        return;
+    }
+
+    CurrentProcess->WaitingForSystemCallReturn = false;
+    CurrentProcess->HasSavedSystemCallFrame    = false;
+    CurrentProcess->SavedSystemCallFrame       = {};
 }
 
 extern "C" void SystemCallEntry();
