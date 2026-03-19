@@ -26,7 +26,6 @@
 
 int64_t TranslationLayer::HandlePosixSystemCallNumber(uint64_t SystemCallNumber, uint64_t Arg1, uint64_t Arg2, uint64_t Arg3, uint64_t Arg4, uint64_t Arg5, uint64_t Arg6)
 {
-    (void) Arg4;
     (void) Arg5;
     (void) Arg6;
 
@@ -46,6 +45,9 @@ int64_t TranslationLayer::HandlePosixSystemCallNumber(uint64_t SystemCallNumber,
         case 3: // close
             return HandleCloseSystemCall(Arg1);
             break;
+        case 9: // mmap
+            return HandleMmapSystemCall(reinterpret_cast<void*>(Arg1), Arg2, static_cast<int64_t>(Arg3), static_cast<int64_t>(Arg4), static_cast<int64_t>(Arg5), static_cast<int64_t>(Arg6));
+            break;
         case 33: // dup2
             return HandleDup2SystemCall(Arg1, Arg2);
             break;
@@ -57,6 +59,12 @@ int64_t TranslationLayer::HandlePosixSystemCallNumber(uint64_t SystemCallNumber,
             break;
         case 61: // wait
             return HandleWaitSystemCall(reinterpret_cast<int*>(Arg1));
+            break;
+        case 158: // arch_prctl
+            return HandleArchPrctlSystemCall(Arg1, Arg2);
+            break;
+        case 218: // set_tid_address
+            return HandleSetTidAddressSystemCall(reinterpret_cast<int*>(Arg1));
             break;
             /*
                     case 4: // stat

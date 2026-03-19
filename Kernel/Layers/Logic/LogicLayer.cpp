@@ -17,6 +17,51 @@ constexpr uint64_t USER_MODE_FLAG_MASK    = 0x3;
 constexpr uint64_t STACK_ALIGNMENT_MASK   = 0xFULL;
 constexpr uint64_t STACK_RETURN_SLOT_SIZE = 8;
 constexpr uint64_t EXECVE_MAX_VECTOR_COUNT = 128;
+constexpr uint64_t AUXV_AT_NULL            = 0;
+constexpr uint64_t AUXV_AT_PHDR            = 3;
+constexpr uint64_t AUXV_AT_PHENT           = 4;
+constexpr uint64_t AUXV_AT_PHNUM           = 5;
+constexpr uint64_t AUXV_AT_PAGESZ          = 6;
+constexpr uint64_t AUXV_AT_ENTRY           = 9;
+
+bool TranslateELFFileOffsetToVirtualAddress(const ELFProgramHeader64* ProgramHeaders, uint16_t ProgramHeaderCount, uint64_t FileOffset, uint64_t* VirtualAddressOut)
+{
+    if (ProgramHeaders == nullptr || VirtualAddressOut == nullptr)
+    {
+        return false;
+    }
+
+    for (uint16_t ProgramHeaderIndex = 0; ProgramHeaderIndex < ProgramHeaderCount; ++ProgramHeaderIndex)
+    {
+        const ELFProgramHeader64& ProgramHeader = ProgramHeaders[ProgramHeaderIndex];
+        if (!ProgramHeader.MemorySize || !ProgramHeader.FileSize)
+        {
+            continue;
+        }
+
+        if (ProgramHeader.Type != 1)
+        {
+            continue;
+        }
+
+        uint64_t SegmentFileStart = ProgramHeader.Offset;
+        uint64_t SegmentFileEnd   = ProgramHeader.Offset + ProgramHeader.FileSize;
+        if (SegmentFileEnd < SegmentFileStart)
+        {
+            continue;
+        }
+
+        if (FileOffset < SegmentFileStart || FileOffset >= SegmentFileEnd)
+        {
+            continue;
+        }
+
+        *VirtualAddressOut = ProgramHeader.VirtualAddress + (FileOffset - SegmentFileStart);
+        return true;
+    }
+
+    return false;
+}
 
 /**
  * Function: AlignUpToPage
@@ -61,7 +106,7 @@ uint64_t LocalCStringLength(const char* String)
 }
 
 bool InitializeExecveUserEntry(ResourceLayer* Resource, VirtualAddressSpace* AddressSpace, CpuState* State, const char* const* Argv, uint64_t Argc, const char* const* Envp,
-                               uint64_t Envc)
+                               uint64_t Envc, uint64_t AuxProgramHeaderAddress, uint64_t AuxProgramHeaderEntrySize, uint64_t AuxProgramHeaderCount, uint64_t AuxEntryPoint)
 {
     if (Resource == nullptr || AddressSpace == nullptr || State == nullptr)
     {
@@ -184,52 +229,84 @@ bool InitializeExecveUserEntry(ResourceLayer* Resource, VirtualAddressSpace* Add
 
         StackCursor &= ~STACK_ALIGNMENT_MASK;
 
-        uint64_t EnvpVectorSize = (Envc + 1) * sizeof(uint64_t);
-        if (EnvpVectorSize > (StackCursor - StackBottom))
+        uint64_t ArgvVectorCount = Argc + 1;
+        uint64_t EnvpVectorCount = Envc + 1;
+        uint64_t AuxvEntryCount  = 4; // AT_PAGESZ, optional AT_PHDR trio, optional AT_ENTRY, AT_NULL
+        if (AuxProgramHeaderAddress != 0 && AuxProgramHeaderEntrySize != 0 && AuxProgramHeaderCount != 0)
+        {
+            AuxvEntryCount += 3;
+        }
+        if (AuxEntryPoint != 0)
+        {
+            AuxvEntryCount += 1;
+        }
+
+        uint64_t StackWordCount  = 1 + ArgvVectorCount + EnvpVectorCount + (AuxvEntryCount * 2);
+        uint64_t StackBytes      = StackWordCount * sizeof(uint64_t);
+
+        if (StackBytes > (StackCursor - StackBottom))
         {
             Success = false;
             break;
         }
 
-        StackCursor -= EnvpVectorSize;
-        uint64_t EnvpUserPointer = StackCursor;
+        StackCursor -= StackBytes;
 
-        for (uint64_t EnvIndex = 0; EnvIndex < Envc; ++EnvIndex)
-        {
-            memcpy(reinterpret_cast<void*>(EnvpUserPointer + (EnvIndex * sizeof(uint64_t))), &EnvAddresses[EnvIndex], sizeof(uint64_t));
-        }
+        uint64_t ArgvUserPointer = StackCursor + sizeof(uint64_t);
+        uint64_t EnvpUserPointer = ArgvUserPointer + (ArgvVectorCount * sizeof(uint64_t));
+        uint64_t AuxvUserPointer = EnvpUserPointer + (EnvpVectorCount * sizeof(uint64_t));
 
         uint64_t NullPointer = 0;
-        memcpy(reinterpret_cast<void*>(EnvpUserPointer + (Envc * sizeof(uint64_t))), &NullPointer, sizeof(uint64_t));
+        uint64_t WordOffset  = 0;
 
-        uint64_t ArgvVectorSize = (Argc + 1) * sizeof(uint64_t);
-        if (ArgvVectorSize > (StackCursor - StackBottom))
-        {
-            Success = false;
-            break;
-        }
-
-        StackCursor -= ArgvVectorSize;
-        uint64_t ArgvUserPointer = StackCursor;
+        memcpy(reinterpret_cast<void*>(StackCursor + (WordOffset * sizeof(uint64_t))), &Argc, sizeof(uint64_t));
+        ++WordOffset;
 
         for (uint64_t ArgIndex = 0; ArgIndex < Argc; ++ArgIndex)
         {
-            memcpy(reinterpret_cast<void*>(ArgvUserPointer + (ArgIndex * sizeof(uint64_t))), &ArgAddresses[ArgIndex], sizeof(uint64_t));
+            memcpy(reinterpret_cast<void*>(StackCursor + (WordOffset * sizeof(uint64_t))), &ArgAddresses[ArgIndex], sizeof(uint64_t));
+            ++WordOffset;
         }
 
-        memcpy(reinterpret_cast<void*>(ArgvUserPointer + (Argc * sizeof(uint64_t))), &NullPointer, sizeof(uint64_t));
+        memcpy(reinterpret_cast<void*>(StackCursor + (WordOffset * sizeof(uint64_t))), &NullPointer, sizeof(uint64_t));
+        ++WordOffset;
 
-        uint64_t UserInitialRsp = (StackCursor & ~STACK_ALIGNMENT_MASK) - STACK_RETURN_SLOT_SIZE;
-        if (UserInitialRsp < StackBottom)
+        for (uint64_t EnvIndex = 0; EnvIndex < Envc; ++EnvIndex)
         {
-            Success = false;
-            break;
+            memcpy(reinterpret_cast<void*>(StackCursor + (WordOffset * sizeof(uint64_t))), &EnvAddresses[EnvIndex], sizeof(uint64_t));
+            ++WordOffset;
         }
 
-        uint64_t ZeroReturnAddress = 0;
-        memcpy(reinterpret_cast<void*>(UserInitialRsp), &ZeroReturnAddress, sizeof(ZeroReturnAddress));
+        memcpy(reinterpret_cast<void*>(StackCursor + (WordOffset * sizeof(uint64_t))), &NullPointer, sizeof(uint64_t));
+        ++WordOffset;
 
-        State->rsp = UserInitialRsp;
+        uint64_t AuxWordOffset = 0;
+
+        auto PushAuxvPair = [&](uint64_t Type, uint64_t Value)
+        {
+            memcpy(reinterpret_cast<void*>(AuxvUserPointer + (AuxWordOffset * sizeof(uint64_t))), &Type, sizeof(uint64_t));
+            ++AuxWordOffset;
+            memcpy(reinterpret_cast<void*>(AuxvUserPointer + (AuxWordOffset * sizeof(uint64_t))), &Value, sizeof(uint64_t));
+            ++AuxWordOffset;
+        };
+
+        PushAuxvPair(AUXV_AT_PAGESZ, PAGE_SIZE);
+
+        if (AuxProgramHeaderAddress != 0 && AuxProgramHeaderEntrySize != 0 && AuxProgramHeaderCount != 0)
+        {
+            PushAuxvPair(AUXV_AT_PHDR, AuxProgramHeaderAddress);
+            PushAuxvPair(AUXV_AT_PHENT, AuxProgramHeaderEntrySize);
+            PushAuxvPair(AUXV_AT_PHNUM, AuxProgramHeaderCount);
+        }
+
+        if (AuxEntryPoint != 0)
+        {
+            PushAuxvPair(AUXV_AT_ENTRY, AuxEntryPoint);
+        }
+
+        PushAuxvPair(AUXV_AT_NULL, 0);
+
+        State->rsp = StackCursor;
         State->rdi = Argc;
         State->rsi = ArgvUserPointer;
         State->rdx = EnvpUserPointer;
@@ -298,6 +375,55 @@ bool IsRangeWithinAnyELFRegion(const VirtualAddressSpaceELF* ELFAddressSpace, ui
     return false;
 }
 
+bool IsRangeWithinAnyProcessMapping(const Process* CurrentProcess, uint64_t Address, uint64_t Count)
+{
+    if (CurrentProcess == nullptr)
+    {
+        return false;
+    }
+
+    for (size_t MappingIndex = 0; MappingIndex < MAX_MEMORY_MAPPINGS_PER_PROCESS; ++MappingIndex)
+    {
+        const ProcessMemoryMapping& Mapping = CurrentProcess->MemoryMappings[MappingIndex];
+        if (!Mapping.InUse)
+        {
+            continue;
+        }
+
+        if (IsRangeWithin(Mapping.VirtualAddressStart, Mapping.Length, Address, Count))
+        {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+void FreeAnonymousProcessMappings(PhysicalMemoryManager* PMM, Process* TargetProcess)
+{
+    if (PMM == nullptr || TargetProcess == nullptr)
+    {
+        return;
+    }
+
+    for (size_t MappingIndex = 0; MappingIndex < MAX_MEMORY_MAPPINGS_PER_PROCESS; ++MappingIndex)
+    {
+        ProcessMemoryMapping& Mapping = TargetProcess->MemoryMappings[MappingIndex];
+        if (!Mapping.InUse)
+        {
+            continue;
+        }
+
+        if (Mapping.IsAnonymous && Mapping.PhysicalAddressStart != 0 && Mapping.Length != 0)
+        {
+            uint64_t PageCount = (Mapping.Length + PAGE_SIZE - 1) / PAGE_SIZE;
+            PMM->FreePagesFromDescriptor(reinterpret_cast<void*>(Mapping.PhysicalAddressStart), PageCount);
+        }
+
+        Mapping = {};
+    }
+}
+
 bool IsUserAddressRangeAccessible(const Process* CurrentProcess, uint64_t Address, uint64_t Count)
 {
     if (CurrentProcess == nullptr)
@@ -336,6 +462,11 @@ bool IsUserAddressRangeAccessible(const Process* CurrentProcess, uint64_t Addres
     }
 
     if (IsRangeWithin(AddressSpace->GetStackVirtualAddressStart(), AddressSpace->GetStackSize(), Address, Count))
+    {
+        return true;
+    }
+
+    if (IsRangeWithinAnyProcessMapping(CurrentProcess, Address, Count))
     {
         return true;
     }
@@ -782,6 +913,10 @@ uint8_t LogicLayer::ChangeProcessExecution(uint8_t Id, const char* FilePath, con
     VirtualAddressSpace* NewAddressSpace   = nullptr;
     bool                 IsELF             = false;
     uint64_t             NewUserEntryPoint = USER_PROCESS_VIRTUAL_BASE;
+    uint64_t             AuxProgramHeaderAddress   = 0;
+    uint64_t             AuxProgramHeaderEntrySize = 0;
+    uint64_t             AuxProgramHeaderCount     = 0;
+    uint64_t             AuxEntryPoint             = 0;
 
     if (ELF != nullptr)
     {
@@ -791,6 +926,16 @@ uint8_t LogicLayer::ChangeProcessExecution(uint8_t Id, const char* FilePath, con
 
     if (IsELF)
     {
+        const ELFProgramHeader64* ProgramHeaders = ELF->GetProgramHeaderTable(reinterpret_cast<uint64_t>(CopiedImage), Header);
+        if (ProgramHeaders != nullptr)
+        {
+            TranslateELFFileOffsetToVirtualAddress(ProgramHeaders, Header.ProgramHeaderEntryCount, Header.ProgramHeaderOffset, &AuxProgramHeaderAddress);
+        }
+
+        AuxProgramHeaderEntrySize = Header.ProgramHeaderEntrySize;
+        AuxProgramHeaderCount     = Header.ProgramHeaderEntryCount;
+        AuxEntryPoint             = Header.Entry;
+
         NewAddressSpace   = MapELF(reinterpret_cast<uint64_t>(CopiedImage), CodeSize, Header);
         NewUserEntryPoint = Header.Entry;
     }
@@ -812,7 +957,8 @@ uint8_t LogicLayer::ChangeProcessExecution(uint8_t Id, const char* FilePath, con
     NewState.cs       = USER_CS;
     NewState.ss       = USER_SS;
 
-    if (!InitializeExecveUserEntry(Resource, NewAddressSpace, &NewState, Argv, Argc, Envp, Envc))
+    if (!InitializeExecveUserEntry(Resource, NewAddressSpace, &NewState, Argv, Argc, Envp, Envc, AuxProgramHeaderAddress, AuxProgramHeaderEntrySize, AuxProgramHeaderCount,
+                                   AuxEntryPoint))
     {
         if (IsELF)
         {
@@ -829,6 +975,8 @@ uint8_t LogicLayer::ChangeProcessExecution(uint8_t Id, const char* FilePath, con
 
     VirtualAddressSpace* OldAddressSpace = TargetProcess->AddressSpace;
     FILE_TYPE            OldFileType     = TargetProcess->FileType;
+
+    FreeAnonymousProcessMappings(Resource->GetPMM(), TargetProcess);
 
     TargetProcess->AddressSpace              = NewAddressSpace;
     TargetProcess->FileType                  = IsELF ? FILE_TYPE_ELF : FILE_TYPE_RAW_BINARY;
@@ -989,6 +1137,8 @@ uint8_t LogicLayer::CopyProcess(uint8_t Id)
     }
 
     ChildProcess->ParrentId                 = SourceProcess->Id;
+    ChildProcess->UserFSBase                = SourceProcess->UserFSBase;
+    ChildProcess->ClearChildTidAddress      = SourceProcess->ClearChildTidAddress;
     ChildProcess->CurrentFileSystemLocation = SourceProcess->CurrentFileSystemLocation;
 
     for (size_t FileIndex = 0; FileIndex < MAX_OPEN_FILES_PER_PROCESS; ++FileIndex)
@@ -1304,18 +1454,72 @@ VirtualAddressSpace* LogicLayer::MapELF(uint64_t CodeAddr, uint64_t CodeSize, co
             continue;
         }
 
-        ELFMemoryRegion Region = {};
-        Region.PhysicalAddress = CodeAddr + ProgramHeader.Offset;
-        Region.VirtualAddress  = ProgramHeader.VirtualAddress;
-        Region.Size            = ProgramHeader.FileSize;
-        Region.Writable        = ELF->IsWritableSegment(ProgramHeader);
+        bool IsWritableSegment = ELF->IsWritableSegment(ProgramHeader);
 
-        if (!AddressSpace->AddMemoryRegion(Region))
+        ELFMemoryRegion FileRegion = {};
+        FileRegion.PhysicalAddress = CodeAddr + ProgramHeader.Offset;
+        FileRegion.VirtualAddress  = ProgramHeader.VirtualAddress;
+        FileRegion.Size            = ProgramHeader.FileSize;
+        FileRegion.Writable        = IsWritableSegment;
+
+        if (!AddressSpace->AddMemoryRegion(FileRegion))
         {
             Resource->GetPMM()->FreePagesFromDescriptor(ProcessHeap, USER_PROCESS_HEAP_SIZE / PAGE_SIZE);
             Resource->GetPMM()->FreePagesFromDescriptor(ProcessStack, USER_PROCESS_STACK_SIZE / PAGE_SIZE);
             delete AddressSpace;
             return nullptr;
+        }
+
+        if (ProgramHeader.MemorySize > ProgramHeader.FileSize)
+        {
+            uint64_t BssVirtualStart = ProgramHeader.VirtualAddress + ProgramHeader.FileSize;
+            uint64_t BssRemaining    = ProgramHeader.MemorySize - ProgramHeader.FileSize;
+
+            uint64_t BssTailBytes = 0;
+            if ((BssVirtualStart & (PAGE_SIZE - 1)) != 0)
+            {
+                uint64_t TailCapacity = PAGE_SIZE - (BssVirtualStart & (PAGE_SIZE - 1));
+                BssTailBytes          = (BssRemaining < TailCapacity) ? BssRemaining : TailCapacity;
+
+                if (BssTailBytes != 0)
+                {
+                    uint64_t BssTailPhysical = CodeAddr + ProgramHeader.Offset + ProgramHeader.FileSize;
+                    kmemset(reinterpret_cast<void*>(BssTailPhysical), 0, static_cast<size_t>(BssTailBytes));
+
+                    BssVirtualStart += BssTailBytes;
+                    BssRemaining -= BssTailBytes;
+                }
+            }
+
+            if (BssRemaining != 0)
+            {
+                uint64_t BssPages = (BssRemaining + PAGE_SIZE - 1) / PAGE_SIZE;
+                void*    BssPhysical = Resource->GetPMM()->AllocatePagesFromDescriptor(BssPages);
+                if (BssPhysical == nullptr)
+                {
+                    Resource->GetPMM()->FreePagesFromDescriptor(ProcessHeap, USER_PROCESS_HEAP_SIZE / PAGE_SIZE);
+                    Resource->GetPMM()->FreePagesFromDescriptor(ProcessStack, USER_PROCESS_STACK_SIZE / PAGE_SIZE);
+                    delete AddressSpace;
+                    return nullptr;
+                }
+
+                kmemset(BssPhysical, 0, static_cast<size_t>(BssPages * PAGE_SIZE));
+
+                ELFMemoryRegion BssRegion = {};
+                BssRegion.PhysicalAddress = reinterpret_cast<uint64_t>(BssPhysical);
+                BssRegion.VirtualAddress  = BssVirtualStart;
+                BssRegion.Size            = BssRemaining;
+                BssRegion.Writable        = IsWritableSegment;
+
+                if (!AddressSpace->AddMemoryRegion(BssRegion))
+                {
+                    Resource->GetPMM()->FreePagesFromDescriptor(BssPhysical, BssPages);
+                    Resource->GetPMM()->FreePagesFromDescriptor(ProcessHeap, USER_PROCESS_HEAP_SIZE / PAGE_SIZE);
+                    Resource->GetPMM()->FreePagesFromDescriptor(ProcessStack, USER_PROCESS_STACK_SIZE / PAGE_SIZE);
+                    delete AddressSpace;
+                    return nullptr;
+                }
+            }
         }
     }
 
@@ -1411,10 +1615,6 @@ void LogicLayer::CleanUpELF(VirtualAddressSpace* AddressSpace)
     const ELFMemoryRegion*  Regions         = ELFAddressSpace->GetMemoryRegions();
     size_t                  RegionCount     = ELFAddressSpace->GetMemoryRegionCount();
 
-    uint64_t CodePhysicalBase = AlignDownToPage(AddressSpace->GetCodePhysicalAddress());
-    uint64_t CodePhysicalSize = AlignUpToPage(AddressSpace->GetCodeSize());
-    uint64_t CodePhysicalEnd  = CodePhysicalBase + CodePhysicalSize;
-
     uint64_t RangeStarts[16] = {};
     uint64_t RangeEnds[16]   = {};
     size_t   RangeCount      = 0;
@@ -1436,24 +1636,6 @@ void LogicLayer::CleanUpELF(VirtualAddressSpace* AddressSpace)
             continue;
         }
         uint64_t End = Start + (PageCount * PAGE_SIZE);
-
-        if (CodePhysicalSize != 0)
-        {
-            if (Start < CodePhysicalBase)
-            {
-                Start = CodePhysicalBase;
-            }
-
-            if (End > CodePhysicalEnd)
-            {
-                End = CodePhysicalEnd;
-            }
-
-            if (End <= Start)
-            {
-                continue;
-            }
-        }
 
         bool Merged = true;
         while (Merged)
@@ -1543,6 +1725,8 @@ void LogicLayer::KillProcess(uint8_t Id)
         VirtualAddressSpace* AddressSpace = TargetProcess->AddressSpace;
 
         bool IsELFProcess = TargetProcess->FileType == FILE_TYPE_ELF;
+
+        FreeAnonymousProcessMappings(Resource->GetPMM(), TargetProcess);
 
         PM->KillProcess(Id);
 
@@ -1725,6 +1909,7 @@ bool LogicLayer::RunProcess(uint8_t Id)
     PM->UpdateCurrentProcessId(TargetProcess->Id);
     if (TargetProcess->Level == PROCESS_LEVEL_USER)
     {
+        SetUserFSBase(TargetProcess->UserFSBase);
         Resource->TaskSwitchUser(&CurrentProcess->State, TargetProcess->State, TargetProcess->AddressSpace);
     }
     else

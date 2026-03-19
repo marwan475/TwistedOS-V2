@@ -17,6 +17,7 @@
 static constexpr size_t  MAX_PROCESSES              = 32;
 static constexpr uint8_t PROCESS_ID_INVALID         = 0xFF;
 static constexpr size_t  MAX_OPEN_FILES_PER_PROCESS = 16;
+static constexpr size_t  MAX_MEMORY_MAPPINGS_PER_PROCESS = 8;
 
 enum ProcessState
 {
@@ -58,6 +59,15 @@ struct ProcessSavedSystemCallFrame
     uint64_t UserR15;
 };
 
+struct ProcessMemoryMapping
+{
+    bool     InUse               = false;
+    uint64_t VirtualAddressStart = 0;
+    uint64_t Length              = 0;
+    uint64_t PhysicalAddressStart = 0;
+    bool     IsAnonymous         = false;
+};
+
 struct Process
 {
     uint8_t                     Id;
@@ -74,9 +84,12 @@ struct Process
     ProcessLevel                Level;
     FILE_TYPE                   FileType;
     void*                       StackPointer;
+    uint64_t                    UserFSBase               = 0;
+    int*                        ClearChildTidAddress     = nullptr;
     VirtualAddressSpace*        AddressSpace              = nullptr;
     Dentry*                     CurrentFileSystemLocation = nullptr;
     File*                       FileTable[MAX_OPEN_FILES_PER_PROCESS];
+    ProcessMemoryMapping        MemoryMappings[MAX_MEMORY_MAPPINGS_PER_PROCESS];
 };
 
 class ProcessManager

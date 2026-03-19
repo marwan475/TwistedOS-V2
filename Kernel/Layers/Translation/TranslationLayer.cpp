@@ -8,7 +8,12 @@
 
 #include "Layers/Logic/LogicLayer.hpp"
 
+#include <Arch/x86.hpp>
 #include <CommonUtils.hpp>
+#include <Layers/Dispatcher.hpp>
+#include <Layers/Resource/ResourceLayer.hpp>
+#include <Layers/Resource/VirtualAddressSpace.hpp>
+#include <Memory/VirtualMemoryManager.hpp>
 
 namespace
 {
@@ -21,12 +26,32 @@ constexpr int64_t LINUX_ERR_EINVAL = -22;
 constexpr int64_t LINUX_ERR_EBADF  = -9;
 constexpr int64_t LINUX_ERR_ENOSYS = -38;
 constexpr int64_t LINUX_ERR_ECHILD = -10;
+constexpr int64_t LINUX_ERR_ENODEV = -19;
+constexpr int64_t LINUX_ERR_EPERM  = -1;
 
 constexpr uint64_t SYSCALL_COPY_CHUNK_SIZE = 4096;
 constexpr uint64_t SYSCALL_PATH_MAX        = 4096;
 constexpr uint64_t SYSCALL_EXEC_MAX_VECTOR = 128;
 
+constexpr int64_t LINUX_MAP_SHARED    = 0x01;
+constexpr int64_t LINUX_MAP_PRIVATE   = 0x02;
+constexpr int64_t LINUX_MAP_FIXED     = 0x10;
+constexpr int64_t LINUX_MAP_ANONYMOUS = 0x20;
+
+constexpr int64_t LINUX_PROT_WRITE = 0x2;
+
+constexpr uint64_t MMAP_DEFAULT_BASE = 0x0000000001000000;
+
 constexpr uint64_t LINUX_O_ACCMODE = 0x3;
+
+constexpr uint64_t LINUX_ARCH_SET_FS = 0x1002;
+
+bool IsCanonicalX86_64Address(uint64_t Address)
+{
+    constexpr uint64_t LOWER_CANONICAL_MAX = 0x00007FFFFFFFFFFFULL;
+    constexpr uint64_t UPPER_CANONICAL_MIN = 0xFFFF800000000000ULL;
+    return (Address <= LOWER_CANONICAL_MAX) || (Address >= UPPER_CANONICAL_MIN);
+}
 
 FileFlags DecodeAccessFlags(uint64_t Flags)
 {
@@ -197,6 +222,280 @@ bool ProcessHasLiveChild(ProcessManager* PM, uint8_t ParentId)
     }
 
     return false;
+}
+
+uint64_t AlignDownToPageBoundary(uint64_t Address)
+{
+    return Address & PHYS_PAGE_ADDR_MASK;
+}
+
+uint64_t AlignUpToPageBoundary(uint64_t Value)
+{
+    if (Value == 0)
+    {
+        return 0;
+    }
+
+    if (Value > (UINT64_MAX - (PAGE_SIZE - 1)))
+    {
+        return 0;
+    }
+
+    return (Value + PAGE_SIZE - 1) & PHYS_PAGE_ADDR_MASK;
+}
+
+bool RangesOverlap(uint64_t StartA, uint64_t LengthA, uint64_t StartB, uint64_t LengthB)
+{
+    if (LengthA == 0 || LengthB == 0)
+    {
+        return false;
+    }
+
+    uint64_t EndA = StartA + LengthA;
+    uint64_t EndB = StartB + LengthB;
+    if (EndA < StartA || EndB < StartB)
+    {
+        return true;
+    }
+
+    return (StartA < EndB) && (StartB < EndA);
+}
+
+bool MappingOverlapsProcessLayout(const Process* CurrentProcess, uint64_t MappingStart, uint64_t MappingLength)
+{
+    if (CurrentProcess == nullptr || CurrentProcess->AddressSpace == nullptr)
+    {
+        return true;
+    }
+
+    const VirtualAddressSpace* AddressSpace = CurrentProcess->AddressSpace;
+
+    if (CurrentProcess->FileType == FILE_TYPE_ELF)
+    {
+        const VirtualAddressSpaceELF* ELFAddressSpace = static_cast<const VirtualAddressSpaceELF*>(AddressSpace);
+        const ELFMemoryRegion*        Regions         = ELFAddressSpace->GetMemoryRegions();
+        size_t                        RegionCount     = ELFAddressSpace->GetMemoryRegionCount();
+
+        for (size_t RegionIndex = 0; RegionIndex < RegionCount; ++RegionIndex)
+        {
+            if (RangesOverlap(MappingStart, MappingLength, Regions[RegionIndex].VirtualAddress, Regions[RegionIndex].Size))
+            {
+                return true;
+            }
+        }
+    }
+
+    if (RangesOverlap(MappingStart, MappingLength, AddressSpace->GetCodeVirtualAddressStart(), AddressSpace->GetCodeSize())
+        || RangesOverlap(MappingStart, MappingLength, AddressSpace->GetHeapVirtualAddressStart(), AddressSpace->GetHeapSize())
+        || RangesOverlap(MappingStart, MappingLength, AddressSpace->GetStackVirtualAddressStart(), AddressSpace->GetStackSize()))
+    {
+        return true;
+    }
+
+    for (size_t MappingIndex = 0; MappingIndex < MAX_MEMORY_MAPPINGS_PER_PROCESS; ++MappingIndex)
+    {
+        const ProcessMemoryMapping& ExistingMapping = CurrentProcess->MemoryMappings[MappingIndex];
+        if (!ExistingMapping.InUse)
+        {
+            continue;
+        }
+
+        if (RangesOverlap(MappingStart, MappingLength, ExistingMapping.VirtualAddressStart, ExistingMapping.Length))
+        {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+int64_t FindAvailableMappingSlot(const Process* CurrentProcess)
+{
+    if (CurrentProcess == nullptr)
+    {
+        return -1;
+    }
+
+    for (size_t MappingIndex = 0; MappingIndex < MAX_MEMORY_MAPPINGS_PER_PROCESS; ++MappingIndex)
+    {
+        if (!CurrentProcess->MemoryMappings[MappingIndex].InUse)
+        {
+            return static_cast<int64_t>(MappingIndex);
+        }
+    }
+
+    return -1;
+}
+
+bool RegisterProcessMapping(Process* CurrentProcess, uint64_t MappingStart, uint64_t MappingLength, uint64_t PhysicalStart, bool IsAnonymous)
+{
+    int64_t MappingSlot = FindAvailableMappingSlot(CurrentProcess);
+    if (MappingSlot < 0)
+    {
+        return false;
+    }
+
+    ProcessMemoryMapping& Mapping = CurrentProcess->MemoryMappings[static_cast<size_t>(MappingSlot)];
+    Mapping.InUse                 = true;
+    Mapping.VirtualAddressStart   = MappingStart;
+    Mapping.Length                = MappingLength;
+    Mapping.PhysicalAddressStart  = PhysicalStart;
+    Mapping.IsAnonymous           = IsAnonymous;
+    return true;
+}
+
+bool IsVirtualAddressMapped(uint64_t PageMapL4TableAddr, uint64_t Address)
+{
+    if (PageMapL4TableAddr == 0)
+    {
+        return false;
+    }
+
+    VirtualAddress Vaddr;
+    Vaddr.value = Address;
+
+    PageTableEntry* PML4 = reinterpret_cast<PageTableEntry*>(PageMapL4TableAddr);
+    PageTableEntry  PML4Entry = PML4[Vaddr.fields.pml4_index];
+    if (!PML4Entry.fields.present)
+    {
+        return false;
+    }
+
+    PageTableEntry* PDPT = reinterpret_cast<PageTableEntry*>(PML4Entry.value & PHYS_PAGE_ADDR_MASK);
+    if (PDPT == nullptr)
+    {
+        return false;
+    }
+
+    PageTableEntry PDPTEntry = PDPT[Vaddr.fields.pdpt_index];
+    if (!PDPTEntry.fields.present)
+    {
+        return false;
+    }
+
+    PageTableEntry* PD = reinterpret_cast<PageTableEntry*>(PDPTEntry.value & PHYS_PAGE_ADDR_MASK);
+    if (PD == nullptr)
+    {
+        return false;
+    }
+
+    PageTableEntry PDEntry = PD[Vaddr.fields.pd_index];
+    if (!PDEntry.fields.present)
+    {
+        return false;
+    }
+
+    PageTableEntry* PT = reinterpret_cast<PageTableEntry*>(PDEntry.value & PHYS_PAGE_ADDR_MASK);
+    if (PT == nullptr)
+    {
+        return false;
+    }
+
+    PageTableEntry PTEntry = PT[Vaddr.fields.pt_index];
+    return PTEntry.fields.present;
+}
+
+bool RangeHasAnyMappedPage(const Process* CurrentProcess, uint64_t MappingStart, uint64_t MappingLength)
+{
+    if (CurrentProcess == nullptr || CurrentProcess->AddressSpace == nullptr || MappingLength == 0)
+    {
+        return true;
+    }
+
+    uint64_t PageMapL4TableAddr = CurrentProcess->AddressSpace->GetPageMapL4TableAddr();
+    if (PageMapL4TableAddr == 0)
+    {
+        return true;
+    }
+
+    uint64_t RangeStart = AlignDownToPageBoundary(MappingStart);
+    uint64_t RangeEnd   = AlignUpToPageBoundary(MappingStart + MappingLength);
+    if (RangeEnd <= RangeStart)
+    {
+        return true;
+    }
+
+    for (uint64_t Address = RangeStart; Address < RangeEnd; Address += PAGE_SIZE)
+    {
+        if (IsVirtualAddressMapped(PageMapL4TableAddr, Address))
+        {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+uint64_t FindFreeMappingAddress(const Process* CurrentProcess, uint64_t StartHint, uint64_t MappingLength)
+{
+    uint64_t Candidate = AlignDownToPageBoundary(StartHint);
+    if (Candidate == 0)
+    {
+        if (CurrentProcess != nullptr && CurrentProcess->AddressSpace != nullptr)
+        {
+            uint64_t SuggestedStart = 0;
+
+            if (CurrentProcess->FileType == FILE_TYPE_ELF)
+            {
+                const VirtualAddressSpaceELF* ELFAddressSpace = static_cast<const VirtualAddressSpaceELF*>(CurrentProcess->AddressSpace);
+                const ELFMemoryRegion*        Regions         = ELFAddressSpace->GetMemoryRegions();
+                size_t                        RegionCount     = ELFAddressSpace->GetMemoryRegionCount();
+
+                uint64_t HighestELFEnd = 0;
+                for (size_t RegionIndex = 0; RegionIndex < RegionCount; ++RegionIndex)
+                {
+                    uint64_t RegionStart = AlignDownToPageBoundary(Regions[RegionIndex].VirtualAddress);
+                    uint64_t RegionEnd   = AlignUpToPageBoundary(Regions[RegionIndex].VirtualAddress + Regions[RegionIndex].Size);
+
+                    if (RegionEnd > RegionStart && RegionEnd > HighestELFEnd)
+                    {
+                        HighestELFEnd = RegionEnd;
+                    }
+                }
+
+                if (HighestELFEnd != 0 && HighestELFEnd <= (UINT64_MAX - PAGE_SIZE))
+                {
+                    SuggestedStart = HighestELFEnd + PAGE_SIZE;
+                }
+            }
+
+            if (SuggestedStart == 0)
+            {
+                uint64_t HeapEnd = AlignUpToPageBoundary(CurrentProcess->AddressSpace->GetHeapVirtualAddressStart() + CurrentProcess->AddressSpace->GetHeapSize());
+                if (HeapEnd != 0 && HeapEnd <= (UINT64_MAX - PAGE_SIZE))
+                {
+                    SuggestedStart = HeapEnd + PAGE_SIZE;
+                }
+            }
+
+            if (SuggestedStart != 0)
+            {
+                Candidate = SuggestedStart;
+            }
+        }
+
+        if (Candidate == 0)
+        {
+            Candidate = MMAP_DEFAULT_BASE;
+        }
+    }
+
+    for (uint64_t Attempt = 0; Attempt < 1024 * 1024; ++Attempt)
+    {
+        if (!MappingOverlapsProcessLayout(CurrentProcess, Candidate, MappingLength) && !RangeHasAnyMappedPage(CurrentProcess, Candidate, MappingLength))
+        {
+            return Candidate;
+        }
+
+        if (Candidate > (UINT64_MAX - PAGE_SIZE))
+        {
+            break;
+        }
+
+        Candidate += PAGE_SIZE;
+    }
+
+    return 0;
 }
 } // namespace
 
@@ -741,4 +1040,235 @@ int64_t TranslationLayer::HandleWaitSystemCall(int* Status)
 
     CurrentProcess->WaitingForChild = false;
     return LINUX_ERR_ECHILD;
+}
+
+int64_t TranslationLayer::HandleMmapSystemCall(void* Address, uint64_t Length, int64_t Protection, int64_t Flags, int64_t FileDescriptor, int64_t Offset)
+{
+    Dispatcher* ActiveDispatcher = Dispatcher::GetActive();
+
+    if (Logic == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    if (Length == 0)
+    {
+        return LINUX_ERR_EINVAL;
+    }
+
+    if (Offset < 0 || (static_cast<uint64_t>(Offset) & (PAGE_SIZE - 1)) != 0)
+    {
+        return LINUX_ERR_EINVAL;
+    }
+
+    int64_t SharingType = Flags & (LINUX_MAP_PRIVATE | LINUX_MAP_SHARED);
+    if (SharingType == 0 || SharingType == (LINUX_MAP_PRIVATE | LINUX_MAP_SHARED))
+    {
+        return LINUX_ERR_EINVAL;
+    }
+
+    ProcessManager* PM = Logic->GetProcessManager();
+    if (PM == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    Process* CurrentProcess = PM->GetRunningProcess();
+    if (CurrentProcess == nullptr || CurrentProcess->Level != PROCESS_LEVEL_USER || CurrentProcess->AddressSpace == nullptr)
+    {
+        return LINUX_ERR_EINVAL;
+    }
+
+    uint64_t MappingLength = AlignUpToPageBoundary(Length);
+    if (MappingLength == 0)
+    {
+        return LINUX_ERR_EINVAL;
+    }
+
+    uint64_t RequestedAddress = reinterpret_cast<uint64_t>(Address);
+    uint64_t MappingStart     = 0;
+
+    if ((Flags & LINUX_MAP_FIXED) != 0)
+    {
+        if ((RequestedAddress & (PAGE_SIZE - 1)) != 0)
+        {
+            return LINUX_ERR_EINVAL;
+        }
+
+        MappingStart = RequestedAddress;
+        if (MappingOverlapsProcessLayout(CurrentProcess, MappingStart, MappingLength))
+        {
+            return LINUX_ERR_EINVAL;
+        }
+    }
+    else
+    {
+        MappingStart = FindFreeMappingAddress(CurrentProcess, RequestedAddress, MappingLength);
+        if (MappingStart == 0)
+        {
+            return LINUX_ERR_ENOMEM;
+        }
+    }
+
+    if ((Flags & LINUX_MAP_ANONYMOUS) != 0)
+    {
+        if (ActiveDispatcher == nullptr || ActiveDispatcher->GetResourceLayer() == nullptr || ActiveDispatcher->GetResourceLayer()->GetPMM() == nullptr)
+        {
+            return LINUX_ERR_EFAULT;
+        }
+
+        PhysicalMemoryManager* PMM      = ActiveDispatcher->GetResourceLayer()->GetPMM();
+        uint64_t               PageCount = MappingLength / PAGE_SIZE;
+        void*                  PhysicalAllocation = PMM->AllocatePagesFromDescriptor(PageCount);
+        if (PhysicalAllocation == nullptr)
+        {
+            return LINUX_ERR_ENOMEM;
+        }
+
+        kmemset(PhysicalAllocation, 0, static_cast<size_t>(PageCount * PAGE_SIZE));
+
+        uint64_t PageMapL4TableAddr = CurrentProcess->AddressSpace->GetPageMapL4TableAddr();
+        if (PageMapL4TableAddr == 0)
+        {
+            PMM->FreePagesFromDescriptor(PhysicalAllocation, PageCount);
+            return LINUX_ERR_EFAULT;
+        }
+
+        VirtualMemoryManager UserVMM(PageMapL4TableAddr, *PMM);
+        bool                 Writable = (Protection & LINUX_PROT_WRITE) != 0;
+
+        for (uint64_t PageIndex = 0; PageIndex < PageCount; ++PageIndex)
+        {
+            uint64_t PhysicalPage = reinterpret_cast<uint64_t>(PhysicalAllocation) + (PageIndex * PAGE_SIZE);
+            uint64_t VirtualPage  = MappingStart + (PageIndex * PAGE_SIZE);
+            if (!UserVMM.MapPage(PhysicalPage, VirtualPage, PageMappingFlags(true, Writable)))
+            {
+                PMM->FreePagesFromDescriptor(PhysicalAllocation, PageCount);
+                return LINUX_ERR_EFAULT;
+            }
+        }
+
+        if (!RegisterProcessMapping(CurrentProcess, MappingStart, MappingLength, reinterpret_cast<uint64_t>(PhysicalAllocation), true))
+        {
+            PMM->FreePagesFromDescriptor(PhysicalAllocation, PageCount);
+            return LINUX_ERR_ENOMEM;
+        }
+
+        uint64_t ActivePageTable = ActiveDispatcher->GetResourceLayer()->ReadCurrentPageTable();
+        if (ActivePageTable == PageMapL4TableAddr)
+        {
+            ActiveDispatcher->GetResourceLayer()->LoadPageTable(ActivePageTable);
+        }
+
+        return static_cast<int64_t>(MappingStart);
+    }
+
+    if (FileDescriptor < 0 || static_cast<uint64_t>(FileDescriptor) >= MAX_OPEN_FILES_PER_PROCESS)
+    {
+        return LINUX_ERR_EBADF;
+    }
+
+    File* OpenFile = CurrentProcess->FileTable[static_cast<size_t>(FileDescriptor)];
+    if (OpenFile == nullptr || OpenFile->Node == nullptr)
+    {
+        return LINUX_ERR_EBADF;
+    }
+
+    if (OpenFile->Node->FileOps == nullptr || OpenFile->Node->FileOps->MemoryMap == nullptr)
+    {
+        return LINUX_ERR_ENODEV;
+    }
+
+    uint64_t FileMappedAddress = 0;
+    int64_t  MappingResult     = OpenFile->Node->FileOps->MemoryMap(OpenFile, Length, static_cast<uint64_t>(Offset), CurrentProcess->AddressSpace, &FileMappedAddress);
+    if (MappingResult < 0)
+    {
+        return MappingResult;
+    }
+
+    if (FileMappedAddress == 0)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    uint64_t RegisteredStart  = AlignDownToPageBoundary(FileMappedAddress);
+    uint64_t RegisteredLength = AlignUpToPageBoundary((FileMappedAddress - RegisteredStart) + Length);
+    if (RegisteredLength == 0)
+    {
+        return LINUX_ERR_EINVAL;
+    }
+
+    if (!RegisterProcessMapping(CurrentProcess, RegisteredStart, RegisteredLength, 0, false))
+    {
+        return LINUX_ERR_ENOMEM;
+    }
+
+    if (ActiveDispatcher != nullptr && ActiveDispatcher->GetResourceLayer() != nullptr)
+    {
+        uint64_t UserPageTable = CurrentProcess->AddressSpace->GetPageMapL4TableAddr();
+        uint64_t ActivePageTable = ActiveDispatcher->GetResourceLayer()->ReadCurrentPageTable();
+        if (UserPageTable != 0 && ActivePageTable == UserPageTable)
+        {
+            ActiveDispatcher->GetResourceLayer()->LoadPageTable(ActivePageTable);
+        }
+    }
+
+    return static_cast<int64_t>(FileMappedAddress);
+}
+
+int64_t TranslationLayer::HandleArchPrctlSystemCall(uint64_t Code, uint64_t Address)
+{
+    if (Logic == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    ProcessManager* PM = Logic->GetProcessManager();
+    if (PM == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    Process* CurrentProcess = PM->GetRunningProcess();
+    if (CurrentProcess == nullptr || CurrentProcess->Level != PROCESS_LEVEL_USER)
+    {
+        return LINUX_ERR_EINVAL;
+    }
+
+    if (Code != LINUX_ARCH_SET_FS)
+    {
+        return LINUX_ERR_EINVAL;
+    }
+
+    if (!IsCanonicalX86_64Address(Address))
+    {
+        return LINUX_ERR_EPERM;
+    }
+
+    CurrentProcess->UserFSBase = Address;
+    SetUserFSBase(Address);
+    return 0;
+}
+
+int64_t TranslationLayer::HandleSetTidAddressSystemCall(int* TidPointer)
+{
+    if (Logic == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    ProcessManager* PM = Logic->GetProcessManager();
+    if (PM == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    Process* CurrentProcess = PM->GetRunningProcess();
+    if (CurrentProcess == nullptr || CurrentProcess->Level != PROCESS_LEVEL_USER)
+    {
+        return LINUX_ERR_EINVAL;
+    }
+
+    CurrentProcess->ClearChildTidAddress = TidPointer;
+    return static_cast<int64_t>(CurrentProcess->Id);
 }

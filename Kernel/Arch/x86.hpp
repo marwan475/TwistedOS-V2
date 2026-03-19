@@ -223,6 +223,8 @@ void          InitInterrupts();
 void          InitSystemCalls();
 void          InitTimer();
 void          RemapPIC();
+void          SetUserFSBase(uint64_t BaseAddress);
+uint64_t      GetUserFSBase();
 
 extern "C"
 {

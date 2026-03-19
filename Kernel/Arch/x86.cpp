@@ -12,6 +12,7 @@
 #define IA32_STAR_MSR 0xC0000081
 #define IA32_LSTAR_MSR 0xC0000082
 #define IA32_FMASK_MSR 0xC0000084
+#define IA32_FS_BASE_MSR 0xC0000100
 
 #define IA32_EFER_SCE (1ULL << 0)
 #define RFLAGS_IF (1ULL << 9)
@@ -71,6 +72,49 @@ static Process* GetCurrentProcessForSystemCallFrame()
     }
 
     return PM->GetRunningProcess();
+}
+
+static const char* ProcessStateToString(ProcessState State)
+{
+    switch (State)
+    {
+        case PROCESS_RUNNING:
+            return "running";
+        case PROCESS_READY:
+            return "ready";
+        case PROCESS_BLOCKED:
+            return "blocked";
+        case PROCESS_TERMINATED:
+            return "terminated";
+        default:
+            return "unknown";
+    }
+}
+
+static const char* ProcessLevelToString(ProcessLevel Level)
+{
+    switch (Level)
+    {
+        case PROCESS_LEVEL_KERNEL:
+            return "kernel";
+        case PROCESS_LEVEL_USER:
+            return "user";
+        default:
+            return "unknown";
+    }
+}
+
+static const char* ProcessFileTypeToString(FILE_TYPE FileType)
+{
+    switch (FileType)
+    {
+        case FILE_TYPE_RAW_BINARY:
+            return "raw";
+        case FILE_TYPE_ELF:
+            return "elf";
+        default:
+            return "unknown";
+    }
 }
 
 /**
@@ -145,6 +189,16 @@ static inline uint64_t ReadMSR(uint32_t msr)
     uint32_t high = 0;
     __asm__ __volatile__("rdmsr" : "=a"(low), "=d"(high) : "c"(msr));
     return ((uint64_t) high << 32) | low;
+}
+
+void SetUserFSBase(uint64_t BaseAddress)
+{
+    WriteMSR(IA32_FS_BASE_MSR, BaseAddress);
+}
+
+uint64_t GetUserFSBase()
+{
+    return ReadMSR(IA32_FS_BASE_MSR);
 }
 
 /**
@@ -294,11 +348,53 @@ extern "C" void ISRHANDLER(Registers* reg)
         if (ActiveDispatcher != nullptr)
         {
             TTY* Terminal = ActiveDispatcher->GetResourceLayer()->GetTTY();
+#ifdef DEBUG_BUILD
             if (Terminal != nullptr)
             {
                 Terminal->printf_("CPU exception: int=%lu err=%p rip=%p cs=%p rflags=%p rsp=%p\n", reg->interrupt_number, (void*) reg->error_code, (void*) reg->rip, (void*) reg->cs,
                                   (void*) reg->rflags, (void*) reg->rsp);
+
+                Process* CurrentProcess = GetCurrentProcessForSystemCallFrame();
+                if (CurrentProcess == nullptr)
+                {
+                    Terminal->printf_("Exception process: <none>\n");
+                }
+                else
+                {
+                    uint64_t ProcessPageTable = 0;
+                    uint64_t CodeStart        = 0;
+                    uint64_t CodeSize         = 0;
+                    uint64_t HeapStart        = 0;
+                    uint64_t HeapSize         = 0;
+                    uint64_t StackStart       = 0;
+                    uint64_t StackSize        = 0;
+
+                    if (CurrentProcess->AddressSpace != nullptr)
+                    {
+                        ProcessPageTable = CurrentProcess->AddressSpace->GetPageMapL4TableAddr();
+                        CodeStart        = CurrentProcess->AddressSpace->GetCodeVirtualAddressStart();
+                        CodeSize         = CurrentProcess->AddressSpace->GetCodeSize();
+                        HeapStart        = CurrentProcess->AddressSpace->GetHeapVirtualAddressStart();
+                        HeapSize         = CurrentProcess->AddressSpace->GetHeapSize();
+                        StackStart       = CurrentProcess->AddressSpace->GetStackVirtualAddressStart();
+                        StackSize        = CurrentProcess->AddressSpace->GetStackSize();
+                    }
+
+                    uint64_t ActivePageTable = ActiveDispatcher->GetResourceLayer()->ReadCurrentPageTable();
+
+                    Terminal->printf_(
+                            "Exception process: id=%u parent=%u state=%s level=%s type=%s waiting_sysret=%u saved_syscall=%u addrspace=%p cr3=%p proc_cr3=%p\n",
+                            CurrentProcess->Id, CurrentProcess->ParrentId, ProcessStateToString(CurrentProcess->Status), ProcessLevelToString(CurrentProcess->Level),
+                            ProcessFileTypeToString(CurrentProcess->FileType), CurrentProcess->WaitingForSystemCallReturn ? 1U : 0U, CurrentProcess->HasSavedSystemCallFrame ? 1U : 0U,
+                            CurrentProcess->AddressSpace, (void*) ActivePageTable, (void*) ProcessPageTable);
+
+                    Terminal->printf_("Exception process ranges: code=[%p..%p) heap=[%p..%p) stack=[%p..%p)\n", (void*) CodeStart, (void*) (CodeStart + CodeSize),
+                                      (void*) HeapStart, (void*) (HeapStart + HeapSize), (void*) StackStart, (void*) (StackStart + StackSize));
+                }
             }
+#else
+            (void) Terminal;
+#endif
         }
 
         if (reg->interrupt_number == 14)

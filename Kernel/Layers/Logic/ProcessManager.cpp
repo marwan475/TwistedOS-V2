@@ -24,6 +24,14 @@ void ReleaseProcessFileTable(Process& ProcessEntry)
         ProcessEntry.FileTable[FileIndex] = nullptr;
     }
 }
+
+void ResetProcessMemoryMappings(Process& ProcessEntry)
+{
+    for (size_t MappingIndex = 0; MappingIndex < MAX_MEMORY_MAPPINGS_PER_PROCESS; ++MappingIndex)
+    {
+        ProcessEntry.MemoryMappings[MappingIndex] = {};
+    }
+}
 } // namespace
 
 /**
@@ -51,10 +59,13 @@ ProcessManager::ProcessManager() : CurrentProcessId(PROCESS_ID_INVALID)
         Processes[index].Level                      = PROCESS_LEVEL_KERNEL;
         Processes[index].FileType                   = FILE_TYPE_RAW_BINARY;
         Processes[index].StackPointer               = nullptr;
+        Processes[index].UserFSBase                 = 0;
+        Processes[index].ClearChildTidAddress       = nullptr;
         Processes[index].AddressSpace               = nullptr;
         Processes[index].CurrentFileSystemLocation  = nullptr;
         Processes[index].State                      = {};
         ResetProcessFileTable(Processes[index]);
+        ResetProcessMemoryMappings(Processes[index]);
     }
 
     CurrentProcessId = 0;
@@ -160,10 +171,13 @@ uint8_t ProcessManager::CreateKernelProcess(void* StackPointer, CpuState Initial
             Processes[index].Level                      = PROCESS_LEVEL_KERNEL;
             Processes[index].FileType                   = FILE_TYPE_RAW_BINARY;
             Processes[index].StackPointer               = StackPointer;
+            Processes[index].UserFSBase                 = 0;
+            Processes[index].ClearChildTidAddress       = nullptr;
             Processes[index].AddressSpace               = nullptr;
             Processes[index].CurrentFileSystemLocation  = nullptr;
             Processes[index].State                      = InitialState;
             ResetProcessFileTable(Processes[index]);
+            ResetProcessMemoryMappings(Processes[index]);
             return Processes[index].Id;
         }
     }
@@ -199,10 +213,13 @@ uint8_t ProcessManager::CreateUserProcess(void* StackPointer, CpuState InitialSt
             Processes[index].Level                      = PROCESS_LEVEL_USER;
             Processes[index].FileType                   = FileType;
             Processes[index].StackPointer               = StackPointer;
+            Processes[index].UserFSBase                 = 0;
+            Processes[index].ClearChildTidAddress       = nullptr;
             Processes[index].AddressSpace               = AddressSpace;
             Processes[index].CurrentFileSystemLocation  = nullptr;
             Processes[index].State                      = InitialState;
             ResetProcessFileTable(Processes[index]);
+            ResetProcessMemoryMappings(Processes[index]);
             return Processes[index].Id;
         }
     }
@@ -238,8 +255,11 @@ void* ProcessManager::KillProcess(uint8_t Id)
     Processes[Id].Status                     = PROCESS_TERMINATED;
     Processes[Id].FileType                   = FILE_TYPE_RAW_BINARY;
     Processes[Id].StackPointer               = nullptr;
+    Processes[Id].UserFSBase                 = 0;
+    Processes[Id].ClearChildTidAddress       = nullptr;
     Processes[Id].AddressSpace               = nullptr;
     Processes[Id].CurrentFileSystemLocation  = nullptr;
     Processes[Id].State                      = {};
+    ResetProcessMemoryMappings(Processes[Id]);
     return StackPointer;
 }
