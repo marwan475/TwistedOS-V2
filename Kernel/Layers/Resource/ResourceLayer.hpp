@@ -64,5 +64,6 @@ public:
     void                   LoadKernelPageTable();
     void*                  LoadFileFromInitramfs(const char* Path, uint64_t* Size);
     void                   TaskSwitchKernel(CpuState* OldState, const CpuState& NewState);
+    void                   TaskSwitchKernelCurrentAddressSpace(CpuState* OldState, const CpuState& NewState);
     void                   TaskSwitchUser(CpuState* OldState, const CpuState& NewState, const VirtualAddressSpace* NewAddressSpace);
 };

@@ -33,6 +33,7 @@ SynchronizationManager::SynchronizationManager()
 SynchronizationManager::~SynchronizationManager()
 {
     SleepQueue.ClearAndDelete();
+    TTYInputWaitQueue.ClearAndDelete();
 }
 
 /**
@@ -81,6 +82,39 @@ void SynchronizationManager::RemoveFromSleepQueue(uint8_t Id)
     delete Node;
 }
 
+void SynchronizationManager::AddToTTYInputWaitQueue(uint8_t Id)
+{
+    if (TTYInputWaitQueue.FindFirst(&WaitForTTYInputTag::Id, Id) != nullptr)
+    {
+        return;
+    }
+
+    WaitForTTYInputTag* NewTag = new WaitForTTYInputTag;
+    if (NewTag == nullptr)
+    {
+        return;
+    }
+
+    NewTag->Id   = Id;
+    NewTag->Next = nullptr;
+
+    TTYInputWaitQueue.PushBack(NewTag);
+}
+
+void SynchronizationManager::RemoveFromTTYInputWaitQueue(uint8_t Id)
+{
+    WaitForTTYInputTag* Node = TTYInputWaitQueue.FindFirst(&WaitForTTYInputTag::Id, Id);
+
+    if (Node == nullptr)
+    {
+        return;
+    }
+
+    TTYInputWaitQueue.Remove(Node);
+
+    delete Node;
+}
+
 /**
  * Function: SynchronizationManager::Tick
  * Description: Decrements remaining wait ticks for all sleeping processes.
@@ -114,6 +148,17 @@ void SynchronizationManager::Tick()
 uint8_t SynchronizationManager::GetNextProcessToWake()
 {
     SleepTag* Node = SleepQueue.FindFirst(&SleepTag::WaitTicksRemaining, static_cast<uint64_t>(0));
+    if (Node != nullptr)
+    {
+        return Node->Id;
+    }
+
+    return PROCESS_ID_INVALID;
+}
+
+uint8_t SynchronizationManager::GetNextTTYInputWaiter()
+{
+    WaitForTTYInputTag* Node = TTYInputWaitQueue.Head();
     if (Node != nullptr)
     {
         return Node->Id;

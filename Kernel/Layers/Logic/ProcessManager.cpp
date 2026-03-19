@@ -8,6 +8,20 @@
 
 namespace
 {
+alignas(16) static uint8_t ProcessKernelSystemCallStacks[MAX_PROCESSES][PROCESS_KERNEL_SYSCALL_STACK_SIZE];
+
+uint64_t ComputeKernelSystemCallStackTop(void* StackBase)
+{
+    if (StackBase == nullptr)
+    {
+        return 0;
+    }
+
+    uint64_t StackTop = reinterpret_cast<uint64_t>(StackBase) + PROCESS_KERNEL_SYSCALL_STACK_SIZE;
+    StackTop          = (StackTop & ~0xFULL) - 8;
+    return StackTop;
+}
+
 void ResetProcessFileTable(Process& ProcessEntry)
 {
     for (size_t FileIndex = 0; FileIndex < MAX_OPEN_FILES_PER_PROCESS; ++FileIndex)
@@ -67,6 +81,8 @@ ProcessManager::ProcessManager() : CurrentProcessId(PROCESS_ID_INVALID)
         Processes[index].Level                      = PROCESS_LEVEL_KERNEL;
         Processes[index].FileType                   = FILE_TYPE_RAW_BINARY;
         Processes[index].StackPointer               = nullptr;
+        Processes[index].KernelSystemCallStackBase  = nullptr;
+        Processes[index].KernelSystemCallStackTop   = 0;
         Processes[index].UserFSBase                 = 0;
         Processes[index].BlockedSignalMask          = 0;
         Processes[index].ClearChildTidAddress       = nullptr;
@@ -83,8 +99,27 @@ ProcessManager::ProcessManager() : CurrentProcessId(PROCESS_ID_INVALID)
 }
 
 /**
+ * Function: ProcessManager::GetCurrentProcess
+ * Description: Returns the currently tracked process regardless of ready/running/blocked state.
+ * Parameters:
+ *   None
+ * Returns:
+ *   Process* - Pointer to tracked current process, or nullptr if invalid/terminated.
+ */
+Process* ProcessManager::GetCurrentProcess()
+{
+    Process* CurrentProcess = GetProcessById(CurrentProcessId);
+    if (CurrentProcess == nullptr || CurrentProcess->Status == PROCESS_TERMINATED)
+    {
+        return nullptr;
+    }
+
+    return CurrentProcess;
+}
+
+/**
  * Function: ProcessManager::GetRunningProcess
- * Description: Returns the currently running process or the blocked current process during handoff.
+ * Description: Returns the currently running process.
  * Parameters:
  *   None
  * Returns:
@@ -92,11 +127,10 @@ ProcessManager::ProcessManager() : CurrentProcessId(PROCESS_ID_INVALID)
  */
 Process* ProcessManager::GetRunningProcess()
 {
-    if (GetProcessById(CurrentProcessId)->Status == PROCESS_BLOCKED)
+    Process* CurrentProcess = GetCurrentProcess();
+    if (CurrentProcess != nullptr && CurrentProcess->Status == PROCESS_RUNNING)
     {
-        return &Processes[CurrentProcessId];
-        // Means that the current process was just running but got blocked by LogicLayer::SleepProcess,
-        // so we return it as the running process so that it can be scheduled out
+        return CurrentProcess;
     }
 
     for (size_t index = 0; index < MaxProcesses; ++index)
@@ -182,6 +216,8 @@ uint8_t ProcessManager::CreateKernelProcess(void* StackPointer, CpuState Initial
             Processes[index].Level                      = PROCESS_LEVEL_KERNEL;
             Processes[index].FileType                   = FILE_TYPE_RAW_BINARY;
             Processes[index].StackPointer               = StackPointer;
+            Processes[index].KernelSystemCallStackBase  = &ProcessKernelSystemCallStacks[index][0];
+            Processes[index].KernelSystemCallStackTop   = ComputeKernelSystemCallStackTop(Processes[index].KernelSystemCallStackBase);
             Processes[index].UserFSBase                 = 0;
             Processes[index].BlockedSignalMask          = 0;
             Processes[index].ClearChildTidAddress       = nullptr;
@@ -227,6 +263,8 @@ uint8_t ProcessManager::CreateUserProcess(void* StackPointer, CpuState InitialSt
             Processes[index].Level                      = PROCESS_LEVEL_USER;
             Processes[index].FileType                   = FileType;
             Processes[index].StackPointer               = StackPointer;
+            Processes[index].KernelSystemCallStackBase  = &ProcessKernelSystemCallStacks[index][0];
+            Processes[index].KernelSystemCallStackTop   = ComputeKernelSystemCallStackTop(Processes[index].KernelSystemCallStackBase);
             Processes[index].UserFSBase                 = 0;
             Processes[index].BlockedSignalMask          = 0;
             Processes[index].ClearChildTidAddress       = nullptr;
@@ -272,6 +310,8 @@ void* ProcessManager::KillProcess(uint8_t Id)
     Processes[Id].Status                     = PROCESS_TERMINATED;
     Processes[Id].FileType                   = FILE_TYPE_RAW_BINARY;
     Processes[Id].StackPointer               = nullptr;
+    Processes[Id].KernelSystemCallStackBase  = nullptr;
+    Processes[Id].KernelSystemCallStackTop   = 0;
     Processes[Id].UserFSBase                 = 0;
     Processes[Id].BlockedSignalMask          = 0;
     Processes[Id].ClearChildTidAddress       = nullptr;

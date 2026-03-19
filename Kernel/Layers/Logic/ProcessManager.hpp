@@ -19,6 +19,7 @@ static constexpr uint8_t PROCESS_ID_INVALID         = 0xFF;
 static constexpr size_t  MAX_OPEN_FILES_PER_PROCESS = 16;
 static constexpr size_t  MAX_MEMORY_MAPPINGS_PER_PROCESS = 8;
 static constexpr size_t  MAX_POSIX_SIGNALS_PER_PROCESS = 8;
+static constexpr size_t  PROCESS_KERNEL_SYSCALL_STACK_SIZE = 16384;
 
 enum ProcessState
 {
@@ -93,6 +94,8 @@ struct Process
     ProcessLevel                Level;
     FILE_TYPE                   FileType;
     void*                       StackPointer;
+    void*                       KernelSystemCallStackBase = nullptr;
+    uint64_t                    KernelSystemCallStackTop  = 0;
     uint64_t                    UserFSBase               = 0;
     uint64_t                    BlockedSignalMask        = 0;
     int*                        ClearChildTidAddress     = nullptr;
@@ -116,6 +119,7 @@ public:
 
     size_t   GetMaxProcesses() const;
     Process* GetProcessById(uint8_t Id);
+    Process* GetCurrentProcess();
     Process* GetRunningProcess();
     void     UpdateCurrentProcessId(uint8_t Id);
     uint8_t  CreateKernelProcess(void* StackPointer, CpuState InitialState);

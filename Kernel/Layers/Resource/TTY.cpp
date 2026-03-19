@@ -6,6 +6,7 @@
 
 #include "TTY.hpp"
 
+#include <Layers/Dispatcher.hpp>
 #include <Layers/Logic/LogicLayer.hpp>
 #include <Layers/Logic/VirtualFileSystem.hpp>
 #include <Logging/font.hpp>
@@ -15,15 +16,6 @@
 namespace
 {
 constexpr uint16_t COM1_PORT = 0x3F8;
-constexpr uint16_t KEYBOARD_DATA_PORT                 = 0x60;
-constexpr uint16_t KEYBOARD_STATUS_PORT               = 0x64;
-constexpr uint8_t  KEYBOARD_STATUS_OUTPUT_BUFFER_FULL = 0x01;
-
-constexpr uint8_t KEYBOARD_SCANCODE_LEFT_SHIFT_PRESS    = 0x2A;
-constexpr uint8_t KEYBOARD_SCANCODE_RIGHT_SHIFT_PRESS   = 0x36;
-constexpr uint8_t KEYBOARD_SCANCODE_LEFT_SHIFT_RELEASE  = 0xAA;
-constexpr uint8_t KEYBOARD_SCANCODE_RIGHT_SHIFT_RELEASE = 0xB6;
-constexpr uint8_t KEYBOARD_SCANCODE_CAPS_LOCK           = 0x3A;
 
 constexpr int64_t LINUX_ERR_EFAULT = -14;
 constexpr int64_t LINUX_ERR_EINVAL = -22;
@@ -39,16 +31,6 @@ constexpr uint64_t LINUX_IOCTL_TCSETSF   = 0x5404;
 constexpr uint64_t LINUX_IOCTL_TIOCGWINSZ = 0x5413;
 constexpr uint64_t LINUX_IOCTL_TIOCSWINSZ = 0x5414;
 constexpr uint64_t LINUX_IOCTL_FIONREAD   = 0x541B;
-
-char KeyboardMapUnshifted[128] = {
-    0, 27,  '1', '2', '3', '4', '5', '6', '7', '8', '9', '0',  '-', '=', '\b', '\t', 'q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p', '[', ']', '\n',
-    0, 'a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l', ';', '\'', '`', 0,   '\\', 'z',  'x', 'c', 'v', 'b', 'n', 'm', ',', '.', '/', 0,   '*', 0,   ' ',
-};
-
-char KeyboardMapShifted[128] = {
-    0, 27,  '!', '@', '#', '$', '%', '^', '&', '*', '(', ')', '_', '+', '\b', '\t', 'Q', 'W', 'E', 'R', 'T', 'Y', 'U', 'I', 'O', 'P', '{', '}', '\n',
-    0, 'A', 'S', 'D', 'F', 'G', 'H', 'J', 'K', 'L', ':', '"', '~', 0,   '|',  'Z',  'X', 'C', 'V', 'B', 'N', 'M', '<', '>', '?', 0,   '*', 0,   ' ',
-};
 
 struct LinuxTermios
 {
@@ -78,96 +60,6 @@ static inline uint8_t inb(uint16_t port)
     uint8_t value = 0;
     __asm__ __volatile__("inb %1, %0" : "=a"(value) : "Nd"(port));
     return value;
-}
-
-bool IsAlphabeticalCharacter(char Character)
-{
-    return (Character >= 'a' && Character <= 'z') || (Character >= 'A' && Character <= 'Z');
-}
-
-char ToggleCharacterCase(char Character)
-{
-    if (Character >= 'a' && Character <= 'z')
-    {
-        return static_cast<char>(Character - ('a' - 'A'));
-    }
-
-    if (Character >= 'A' && Character <= 'Z')
-    {
-        return static_cast<char>(Character + ('a' - 'A'));
-    }
-
-    return Character;
-}
-
-bool PollKeyboardCharacter(char* CharacterOut)
-{
-    static bool LeftShiftPressed  = false;
-    static bool RightShiftPressed = false;
-    static bool CapsLockEnabled   = false;
-
-    if (CharacterOut == nullptr)
-    {
-        return false;
-    }
-
-    if ((inb(KEYBOARD_STATUS_PORT) & KEYBOARD_STATUS_OUTPUT_BUFFER_FULL) == 0)
-    {
-        return false;
-    }
-
-    uint8_t ScanCode = inb(KEYBOARD_DATA_PORT);
-
-    if (ScanCode == KEYBOARD_SCANCODE_LEFT_SHIFT_PRESS)
-    {
-        LeftShiftPressed = true;
-        return false;
-    }
-
-    if (ScanCode == KEYBOARD_SCANCODE_RIGHT_SHIFT_PRESS)
-    {
-        RightShiftPressed = true;
-        return false;
-    }
-
-    if (ScanCode == KEYBOARD_SCANCODE_LEFT_SHIFT_RELEASE)
-    {
-        LeftShiftPressed = false;
-        return false;
-    }
-
-    if (ScanCode == KEYBOARD_SCANCODE_RIGHT_SHIFT_RELEASE)
-    {
-        RightShiftPressed = false;
-        return false;
-    }
-
-    if (ScanCode == KEYBOARD_SCANCODE_CAPS_LOCK)
-    {
-        CapsLockEnabled = !CapsLockEnabled;
-        return false;
-    }
-
-    if ((ScanCode & 0x80) != 0 || ScanCode >= 128)
-    {
-        return false;
-    }
-
-    bool ShiftPressed = LeftShiftPressed || RightShiftPressed;
-    char Character    = ShiftPressed ? KeyboardMapShifted[ScanCode] : KeyboardMapUnshifted[ScanCode];
-
-    if (CapsLockEnabled && IsAlphabeticalCharacter(Character))
-    {
-        Character = ToggleCharacterCase(Character);
-    }
-
-    if (Character == 0)
-    {
-        return false;
-    }
-
-    *CharacterOut = Character;
-    return true;
 }
 
 static void SerialInit()
@@ -377,15 +269,51 @@ int64_t TTY::Read(File* OpenFile, void* Buffer, uint64_t Count)
 
     while (BufferedBytes == 0)
     {
-        char Character = 0;
-        if (PollKeyboardCharacter(&Character))
+        Dispatcher* ActiveDispatcher = Dispatcher::GetActive();
+        if (ActiveDispatcher == nullptr)
         {
-            PushKeyboardInputChar(Character);
+            return 0;
+        }
+
+        LogicLayer* ActiveLogicLayer = ActiveDispatcher->GetLogicLayer();
+        if (ActiveLogicLayer == nullptr)
+        {
+            return LINUX_ERR_EFAULT;
+        }
+
+        ProcessManager* PM = ActiveLogicLayer->GetProcessManager();
+        if (PM == nullptr)
+        {
+            return LINUX_ERR_EFAULT;
+        }
+
+        Process* CurrentProcess = PM->GetRunningProcess();
+        if (CurrentProcess == nullptr)
+        {
+            return LINUX_ERR_EFAULT;
+        }
+
+#ifdef DEBUG_BUILD
+        printf_("tty read: pid=%u entering wait (fd offset=%lu count=%lu buffered=%lu waiting_sysret=%u saved_syscall=%u rip=%p rsp=%p)\n", CurrentProcess->Id,
+                OpenFile->CurrentOffset, Count, BufferedBytes, CurrentProcess->WaitingForSystemCallReturn ? 1U : 0U, CurrentProcess->HasSavedSystemCallFrame ? 1U : 0U,
+                (void*) CurrentProcess->State.rip, (void*) CurrentProcess->State.rsp);
+#endif
+
+        ActiveLogicLayer->BlockProcessForTTYInput(CurrentProcess->Id);
+
+#ifdef DEBUG_BUILD
+        Process* ResumedProcess = PM->GetRunningProcess();
+        if (ResumedProcess != nullptr)
+        {
+            printf_("tty read: resumed pid=%u after wait (buffered=%lu waiting_sysret=%u saved_syscall=%u rip=%p rsp=%p)\n", ResumedProcess->Id, BufferedBytes,
+                    ResumedProcess->WaitingForSystemCallReturn ? 1U : 0U, ResumedProcess->HasSavedSystemCallFrame ? 1U : 0U, (void*) ResumedProcess->State.rip,
+                    (void*) ResumedProcess->State.rsp);
         }
         else
         {
-            __asm__ __volatile__("pause" ::: "memory");
+            printf_("tty read: resumed with no running process (buffered=%lu)\n", BufferedBytes);
         }
+#endif
     }
 
     char*    OutBuffer   = reinterpret_cast<char*>(Buffer);
@@ -398,6 +326,27 @@ int64_t TTY::Read(File* OpenFile, void* Buffer, uint64_t Count)
         --BufferedBytes;
         ++BytesCopied;
     }
+
+#ifdef DEBUG_BUILD
+    Dispatcher* ActiveDispatcher = Dispatcher::GetActive();
+    if (ActiveDispatcher != nullptr)
+    {
+        LogicLayer* ActiveLogicLayer = ActiveDispatcher->GetLogicLayer();
+        if (ActiveLogicLayer != nullptr)
+        {
+            ProcessManager* PM = ActiveLogicLayer->GetProcessManager();
+            if (PM != nullptr)
+            {
+                Process* CurrentProcess = PM->GetRunningProcess();
+                if (CurrentProcess != nullptr)
+                {
+                    printf_("tty read: returning pid=%u bytes=%lu buffered_remaining=%lu waiting_sysret=%u saved_syscall=%u\n", CurrentProcess->Id, BytesCopied, BufferedBytes,
+                            CurrentProcess->WaitingForSystemCallReturn ? 1U : 0U, CurrentProcess->HasSavedSystemCallFrame ? 1U : 0U);
+                }
+            }
+        }
+    }
+#endif
 
     OpenFile->CurrentOffset += BytesCopied;
     return static_cast<int64_t>(BytesCopied);
@@ -544,6 +493,11 @@ uint64_t TTY::PushKeyboardInput(const char* Buffer, uint64_t Count)
 uint64_t TTY::PushKeyboardInputChar(char Character)
 {
     return PushKeyboardInput(&Character, 1);
+}
+
+uint64_t TTY::GetBufferedInputBytes() const
+{
+    return BufferedBytes;
 }
 
 FileOperations* TTY::GetFileOperations()

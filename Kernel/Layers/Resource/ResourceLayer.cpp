@@ -340,6 +340,16 @@ void ResourceLayer::TaskSwitchKernel(CpuState* OldState, const CpuState& NewStat
     ResourceLayerTaskSwitchKernelAsm(OldState, &NewState);
 }
 
+void ResourceLayer::TaskSwitchKernelCurrentAddressSpace(CpuState* OldState, const CpuState& NewState)
+{
+    if (OldState == nullptr || NewState.rip == 0 || NewState.rsp == 0)
+    {
+        return;
+    }
+
+    ResourceLayerTaskSwitchKernelAsm(OldState, &NewState);
+}
+
 /**
  * Function: ResourceLayer::TaskSwitchUser
  * Description: Performs a user-task context switch through assembly helper with address-space switch.

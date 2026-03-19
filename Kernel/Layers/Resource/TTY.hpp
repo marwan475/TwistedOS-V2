@@ -47,6 +47,7 @@ public:
 
     uint64_t PushKeyboardInput(const char* Buffer, uint64_t Count);
     uint64_t PushKeyboardInputChar(char Character);
+    uint64_t GetBufferedInputBytes() const;
 
     FileOperations* GetFileOperations();
 

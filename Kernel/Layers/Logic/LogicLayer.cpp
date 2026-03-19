@@ -105,6 +105,17 @@ uint64_t LocalCStringLength(const char* String)
     return Length;
 }
 
+void SetKernelSystemCallStackTop(uint64_t StackTop)
+{
+    if (StackTop == 0)
+    {
+        return;
+    }
+
+    KernelTSS.RSP0_lower = static_cast<uint32_t>(StackTop & 0xFFFFFFFF);
+    KernelTSS.RSP0_upper = static_cast<uint32_t>((StackTop >> 32) & 0xFFFFFFFF);
+}
+
 bool InitializeExecveUserEntry(ResourceLayer* Resource, VirtualAddressSpace* AddressSpace, CpuState* State, const char* const* Argv, uint64_t Argc, const char* const* Envp,
                                uint64_t Envc, uint64_t AuxProgramHeaderAddress, uint64_t AuxProgramHeaderEntrySize, uint64_t AuxProgramHeaderCount, uint64_t AuxEntryPoint)
 {
@@ -1770,6 +1781,7 @@ void LogicLayer::KillProcess(uint8_t Id, int32_t ExitStatus)
     if (Sync != nullptr)
     {
         Sync->RemoveFromSleepQueue(Id);
+        Sync->RemoveFromTTYInputWaitQueue(Id);
     }
 
     Process* ParentProcess = PM->GetProcessById(ParentId);
@@ -1904,7 +1916,10 @@ bool LogicLayer::RunProcess(uint8_t Id)
         return false;
     }
 
-    Process* CurrentProcess = PM->GetRunningProcess();
+    Process* CurrentProcess = PM->GetCurrentProcess();
+    bool ResumeTargetInKernelContext = (TargetProcess->Level == PROCESS_LEVEL_USER && TargetProcess->WaitingForSystemCallReturn && TargetProcess->HasSavedSystemCallFrame
+                                        && TargetProcess->State.cs == KERNEL_CS && TargetProcess->State.ss == KERNEL_SS);
+
     if (CurrentProcess == nullptr)
     {
         TargetProcess->Status = PROCESS_RUNNING;
@@ -1914,10 +1929,29 @@ bool LogicLayer::RunProcess(uint8_t Id)
         BootstrapState.cs       = KERNEL_CS;
         BootstrapState.ss       = KERNEL_SS;
 
-        if (TargetProcess->Level == PROCESS_LEVEL_USER)
+        if (TargetProcess->Level == PROCESS_LEVEL_USER && !ResumeTargetInKernelContext)
         {
+            SetKernelSystemCallStackTop(TargetProcess->KernelSystemCallStackTop);
             SetUserFSBase(TargetProcess->UserFSBase);
             Resource->TaskSwitchUser(&BootstrapState, TargetProcess->State, TargetProcess->AddressSpace);
+        }
+        else if (ResumeTargetInKernelContext)
+        {
+            if (TargetProcess->AddressSpace == nullptr)
+            {
+                return false;
+            }
+
+            uint64_t TargetPageTable = TargetProcess->AddressSpace->GetPageMapL4TableAddr();
+            if (TargetPageTable == 0)
+            {
+                return false;
+            }
+
+            SetKernelSystemCallStackTop(TargetProcess->KernelSystemCallStackTop);
+            SetUserFSBase(TargetProcess->UserFSBase);
+            Resource->LoadPageTable(TargetPageTable);
+            Resource->TaskSwitchKernelCurrentAddressSpace(&BootstrapState, TargetProcess->State);
         }
         else
         {
@@ -1938,10 +1972,29 @@ bool LogicLayer::RunProcess(uint8_t Id)
     }
     TargetProcess->Status = PROCESS_RUNNING;
     PM->UpdateCurrentProcessId(TargetProcess->Id);
-    if (TargetProcess->Level == PROCESS_LEVEL_USER)
+    if (TargetProcess->Level == PROCESS_LEVEL_USER && !ResumeTargetInKernelContext)
     {
+        SetKernelSystemCallStackTop(TargetProcess->KernelSystemCallStackTop);
         SetUserFSBase(TargetProcess->UserFSBase);
         Resource->TaskSwitchUser(&CurrentProcess->State, TargetProcess->State, TargetProcess->AddressSpace);
+    }
+    else if (ResumeTargetInKernelContext)
+    {
+        if (TargetProcess->AddressSpace == nullptr)
+        {
+            return false;
+        }
+
+        uint64_t TargetPageTable = TargetProcess->AddressSpace->GetPageMapL4TableAddr();
+        if (TargetPageTable == 0)
+        {
+            return false;
+        }
+
+        SetKernelSystemCallStackTop(TargetProcess->KernelSystemCallStackTop);
+        SetUserFSBase(TargetProcess->UserFSBase);
+        Resource->LoadPageTable(TargetPageTable);
+        Resource->TaskSwitchKernelCurrentAddressSpace(&CurrentProcess->State, TargetProcess->State);
     }
     else
     {
@@ -2001,6 +2054,48 @@ void LogicLayer::WakeProcess(uint8_t Id)
     TargetProcess->Status = PROCESS_READY;
     Sync->RemoveFromSleepQueue(Id);
     Sched->AddToReadyQueue(Id);
+}
+
+void LogicLayer::BlockProcessForTTYInput(uint8_t Id)
+{
+    Process* TargetProcess = PM->GetProcessById(Id);
+    if (TargetProcess == nullptr || TargetProcess->Status != PROCESS_RUNNING)
+    {
+        return;
+    }
+
+#ifdef DEBUG_BUILD
+    if (Resource != nullptr && Resource->GetTTY() != nullptr)
+    {
+        Resource->GetTTY()->printf_("logic tty wait: pid=%u status=%u waiting_sysret=%u saved_syscall=%u rip=%p rsp=%p\n", TargetProcess->Id,
+                                    static_cast<unsigned>(TargetProcess->Status), TargetProcess->WaitingForSystemCallReturn ? 1U : 0U,
+                                    TargetProcess->HasSavedSystemCallFrame ? 1U : 0U, (void*) TargetProcess->State.rip, (void*) TargetProcess->State.rsp);
+    }
+#endif
+
+    if (TargetProcess->WaitingForSystemCallReturn && TargetProcess->HasSavedSystemCallFrame)
+    {
+        TargetProcess->State.cs = KERNEL_CS;
+        TargetProcess->State.ss = KERNEL_SS;
+    }
+
+    TargetProcess->Status = PROCESS_BLOCKED;
+    Sync->AddToTTYInputWaitQueue(Id);
+    Sched->RemoveFromReadyQueue(Id);
+
+    Ticks = 0;
+    Schedule();
+
+#ifdef DEBUG_BUILD
+    if (Resource != nullptr && Resource->GetTTY() != nullptr)
+    {
+        Process* RunningAfterSchedule = PM->GetRunningProcess();
+        if (RunningAfterSchedule != nullptr)
+        {
+            Resource->GetTTY()->printf_("logic tty wait: scheduled to pid=%u status=%u\n", RunningAfterSchedule->Id, static_cast<unsigned>(RunningAfterSchedule->Status));
+        }
+    }
+#endif
 }
 
 /**
@@ -2111,6 +2206,32 @@ void LogicLayer::Tick()
         if (IdToWake != PROCESS_ID_INVALID)
         {
             WakeProcess(IdToWake);
+        }
+
+        if (Resource != nullptr)
+        {
+            TTY* Terminal = Resource->GetTTY();
+            if (Terminal != nullptr && Terminal->GetBufferedInputBytes() > 0)
+            {
+                uint8_t TTYWaiterId = Sync->GetNextTTYInputWaiter();
+                if (TTYWaiterId != PROCESS_ID_INVALID)
+                {
+#ifdef DEBUG_BUILD
+                    Process* TTYWaiter = (PM != nullptr) ? PM->GetProcessById(TTYWaiterId) : nullptr;
+                    if (TTYWaiter != nullptr)
+                    {
+                        Terminal->printf_("logic tty wake: pid=%u buffered=%lu waiting_sysret=%u saved_syscall=%u\n", TTYWaiterId, Terminal->GetBufferedInputBytes(),
+                                          TTYWaiter->WaitingForSystemCallReturn ? 1U : 0U, TTYWaiter->HasSavedSystemCallFrame ? 1U : 0U);
+                    }
+                    else
+                    {
+                        Terminal->printf_("logic tty wake: pid=%u buffered=%lu (no process entry)\n", TTYWaiterId, Terminal->GetBufferedInputBytes());
+                    }
+#endif
+                    Sync->RemoveFromTTYInputWaitQueue(TTYWaiterId);
+                    UnblockProcess(TTYWaiterId);
+                }
+            }
         }
     }
 }
