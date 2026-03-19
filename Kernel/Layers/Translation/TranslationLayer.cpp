@@ -1016,6 +1016,28 @@ int64_t TranslationLayer::HandleBrkSystemCall(uint64_t Address)
     return static_cast<int64_t>(CurrentProcess->ProgramBreak);
 }
 
+int64_t TranslationLayer::HandleGetpidSystemCall()
+{
+    if (Logic == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    ProcessManager* PM = Logic->GetProcessManager();
+    if (PM == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    Process* CurrentProcess = PM->GetRunningProcess();
+    if (CurrentProcess == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    return static_cast<int64_t>(CurrentProcess->Id);
+}
+
 int64_t TranslationLayer::HandleDup2SystemCall(uint64_t OldFileDescriptor, uint64_t NewFileDescriptor)
 {
     if (Logic == nullptr)
