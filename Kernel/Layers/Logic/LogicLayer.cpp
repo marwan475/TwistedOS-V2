@@ -1143,6 +1143,11 @@ uint8_t LogicLayer::CopyProcess(uint8_t Id)
     ChildProcess->ProgramBreak              = SourceProcess->ProgramBreak;
     ChildProcess->CurrentFileSystemLocation = SourceProcess->CurrentFileSystemLocation;
 
+    for (size_t SignalIndex = 0; SignalIndex < MAX_POSIX_SIGNALS_PER_PROCESS; ++SignalIndex)
+    {
+        ChildProcess->SignalActions[SignalIndex] = SourceProcess->SignalActions[SignalIndex];
+    }
+
     for (size_t FileIndex = 0; FileIndex < MAX_OPEN_FILES_PER_PROCESS; ++FileIndex)
     {
         if (SourceProcess->FileTable[FileIndex] == nullptr)

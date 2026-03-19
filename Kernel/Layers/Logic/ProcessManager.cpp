@@ -32,6 +32,14 @@ void ResetProcessMemoryMappings(Process& ProcessEntry)
         ProcessEntry.MemoryMappings[MappingIndex] = {};
     }
 }
+
+void ResetProcessSignalActions(Process& ProcessEntry)
+{
+    for (size_t SignalIndex = 0; SignalIndex < MAX_POSIX_SIGNALS_PER_PROCESS; ++SignalIndex)
+    {
+        ProcessEntry.SignalActions[SignalIndex] = {};
+    }
+}
 } // namespace
 
 /**
@@ -67,6 +75,7 @@ ProcessManager::ProcessManager() : CurrentProcessId(PROCESS_ID_INVALID)
         Processes[index].CurrentFileSystemLocation  = nullptr;
         Processes[index].State                      = {};
         ResetProcessFileTable(Processes[index]);
+        ResetProcessSignalActions(Processes[index]);
         ResetProcessMemoryMappings(Processes[index]);
     }
 
@@ -181,6 +190,7 @@ uint8_t ProcessManager::CreateKernelProcess(void* StackPointer, CpuState Initial
             Processes[index].CurrentFileSystemLocation  = nullptr;
             Processes[index].State                      = InitialState;
             ResetProcessFileTable(Processes[index]);
+            ResetProcessSignalActions(Processes[index]);
             ResetProcessMemoryMappings(Processes[index]);
             return Processes[index].Id;
         }
@@ -225,6 +235,7 @@ uint8_t ProcessManager::CreateUserProcess(void* StackPointer, CpuState InitialSt
             Processes[index].CurrentFileSystemLocation  = nullptr;
             Processes[index].State                      = InitialState;
             ResetProcessFileTable(Processes[index]);
+            ResetProcessSignalActions(Processes[index]);
             ResetProcessMemoryMappings(Processes[index]);
             return Processes[index].Id;
         }
@@ -268,6 +279,7 @@ void* ProcessManager::KillProcess(uint8_t Id)
     Processes[Id].AddressSpace               = nullptr;
     Processes[Id].CurrentFileSystemLocation  = nullptr;
     Processes[Id].State                      = {};
+    ResetProcessSignalActions(Processes[Id]);
     ResetProcessMemoryMappings(Processes[Id]);
     return StackPointer;
 }

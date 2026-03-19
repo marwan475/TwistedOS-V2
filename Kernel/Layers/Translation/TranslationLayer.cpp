@@ -53,11 +53,28 @@ constexpr int64_t LINUX_SIG_BLOCK   = 0;
 constexpr int64_t LINUX_SIG_UNBLOCK = 1;
 constexpr int64_t LINUX_SIG_SETMASK = 2;
 
+constexpr int64_t LINUX_SIG_DFL = 0;
+constexpr int64_t LINUX_SIG_IGN = 1;
+
 constexpr uint64_t LINUX_RT_SIGSET_SIZE = sizeof(uint64_t);
+constexpr uint64_t LINUX_RT_SIGACTION_SIZE = sizeof(uint64_t) * 4;
+constexpr int64_t  LINUX_SIGNAL_MIN = 1;
+constexpr int64_t  LINUX_SIGNAL_MAX = static_cast<int64_t>(MAX_POSIX_SIGNALS_PER_PROCESS);
 
 constexpr uint64_t LINUX_SIGKILL_MASK = (1ULL << (9 - 1));
 constexpr uint64_t LINUX_SIGSTOP_MASK = (1ULL << (19 - 1));
 constexpr uint64_t LINUX_UNBLOCKABLE_SIGNAL_MASK = (LINUX_SIGKILL_MASK | LINUX_SIGSTOP_MASK);
+
+constexpr int64_t LINUX_SIGNAL_SIGKILL = 9;
+constexpr int64_t LINUX_SIGNAL_SIGSTOP = 19;
+
+struct LinuxKernelSigAction
+{
+    uint64_t Handler;
+    uint64_t Flags;
+    uint64_t Restorer;
+    uint64_t Mask;
+};
 
 bool IsCanonicalX86_64Address(uint64_t Address)
 {
@@ -1511,6 +1528,81 @@ int64_t TranslationLayer::HandleArchPrctlSystemCall(uint64_t Code, uint64_t Addr
 
     CurrentProcess->UserFSBase = Address;
     SetUserFSBase(Address);
+    return 0;
+}
+
+int64_t TranslationLayer::HandleRtSigactionSystemCall(int64_t Signal, const void* Action, void* OldAction, uint64_t SigsetSize)
+{
+    if (Logic == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    ProcessManager* PM = Logic->GetProcessManager();
+    if (PM == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    Process* CurrentProcess = PM->GetRunningProcess();
+    if (CurrentProcess == nullptr || CurrentProcess->Level != PROCESS_LEVEL_USER)
+    {
+        return LINUX_ERR_EINVAL;
+    }
+
+    if (SigsetSize != LINUX_RT_SIGSET_SIZE)
+    {
+        return LINUX_ERR_EINVAL;
+    }
+
+    if (Signal < LINUX_SIGNAL_MIN || Signal > LINUX_SIGNAL_MAX)
+    {
+        return LINUX_ERR_EINVAL;
+    }
+
+    if (Signal == LINUX_SIGNAL_SIGKILL || Signal == LINUX_SIGNAL_SIGSTOP)
+    {
+        return LINUX_ERR_EINVAL;
+    }
+
+    size_t SignalIndex = static_cast<size_t>(Signal - 1);
+
+    LinuxKernelSigAction OldKernelAction = {};
+    OldKernelAction.Handler              = CurrentProcess->SignalActions[SignalIndex].Handler;
+    OldKernelAction.Flags                = CurrentProcess->SignalActions[SignalIndex].Flags;
+    OldKernelAction.Restorer             = CurrentProcess->SignalActions[SignalIndex].Restorer;
+    OldKernelAction.Mask                 = CurrentProcess->SignalActions[SignalIndex].Mask;
+
+    if (OldAction != nullptr)
+    {
+        if (!Logic->CopyFromKernelToUser(&OldKernelAction, OldAction, LINUX_RT_SIGACTION_SIZE))
+        {
+            return LINUX_ERR_EFAULT;
+        }
+    }
+
+    if (Action != nullptr)
+    {
+        LinuxKernelSigAction NewKernelAction = {};
+        if (!Logic->CopyFromUserToKernel(Action, &NewKernelAction, LINUX_RT_SIGACTION_SIZE))
+        {
+            return LINUX_ERR_EFAULT;
+        }
+
+        NewKernelAction.Mask &= ~LINUX_UNBLOCKABLE_SIGNAL_MASK;
+
+        CurrentProcess->SignalActions[SignalIndex].Handler  = NewKernelAction.Handler;
+        CurrentProcess->SignalActions[SignalIndex].Flags    = NewKernelAction.Flags;
+        CurrentProcess->SignalActions[SignalIndex].Restorer = NewKernelAction.Restorer;
+        CurrentProcess->SignalActions[SignalIndex].Mask     = NewKernelAction.Mask;
+
+        if (CurrentProcess->SignalActions[SignalIndex].Handler == static_cast<uint64_t>(LINUX_SIG_DFL)
+            || CurrentProcess->SignalActions[SignalIndex].Handler == static_cast<uint64_t>(LINUX_SIG_IGN))
+        {
+            return 0;
+        }
+    }
+
     return 0;
 }
 
