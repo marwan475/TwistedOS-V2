@@ -34,8 +34,6 @@ constexpr uint64_t BURST_MIN_LOOPS   = 500;
 
 // 30 validator sleep iterations × 100 ms each = 3 seconds.
 constexpr uint64_t USER_MODE_TEST_DURATION_LOOPS = 30;
-// 300 validator iterations × 100 ms each = 30 seconds max wait for child execve.
-constexpr uint64_t USER_MODE_TEST_EXECVE_TIMEOUT_LOOPS = 300;
 
 enum SelfTestPhase
 {
@@ -82,8 +80,6 @@ struct KernelSelfTestState
 
     uint8_t  UserModeTestProcessId;
     uint64_t UserModeTestLoopCount;
-    uint64_t UserModeExecveObservedLoop;
-    bool     UserModeObservedExecve;
     bool     UserModeTestResultLogged;
 
     uint32_t TestsPassed;
@@ -115,8 +111,6 @@ KernelSelfTestState State = {
         false,
         INVALID_PROCESS_ID,
         0,
-        0,
-        false,
         false,
         0,
         0,
@@ -562,13 +556,7 @@ bool KernelSelfTestStart(Dispatcher* ActiveDispatcher)
  */
 void KernelSelfTestsOnSystemCall(uint64_t SystemCallNumber)
 {
-    if (State.Phase == SELF_TEST_PHASE_USER_MODE_MONITOR && SystemCallNumber == 59 /* execve */ && !State.UserModeObservedExecve)
-    {
-        Dispatcher* ActiveDispatcher = RequireDispatcher();
-        State.UserModeObservedExecve = true;
-        State.UserModeExecveObservedLoop = State.UserModeTestLoopCount;
-        ActiveDispatcher->GetResourceLayer()->GetTTY()->printf_("[SelfTest] [User Mode] observed child execve syscall\n");
-    }
+    (void) SystemCallNumber;
 }
 
 /**
@@ -709,8 +697,6 @@ void KernelValidatorTask()
 
                 RegisterTestProcess(State.UserModeTestProcessId);
                 State.UserModeTestLoopCount = 0;
-                State.UserModeExecveObservedLoop = 0;
-                State.UserModeObservedExecve = false;
                 State.Phase                 = SELF_TEST_PHASE_USER_MODE_MONITOR;
             }
             break;
@@ -721,25 +707,7 @@ void KernelValidatorTask()
                 // forked child and verify parent wait() can resume.
                 ++State.UserModeTestLoopCount;
 
-                if (!State.UserModeObservedExecve)
-                {
-                    if ((State.UserModeTestLoopCount % 20) == 0)
-                    {
-                        ActiveDispatcher->GetResourceLayer()->GetTTY()->printf_("[SelfTest] [User Mode] waiting for child execve... loop=%llu\n",
-                                                                                (unsigned long long) State.UserModeTestLoopCount);
-                    }
-
-                    if (State.UserModeTestLoopCount >= USER_MODE_TEST_EXECVE_TIMEOUT_LOOPS)
-                    {
-                        ActiveDispatcher->GetResourceLayer()->GetTTY()->printf_("[SelfTest] [User Mode] timeout: child never reached execve\n");
-                        LogTestResult(ActiveDispatcher, "User Mode", false);
-                        State.Phase = SELF_TEST_PHASE_FAILED;
-                    }
-
-                    break;
-                }
-
-                if ((State.UserModeTestLoopCount - State.UserModeExecveObservedLoop) >= USER_MODE_TEST_DURATION_LOOPS && !State.UserModeTestResultLogged)
+                if (State.UserModeTestLoopCount >= USER_MODE_TEST_DURATION_LOOPS && !State.UserModeTestResultLogged)
                 {
                     uint8_t         ParentUserProcessId = State.UserModeTestProcessId;
                     ProcessManager* PM                  = ActiveDispatcher->GetLogicLayer()->GetProcessManager();

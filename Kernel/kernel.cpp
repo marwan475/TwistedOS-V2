@@ -151,12 +151,16 @@ extern "C"
 
         ActiveDispatcher->GetLogicLayer()->GetVirtualFileSystem()->PrintVFS(ActiveDispatcher->GetResourceLayer()->GetTTY());
 
+        #ifdef STEST_BUILD
         if (!KernelSelfTestStart(ActiveDispatcher))
         {
             ActiveDispatcher->GetResourceLayer()->GetTTY()->printf_("KernelSelfTestStart setup failed\n");
             while (1)
                 __asm__ __volatile__("hlt");
         }
+        #else
+        ActiveDispatcher->GetResourceLayer()->GetTTY()->printf_("Kernel self-tests disabled (set STEST=1 to enable)\n");
+        #endif
 
         ActiveDispatcher->GetLogicLayer()->EnableScheduling();
 

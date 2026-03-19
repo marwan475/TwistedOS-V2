@@ -40,6 +40,13 @@ void _start()
     static const char fork_err[]   = "[UserModeTest] Test1 fork failed\n";
     static const char tty[]        = "/dev/tty";
     static const char next[]       = "/Test2";
+    static const char arg1[]       = "arg-from-test1";
+    static const char arg2[]       = "second-arg";
+    static const char env1[]       = "TWISTED_ENV=test";
+    static const char env2[]       = "MODE=execve";
+
+    static const char* const exec_argv[] = {next, arg1, arg2, 0};
+    static const char* const exec_envp[] = {env1, env2, 0};
 
     long start_tty_fd = syscall2(2 /* open */, (u64) tty, 2 /* O_RDWR */);
     if (start_tty_fd >= 0)
@@ -59,7 +66,7 @@ void _start()
             syscall6(3 /* close */, (u64) child_tty_fd, 0, 0, 0, 0, 0);
         }
 
-        syscall3(59 /* execve */, (u64) next, 0, 0);
+        syscall3(59 /* execve */, (u64) next, (u64) exec_argv, (u64) exec_envp);
 
         long fail_tty_fd = syscall2(2 /* open */, (u64) tty, 2 /* O_RDWR */);
         if (fail_tty_fd >= 0)

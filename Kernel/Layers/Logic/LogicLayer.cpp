@@ -16,6 +16,7 @@ constexpr uint64_t INITIAL_PROCESS_RFLAGS = 0x202;
 constexpr uint64_t USER_MODE_FLAG_MASK    = 0x3;
 constexpr uint64_t STACK_ALIGNMENT_MASK   = 0xFULL;
 constexpr uint64_t STACK_RETURN_SLOT_SIZE = 8;
+constexpr uint64_t EXECVE_MAX_VECTOR_COUNT = 128;
 
 /**
  * Function: AlignUpToPage
@@ -41,6 +42,212 @@ uint64_t AlignUpToPage(uint64_t Value)
 uint64_t AlignDownToPage(uint64_t Value)
 {
     return Value & ~(static_cast<uint64_t>(PAGE_SIZE) - 1);
+}
+
+uint64_t LocalCStringLength(const char* String)
+{
+    if (String == nullptr)
+    {
+        return 0;
+    }
+
+    uint64_t Length = 0;
+    while (String[Length] != '\0')
+    {
+        ++Length;
+    }
+
+    return Length;
+}
+
+bool InitializeExecveUserEntry(ResourceLayer* Resource, VirtualAddressSpace* AddressSpace, CpuState* State, const char* const* Argv, uint64_t Argc, const char* const* Envp,
+                               uint64_t Envc)
+{
+    if (Resource == nullptr || AddressSpace == nullptr || State == nullptr)
+    {
+        return false;
+    }
+
+    if ((Argc != 0 && Argv == nullptr) || (Envc != 0 && Envp == nullptr))
+    {
+        return false;
+    }
+
+    if (Argc > EXECVE_MAX_VECTOR_COUNT || Envc > EXECVE_MAX_VECTOR_COUNT)
+    {
+        return false;
+    }
+
+    uint64_t* ArgAddresses = nullptr;
+    if (Argc != 0)
+    {
+        ArgAddresses = reinterpret_cast<uint64_t*>(Resource->kmalloc(sizeof(uint64_t) * Argc));
+        if (ArgAddresses == nullptr)
+        {
+            return false;
+        }
+    }
+
+    uint64_t* EnvAddresses = nullptr;
+    if (Envc != 0)
+    {
+        EnvAddresses = reinterpret_cast<uint64_t*>(Resource->kmalloc(sizeof(uint64_t) * Envc));
+        if (EnvAddresses == nullptr)
+        {
+            if (ArgAddresses != nullptr)
+            {
+                Resource->kfree(ArgAddresses);
+            }
+
+            return false;
+        }
+    }
+
+    uint64_t UserPageTable = AddressSpace->GetPageMapL4TableAddr();
+    uint64_t PreviousPageTable = Resource->ReadCurrentPageTable();
+    if (UserPageTable == 0 || PreviousPageTable == 0)
+    {
+        if (EnvAddresses != nullptr)
+        {
+            Resource->kfree(EnvAddresses);
+        }
+
+        if (ArgAddresses != nullptr)
+        {
+            Resource->kfree(ArgAddresses);
+        }
+
+        return false;
+    }
+
+    uint64_t StackBottom = AddressSpace->GetStackVirtualAddressStart();
+    uint64_t StackTop    = AddressSpace->GetStackTop();
+    uint64_t StackCursor = StackTop;
+
+    bool Success = true;
+
+    Resource->LoadPageTable(UserPageTable);
+
+    do
+    {
+        for (uint64_t EnvIndex = Envc; EnvIndex > 0; --EnvIndex)
+        {
+            const char* EnvString = Envp[EnvIndex - 1];
+            if (EnvString == nullptr)
+            {
+                Success = false;
+                break;
+            }
+
+            uint64_t EnvLength = LocalCStringLength(EnvString) + 1;
+            if (EnvLength > (StackCursor - StackBottom))
+            {
+                Success = false;
+                break;
+            }
+
+            StackCursor -= EnvLength;
+            memcpy(reinterpret_cast<void*>(StackCursor), EnvString, static_cast<size_t>(EnvLength));
+            EnvAddresses[EnvIndex - 1] = StackCursor;
+        }
+
+        if (!Success)
+        {
+            break;
+        }
+
+        for (uint64_t ArgIndex = Argc; ArgIndex > 0; --ArgIndex)
+        {
+            const char* ArgString = Argv[ArgIndex - 1];
+            if (ArgString == nullptr)
+            {
+                Success = false;
+                break;
+            }
+
+            uint64_t ArgLength = LocalCStringLength(ArgString) + 1;
+            if (ArgLength > (StackCursor - StackBottom))
+            {
+                Success = false;
+                break;
+            }
+
+            StackCursor -= ArgLength;
+            memcpy(reinterpret_cast<void*>(StackCursor), ArgString, static_cast<size_t>(ArgLength));
+            ArgAddresses[ArgIndex - 1] = StackCursor;
+        }
+
+        if (!Success)
+        {
+            break;
+        }
+
+        StackCursor &= ~STACK_ALIGNMENT_MASK;
+
+        uint64_t EnvpVectorSize = (Envc + 1) * sizeof(uint64_t);
+        if (EnvpVectorSize > (StackCursor - StackBottom))
+        {
+            Success = false;
+            break;
+        }
+
+        StackCursor -= EnvpVectorSize;
+        uint64_t EnvpUserPointer = StackCursor;
+
+        for (uint64_t EnvIndex = 0; EnvIndex < Envc; ++EnvIndex)
+        {
+            memcpy(reinterpret_cast<void*>(EnvpUserPointer + (EnvIndex * sizeof(uint64_t))), &EnvAddresses[EnvIndex], sizeof(uint64_t));
+        }
+
+        uint64_t NullPointer = 0;
+        memcpy(reinterpret_cast<void*>(EnvpUserPointer + (Envc * sizeof(uint64_t))), &NullPointer, sizeof(uint64_t));
+
+        uint64_t ArgvVectorSize = (Argc + 1) * sizeof(uint64_t);
+        if (ArgvVectorSize > (StackCursor - StackBottom))
+        {
+            Success = false;
+            break;
+        }
+
+        StackCursor -= ArgvVectorSize;
+        uint64_t ArgvUserPointer = StackCursor;
+
+        for (uint64_t ArgIndex = 0; ArgIndex < Argc; ++ArgIndex)
+        {
+            memcpy(reinterpret_cast<void*>(ArgvUserPointer + (ArgIndex * sizeof(uint64_t))), &ArgAddresses[ArgIndex], sizeof(uint64_t));
+        }
+
+        memcpy(reinterpret_cast<void*>(ArgvUserPointer + (Argc * sizeof(uint64_t))), &NullPointer, sizeof(uint64_t));
+
+        uint64_t UserInitialRsp = (StackCursor & ~STACK_ALIGNMENT_MASK) - STACK_RETURN_SLOT_SIZE;
+        if (UserInitialRsp < StackBottom)
+        {
+            Success = false;
+            break;
+        }
+
+        uint64_t ZeroReturnAddress = 0;
+        memcpy(reinterpret_cast<void*>(UserInitialRsp), &ZeroReturnAddress, sizeof(ZeroReturnAddress));
+
+        State->rsp = UserInitialRsp;
+        State->rdi = Argc;
+        State->rsi = ArgvUserPointer;
+        State->rdx = EnvpUserPointer;
+    } while (false);
+
+    Resource->LoadPageTable(PreviousPageTable);
+
+    if (EnvAddresses != nullptr)
+    {
+        Resource->kfree(EnvAddresses);
+    }
+
+    if (ArgAddresses != nullptr)
+    {
+        Resource->kfree(ArgAddresses);
+    }
+
+    return Success;
 }
 
 bool IsRangeWithin(uint64_t RangeStart, uint64_t RangeSize, uint64_t Address, uint64_t Count)
@@ -519,7 +726,7 @@ uint8_t LogicLayer::CreateKernelProcess(void (*EntryPoint)())
     return Id;
 }
 
-uint8_t LogicLayer::ChangeProcessExecution(uint8_t Id, const char* FilePath)
+uint8_t LogicLayer::ChangeProcessExecution(uint8_t Id, const char* FilePath, const char* const* Argv, uint64_t Argc, const char* const* Envp, uint64_t Envc)
 {
     if (PM == nullptr || VFS == nullptr || Resource == nullptr || FilePath == nullptr)
     {
@@ -602,9 +809,23 @@ uint8_t LogicLayer::ChangeProcessExecution(uint8_t Id, const char* FilePath)
     NewState.rip      = NewUserEntryPoint;
     NewState.rflags   = INITIAL_PROCESS_RFLAGS;
     NewState.rbp      = 0;
-    NewState.rsp      = (USER_PROCESS_VIRTUAL_STACK_TOP & ~STACK_ALIGNMENT_MASK) - STACK_RETURN_SLOT_SIZE;
     NewState.cs       = USER_CS;
     NewState.ss       = USER_SS;
+
+    if (!InitializeExecveUserEntry(Resource, NewAddressSpace, &NewState, Argv, Argc, Envp, Envc))
+    {
+        if (IsELF)
+        {
+            CleanUpELF(NewAddressSpace);
+        }
+        else
+        {
+            CleanUpRawBinary(NewAddressSpace);
+        }
+
+        delete NewAddressSpace;
+        return PROCESS_ID_INVALID;
+    }
 
     VirtualAddressSpace* OldAddressSpace = TargetProcess->AddressSpace;
     FILE_TYPE            OldFileType     = TargetProcess->FileType;

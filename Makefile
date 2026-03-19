@@ -53,6 +53,10 @@ CFLAGS += -DDEBUG_BUILD
 KERNEL_CFLAGS += -DDEBUG_BUILD
 endif
 
+ifeq ($(STEST),1)
+KERNEL_CFLAGS += -DSTEST_BUILD
+endif
+
 BIN = bin/
 BUILD = build/
 OUTPUT = TwistedOS.img
@@ -199,7 +203,7 @@ qemu-basic-debug: all
 	@mkdir -p $(BUILD)
 	@echo "QEMU GDB server listening on localhost:$(QEMU_GDB_PORT)"
 	$(QEMU) \
-		-m 512M \
+		-m 1024M \
 		$(QEMU_FW) \
 		-drive file=TwistedOS.img,format=raw \
 		-serial file:$(QEMU_DEBUG_SERIAL_LOG) \

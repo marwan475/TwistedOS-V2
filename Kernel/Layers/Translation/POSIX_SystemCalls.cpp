@@ -7,6 +7,7 @@
 #include "TranslationLayer.hpp"
 
 #include <stdint.h>
+#include <Layers/Dispatcher.hpp>
 
 /**
  * Function: TranslationLayer::HandlePosixSystemCallNumber
@@ -952,6 +953,17 @@ int64_t TranslationLayer::HandlePosixSystemCallNumber(uint64_t SystemCallNumber,
             */
 
         default:
+            {
+                    Dispatcher* ActiveDispatcher = Dispatcher::GetActive();
+                    if (ActiveDispatcher != nullptr)
+                    {
+                        ActiveDispatcher->GetResourceLayer()->GetTTY()->printf_("Unknown system call: %d\n", (int) SystemCallNumber);
+                    }
+                    while(1)
+                    {
+                        asm volatile("hlt");
+                    }
+            }
             break;
     }
 

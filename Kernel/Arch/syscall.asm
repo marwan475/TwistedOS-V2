@@ -112,12 +112,28 @@ SystemCallEntry:
     jz .return_to_saved_syscall_frame
 
     mov r11, rax
+    mov rcx, r11
 
-    push qword [r11 + 152]
-    push qword [r11 + 136]
-    push qword [r11 + 128]
-    push qword [r11 + 144]
-    push qword [r11 + 120]
+    mov rdx, [rcx + CPUSTATE_RDX]
+    mov rbx, [rcx + CPUSTATE_RBX]
+    mov rbp, [rcx + CPUSTATE_RBP]
+    mov rsi, [rcx + CPUSTATE_RSI]
+    mov rdi, [rcx + CPUSTATE_RDI]
+    mov r8,  [rcx + CPUSTATE_R8]
+    mov r9,  [rcx + CPUSTATE_R9]
+    mov r10, [rcx + CPUSTATE_R10]
+    mov r12, [rcx + CPUSTATE_R12]
+    mov r13, [rcx + CPUSTATE_R13]
+    mov r14, [rcx + CPUSTATE_R14]
+    mov r15, [rcx + CPUSTATE_R15]
+    mov rax, [rcx + CPUSTATE_RAX]
+    mov r11, [rcx + CPUSTATE_R11]
+
+    push qword [rcx + CPUSTATE_SS]
+    push qword [rcx + CPUSTATE_RSP]
+    push qword [rcx + CPUSTATE_RFLAGS]
+    push qword [rcx + CPUSTATE_CS]
+    push qword [rcx + CPUSTATE_RIP]
     iretq
 
 .return_to_saved_syscall_frame:

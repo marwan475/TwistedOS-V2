@@ -8,6 +8,8 @@
 
 #include "Layers/Logic/LogicLayer.hpp"
 
+#include <CommonUtils.hpp>
+
 namespace
 {
 constexpr int64_t LINUX_ERR_EFAULT = -14;
@@ -22,6 +24,7 @@ constexpr int64_t LINUX_ERR_ECHILD = -10;
 
 constexpr uint64_t SYSCALL_COPY_CHUNK_SIZE = 4096;
 constexpr uint64_t SYSCALL_PATH_MAX        = 4096;
+constexpr uint64_t SYSCALL_EXEC_MAX_VECTOR = 128;
 
 constexpr uint64_t LINUX_O_ACCMODE = 0x3;
 
@@ -66,6 +69,109 @@ bool CopyUserCString(LogicLayer* Logic, const char* UserString, char* KernelBuff
     }
 
     KernelBuffer[KernelBufferSize - 1] = '\0';
+    return false;
+}
+
+uint64_t CStrLength(const char* String)
+{
+    if (String == nullptr)
+    {
+        return 0;
+    }
+
+    uint64_t Length = 0;
+    while (String[Length] != '\0')
+    {
+        ++Length;
+    }
+
+    return Length;
+}
+
+void FreeKernelStringVector(LogicLayer* Logic, char** KernelVector, uint64_t Count)
+{
+    if (Logic == nullptr || KernelVector == nullptr)
+    {
+        return;
+    }
+
+    for (uint64_t Index = 0; Index < Count; ++Index)
+    {
+        if (KernelVector[Index] != nullptr)
+        {
+            Logic->kfree(KernelVector[Index]);
+        }
+    }
+
+    Logic->kfree(KernelVector);
+}
+
+bool CopyUserStringVector(LogicLayer* Logic, const char* const* UserVector, char*** KernelVectorOut, uint64_t* CountOut)
+{
+    if (Logic == nullptr || KernelVectorOut == nullptr || CountOut == nullptr)
+    {
+        return false;
+    }
+
+    *KernelVectorOut = nullptr;
+    *CountOut        = 0;
+
+    if (UserVector == nullptr)
+    {
+        return true;
+    }
+
+    char** KernelVector = reinterpret_cast<char**>(Logic->kmalloc(sizeof(char*) * (SYSCALL_EXEC_MAX_VECTOR + 1)));
+    if (KernelVector == nullptr)
+    {
+        return false;
+    }
+
+    for (uint64_t Index = 0; Index < (SYSCALL_EXEC_MAX_VECTOR + 1); ++Index)
+    {
+        KernelVector[Index] = nullptr;
+    }
+
+    char TempBuffer[SYSCALL_PATH_MAX];
+
+    for (uint64_t Index = 0; Index < SYSCALL_EXEC_MAX_VECTOR; ++Index)
+    {
+        const char* UserEntry = nullptr;
+        const void* UserEntryAddress = reinterpret_cast<const void*>(reinterpret_cast<uint64_t>(UserVector) + (Index * sizeof(const char*)));
+        if (!Logic->CopyFromUserToKernel(UserEntryAddress, &UserEntry, sizeof(UserEntry)))
+        {
+            FreeKernelStringVector(Logic, KernelVector, Index);
+            return false;
+        }
+
+        if (UserEntry == nullptr)
+        {
+            *KernelVectorOut = KernelVector;
+            *CountOut        = Index;
+            return true;
+        }
+
+        if (!CopyUserCString(Logic, UserEntry, TempBuffer, sizeof(TempBuffer)))
+        {
+            FreeKernelStringVector(Logic, KernelVector, Index);
+            return false;
+        }
+
+        uint64_t EntryLength = CStrLength(TempBuffer) + 1;
+        KernelVector[Index]  = reinterpret_cast<char*>(Logic->kmalloc(EntryLength));
+        if (KernelVector[Index] == nullptr)
+        {
+            FreeKernelStringVector(Logic, KernelVector, Index);
+            return false;
+        }
+
+        for (uint64_t CharIndex = 0; CharIndex < EntryLength; ++CharIndex)
+        {
+            KernelVector[Index][CharIndex] = TempBuffer[CharIndex];
+        }
+    }
+
+    FreeKernelStringVector(Logic, KernelVector, SYSCALL_EXEC_MAX_VECTOR);
     return false;
 }
 
@@ -444,9 +550,6 @@ int64_t TranslationLayer::HandleForkSystemCall()
 
 int64_t TranslationLayer::HandleExecveSystemCall(const char* Path, const char* const* Argv, const char* const* Envp)
 {
-    (void) Argv;
-    (void) Envp;
-
     if (Logic == nullptr || Path == nullptr)
     {
         return LINUX_ERR_EFAULT;
@@ -476,7 +579,41 @@ int64_t TranslationLayer::HandleExecveSystemCall(const char* Path, const char* c
         return LINUX_ERR_EFAULT;
     }
 
-    uint8_t ChangedProcessId = Logic->ChangeProcessExecution(CurrentProcess->Id, KernelPathBuffer);
+    char**   KernelArgv  = nullptr;
+    char**   KernelEnvp  = nullptr;
+    uint64_t KernelArgc  = 0;
+    uint64_t KernelEnvc  = 0;
+    bool     IsArgvValid = CopyUserStringVector(Logic, Argv, &KernelArgv, &KernelArgc);
+    bool     IsEnvpValid = IsArgvValid && CopyUserStringVector(Logic, Envp, &KernelEnvp, &KernelEnvc);
+
+    if (!IsEnvpValid)
+    {
+        if (KernelArgv != nullptr)
+        {
+            FreeKernelStringVector(Logic, KernelArgv, KernelArgc);
+        }
+
+        if (KernelEnvp != nullptr)
+        {
+            FreeKernelStringVector(Logic, KernelEnvp, KernelEnvc);
+        }
+
+        Logic->kfree(KernelPathBuffer);
+        return LINUX_ERR_EFAULT;
+    }
+
+    uint8_t ChangedProcessId = Logic->ChangeProcessExecution(CurrentProcess->Id, KernelPathBuffer, KernelArgv, KernelArgc, KernelEnvp, KernelEnvc);
+
+    if (KernelArgv != nullptr)
+    {
+        FreeKernelStringVector(Logic, KernelArgv, KernelArgc);
+    }
+
+    if (KernelEnvp != nullptr)
+    {
+        FreeKernelStringVector(Logic, KernelEnvp, KernelEnvc);
+    }
+
     Logic->kfree(KernelPathBuffer);
 
     if (ChangedProcessId == PROCESS_ID_INVALID)
