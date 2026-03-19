@@ -22,7 +22,9 @@ extern "C" void ResourceLayerTaskSwitchUserAsm(CpuState* OldState, const CpuStat
  * Returns:
  *   ResourceLayer - Constructed resource layer instance.
  */
-ResourceLayer::ResourceLayer() : PMM(nullptr), VMM(nullptr), Console(nullptr), KernelHeapVirtualAddrStart(0), KernelHeapVirtualAddrEnd(0), KHM(0, 0), RFS(0, 0), Terminal(nullptr), InputKeyboard(nullptr)
+ResourceLayer::ResourceLayer()
+        : PMM(nullptr), VMM(nullptr), Console(nullptr), KernelHeapVirtualAddrStart(0), KernelHeapVirtualAddrEnd(0), KernelPageMapL4TableAddr(0), InitramfsAddress(0), InitramfsSize(0),
+            KHM(0, 0), RFS(0, 0), Terminal(nullptr), InputKeyboard(nullptr)
 {
 }
 
@@ -50,6 +52,7 @@ void ResourceLayer::Initialize(PhysicalMemoryManager* PMM, VirtualMemoryManager*
     this->KernelHeapVirtualAddrEnd   = KernelHeapVirtualAddrEnd;
     this->InitramfsAddress           = InitramfsAddress;
     this->InitramfsSize              = InitramfsSize;
+    this->KernelPageMapL4TableAddr   = ReadCurrentPageTable();
 }
 
 void ResourceLayer::InitializeFrameBuffer(const EFI_GRAPHICS_OUTPUT_PROTOCOL_MODE& GopMode)
@@ -317,6 +320,11 @@ void ResourceLayer::TaskSwitchKernel(CpuState* OldState, const CpuState& NewStat
     if (OldState == nullptr || NewState.rip == 0 || NewState.rsp == 0)
     {
         return;
+    }
+
+    if (KernelPageMapL4TableAddr != 0)
+    {
+        LoadPageTable(KernelPageMapL4TableAddr);
     }
 
     ResourceLayerTaskSwitchKernelAsm(OldState, &NewState);

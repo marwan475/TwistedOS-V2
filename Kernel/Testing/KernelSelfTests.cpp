@@ -356,6 +356,9 @@ void KillChildProcessesOf(Dispatcher* ActiveDispatcher, uint8_t ParentProcessId)
         return;
     }
 
+    Process* RunningProcess = PM->GetRunningProcess();
+    uint8_t  RunningProcessId = (RunningProcess != nullptr) ? RunningProcess->Id : INVALID_PROCESS_ID;
+
     for (uint8_t ProcessId = 0; ProcessId < TEST_MAX_PROCESS_COUNT; ++ProcessId)
     {
         Process* Candidate = PM->GetProcessById(ProcessId);
@@ -366,6 +369,11 @@ void KillChildProcessesOf(Dispatcher* ActiveDispatcher, uint8_t ParentProcessId)
 
         if (Candidate->ParrentId == ParentProcessId)
         {
+            if (ProcessId == State.KernelValidatorId || ProcessId == RunningProcessId)
+            {
+                continue;
+            }
+
             ActiveDispatcher->GetLogicLayer()->KillProcess(ProcessId);
         }
     }
@@ -675,6 +683,16 @@ void KernelValidatorTask()
                     break;
                 }
 
+                if (State.UserModeTestProcessId == State.KernelValidatorId)
+                {
+                    ActiveDispatcher->GetResourceLayer()->GetTTY()->printf_("[SelfTest] [User Mode] pid collision detected: validator id=%u\n",
+                                                                            State.KernelValidatorId);
+                    LogTestResult(ActiveDispatcher, "User Mode", false);
+                    State.UserModeTestProcessId = INVALID_PROCESS_ID;
+                    State.Phase                 = SELF_TEST_PHASE_FAILED;
+                    break;
+                }
+
                 RegisterTestProcess(State.UserModeTestProcessId);
                 State.UserModeTestLoopCount = 0;
                 State.Phase                 = SELF_TEST_PHASE_USER_MODE_MONITOR;
@@ -690,9 +708,21 @@ void KernelValidatorTask()
                 if (State.UserModeTestLoopCount >= USER_MODE_TEST_DURATION_LOOPS && !State.UserModeTestResultLogged)
                 {
                     uint8_t ParentUserProcessId = State.UserModeTestProcessId;
+                    ProcessManager* PM = ActiveDispatcher->GetLogicLayer()->GetProcessManager();
+                    Process* RunningProcess = (PM != nullptr) ? PM->GetRunningProcess() : nullptr;
+                    uint8_t RunningProcessId = (RunningProcess != nullptr) ? RunningProcess->Id : INVALID_PROCESS_ID;
 
                     if (State.UserModeTestProcessId != INVALID_PROCESS_ID)
                     {
+                        if (State.UserModeTestProcessId == State.KernelValidatorId || State.UserModeTestProcessId == RunningProcessId)
+                        {
+                            ActiveDispatcher->GetResourceLayer()->GetTTY()->printf_(
+                                "[SelfTest] [User Mode] refusing to kill active validator/running process id=%u\n", State.UserModeTestProcessId);
+                            LogTestResult(ActiveDispatcher, "User Mode", false);
+                            State.Phase = SELF_TEST_PHASE_FAILED;
+                            break;
+                        }
+
                         ActiveDispatcher->GetLogicLayer()->KillProcess(State.UserModeTestProcessId);
                         State.UserModeTestProcessId = INVALID_PROCESS_ID;
                     }

@@ -29,6 +29,7 @@ private:
     FrameBufferConsole*    Console;
     uint64_t               KernelHeapVirtualAddrStart;
     uint64_t               KernelHeapVirtualAddrEnd;
+    uint64_t               KernelPageMapL4TableAddr;
     uint64_t               InitramfsAddress;
     uint64_t               InitramfsSize;
     FrameBuffer            FB;
