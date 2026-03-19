@@ -485,6 +485,61 @@ int64_t TranslationLayer::HandleCloseSystemCall(uint64_t FileDescriptor)
     return 0;
 }
 
+int64_t TranslationLayer::HandleDup2SystemCall(uint64_t OldFileDescriptor, uint64_t NewFileDescriptor)
+{
+    if (Logic == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    ProcessManager* PM = Logic->GetProcessManager();
+    if (PM == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    Process* CurrentProcess = PM->GetRunningProcess();
+    if (CurrentProcess == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    if (OldFileDescriptor >= MAX_OPEN_FILES_PER_PROCESS || NewFileDescriptor >= MAX_OPEN_FILES_PER_PROCESS)
+    {
+        return LINUX_ERR_EBADF;
+    }
+
+    File* SourceFile = CurrentProcess->FileTable[OldFileDescriptor];
+    if (SourceFile == nullptr)
+    {
+        return LINUX_ERR_EBADF;
+    }
+
+    if (OldFileDescriptor == NewFileDescriptor)
+    {
+        return static_cast<int64_t>(NewFileDescriptor);
+    }
+
+    File* ExistingTargetFile = CurrentProcess->FileTable[NewFileDescriptor];
+    if (ExistingTargetFile != nullptr)
+    {
+        delete ExistingTargetFile;
+        CurrentProcess->FileTable[NewFileDescriptor] = nullptr;
+    }
+
+    File* DuplicatedFile = new File;
+    if (DuplicatedFile == nullptr)
+    {
+        return LINUX_ERR_ENOMEM;
+    }
+
+    *DuplicatedFile              = *SourceFile;
+    DuplicatedFile->FileDescriptor = NewFileDescriptor;
+    CurrentProcess->FileTable[NewFileDescriptor] = DuplicatedFile;
+
+    return static_cast<int64_t>(NewFileDescriptor);
+}
+
 int64_t TranslationLayer::HandleForkSystemCall()
 {
     if (Logic == nullptr)

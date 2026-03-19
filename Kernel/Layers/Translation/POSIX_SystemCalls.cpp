@@ -46,6 +46,9 @@ int64_t TranslationLayer::HandlePosixSystemCallNumber(uint64_t SystemCallNumber,
         case 3: // close
             return HandleCloseSystemCall(Arg1);
             break;
+        case 33: // dup2
+            return HandleDup2SystemCall(Arg1, Arg2);
+            break;
         case 57: // fork
             return HandleForkSystemCall();
             break;

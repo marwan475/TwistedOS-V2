@@ -7,6 +7,8 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 BUSYBOX_DIR="${REPO_ROOT}/busybox"
 ROOTFS_DIR="${REPO_ROOT}/initramfs/rootfs"
 INSTALL_DIR="${ROOTFS_DIR}/bin"
+BUILD_DIR="${REPO_ROOT}/build"
+DEBUG_SYMBOLS_OUT="${BUILD_DIR}/busybox.debug"
 if [ -n "${MUSL_CC:-}" ]; then
 	MUSL_CC="${MUSL_CC}"
 elif command -v x86_64-linux-musl-gcc >/dev/null 2>&1; then
@@ -18,6 +20,17 @@ fi
 if ! command -v "${MUSL_CC}" >/dev/null 2>&1; then
 	echo "Error: '${MUSL_CC}' not found. Install musl toolchain first (e.g. package providing musl-gcc)." >&2
 	exit 1
+fi
+
+BUSYBOX_DEBUG="${BUSYBOX_DEBUG:-0}"
+if [[ "${BUSYBOX_DEBUG}" == "1" ]]; then
+	BUSYBOX_EXTRA_CFLAGS="-O0 -g3 -fno-omit-frame-pointer -static"
+	BUSYBOX_MAKE_ARGS=("SKIP_STRIP=y")
+	echo "BusyBox build mode: DEBUG (symbols enabled)"
+else
+	BUSYBOX_EXTRA_CFLAGS="-Os -static"
+	BUSYBOX_MAKE_ARGS=()
+	echo "BusyBox build mode: RELEASE"
 fi
 
 cd "${BUSYBOX_DIR}"
@@ -165,8 +178,9 @@ echo "BusyBox minimal musl config written."
 
 make \
 	CC="${MUSL_CC}" \
-	EXTRA_CFLAGS="-Os -static" \
+	EXTRA_CFLAGS="${BUSYBOX_EXTRA_CFLAGS}" \
 	EXTRA_LDFLAGS="-static" \
+	"${BUSYBOX_MAKE_ARGS[@]}" \
 	-j"$(nproc)"
 
 if command -v readelf >/dev/null 2>&1; then
@@ -188,6 +202,12 @@ if command -v strings >/dev/null 2>&1; then
 fi
 
 mkdir -p "${INSTALL_DIR}"
+mkdir -p "${BUILD_DIR}"
+
+if [[ "${BUSYBOX_DEBUG}" == "1" ]]; then
+	cp -f busybox "${DEBUG_SYMBOLS_OUT}"
+fi
+
 cp -f busybox "${INSTALL_DIR}/busybox"
 ln -sf busybox "${INSTALL_DIR}/sh"
 ln -sf busybox "${INSTALL_DIR}/ls"
@@ -196,6 +216,9 @@ ln -sf busybox "${INSTALL_DIR}/echo"
 
 echo "Built: ${BUSYBOX_DIR}/busybox"
 echo "Installed: ${INSTALL_DIR}/busybox and ${INSTALL_DIR}/sh"
+if [[ "${BUSYBOX_DEBUG}" == "1" ]]; then
+	echo "Debug symbols copy: ${DEBUG_SYMBOLS_OUT}"
+fi
 echo "Compiler: ${MUSL_CC}"
 if command -v file >/dev/null 2>&1; then
 	file "${INSTALL_DIR}/busybox"

@@ -68,6 +68,8 @@ IMG = $(OUTPUT)
 DRIVE = TwistedDrive.img
 ROOTFS_DIR = initramfs/rootfs
 INIT2_CC = gcc
+INIT_SRC = initramfs/init.c
+INIT_BIN = $(ROOTFS_DIR)/init
 TEST1_SRC = initramfs/Test1.c
 TEST1_BIN = $(ROOTFS_DIR)/Test1
 TEST2_SRC = initramfs/Test2.c
@@ -101,7 +103,7 @@ QEMU_FULL = \
 all: bin build $(EFI) $(KERNEL) $(INITRAMFS) $(IMG) $(DRIVE)
 
 clean:
-	rm -rf $(BIN) $(BUILD) $(OUTPUT) *.pcap $(TEST1_BIN) $(TEST2_BIN)
+	rm -rf $(BIN) $(BUILD) $(OUTPUT) *.pcap $(INIT_BIN) $(TEST1_BIN) $(TEST2_BIN)
 
 build:
 	mkdir $(BUILD)
@@ -146,14 +148,17 @@ $(KERNEL): Kernel/kernel.cpp Kernel/Testing/KernelSelfTests.cpp Kernel/Layers/Di
 	objcopy -O binary --set-section-flags .bss=alloc,load,contents $(BUILD)kernel.elf $(BIN)$@
 
 
+$(INIT_BIN): $(INIT_SRC) | build
+	$(INIT2_CC) -static -nostdlib -fno-pie -no-pie -fno-stack-protector -fno-stack-clash-protection -Wl,-e,_start $(INIT_SRC) -o $(INIT_BIN)
+
 $(TEST1_BIN): $(TEST1_SRC) | build
 	$(INIT2_CC) -static -nostdlib -fno-pie -no-pie -fno-stack-protector -fno-stack-clash-protection -Wl,-e,_start $(TEST1_SRC) -o $(TEST1_BIN)
 
 $(TEST2_BIN): $(TEST2_SRC) | build
 	$(INIT2_CC) -static -nostdlib -fno-pie -no-pie -fno-stack-protector -fno-stack-clash-protection -Wl,-e,_start $(TEST2_SRC) -o $(TEST2_BIN)
 
-$(INITRAMFS): $(TEST1_BIN) $(TEST2_BIN)
-	chmod +x $(TEST1_BIN) $(TEST2_BIN)
+$(INITRAMFS): $(INIT_BIN) $(TEST1_BIN) $(TEST2_BIN)
+	chmod +x $(INIT_BIN) $(TEST1_BIN) $(TEST2_BIN)
 	(cd $(ROOTFS_DIR) && find . -print | cpio -o -H newc) > $(BIN)$@
 
 $(IMG): $(EFI) $(KERNEL) $(INITRAMFS)

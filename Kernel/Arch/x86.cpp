@@ -290,12 +290,22 @@ extern "C" void ISRHANDLER(Registers* reg)
 {
     if (reg->interrupt_number < 32)
     {
+        Dispatcher* ActiveDispatcher = Dispatcher::GetActive();
+        if (ActiveDispatcher != nullptr)
+        {
+            TTY* Terminal = ActiveDispatcher->GetResourceLayer()->GetTTY();
+            if (Terminal != nullptr)
+            {
+                Terminal->printf_("CPU exception: int=%lu err=%p rip=%p cs=%p rflags=%p rsp=%p\n", reg->interrupt_number, (void*) reg->error_code, (void*) reg->rip, (void*) reg->cs,
+                                  (void*) reg->rflags, (void*) reg->rsp);
+            }
+        }
+
         if (reg->interrupt_number == 14)
         {
             uint64_t FaultAddress = 0;
             __asm__ __volatile__("mov %%cr2, %0" : "=r"(FaultAddress));
 
-            Dispatcher* ActiveDispatcher = Dispatcher::GetActive();
             if (ActiveDispatcher != nullptr)
             {
                 ActiveDispatcher->GetResourceLayer()->GetTTY()->printf_("Page fault: cr2=%p rip=%p err=%p cs=%p rsp=%p\n", (void*) FaultAddress, (void*) reg->rip, (void*) reg->error_code,

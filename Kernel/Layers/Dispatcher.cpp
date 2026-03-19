@@ -200,7 +200,13 @@ void Dispatcher::InterruptHandler(uint64_t InterruptNumber)
 int64_t Dispatcher::HandleSystemCall(uint64_t SystemCallNumber, uint64_t Arg1, uint64_t Arg2, uint64_t Arg3, uint64_t Arg4, uint64_t Arg5, uint64_t Arg6)
 {
     KernelSelfTestsOnSystemCall(SystemCallNumber);
-    // Resource.GetConsole()->printf_("User syscall instruction received (syscall=%lu, a1=%lu, a2=%lu, a3=%lu, a4=%lu, a5=%lu, a6=%lu)\n", SystemCallNumber, Arg1, Arg2, Arg3, Arg4, Arg5, Arg6);
+
+    TTY* Terminal = Resource.GetTTY();
+    if (Terminal != nullptr)
+    {
+        Terminal->printf_("syscall: n=%lu a1=%p a2=%p a3=%p a4=%p a5=%p a6=%p\n", SystemCallNumber, (void*) Arg1, (void*) Arg2, (void*) Arg3, (void*) Arg4, (void*) Arg5,
+                          (void*) Arg6);
+    }
 
     return Translation.HandlePosixSystemCallNumber(SystemCallNumber, Arg1, Arg2, Arg3, Arg4, Arg5, Arg6);
 }

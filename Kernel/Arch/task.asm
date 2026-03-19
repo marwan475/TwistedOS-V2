@@ -31,6 +31,7 @@ global ResourceLayerTaskSwitchUserAsm
 %define CPUSTATE_CS      144
 %define CPUSTATE_SS      152
 %define USER_DPL_MASK    0x3
+%define USER_SS          0x23
 
 ; /**
 ;  * Function: ResourceLayerTaskSwitchKernelAsm
@@ -200,6 +201,14 @@ ResourceLayerTaskSwitchUserAsm:
     mov r13, [r11 + CPUSTATE_R13]
     mov r14, [r11 + CPUSTATE_R14]
     mov r15, [r11 + CPUSTATE_R15]
+
+    push rax
+    mov ax, USER_SS
+    mov ds, ax
+    mov es, ax
+    mov fs, ax
+    mov gs, ax
+    pop rax
 
     push qword [r11 + CPUSTATE_SS]
     push qword [r11 + CPUSTATE_RSP]

@@ -14,6 +14,8 @@ gdb_extension="${repo_root}/scripts/twistedos_gdb.py"
 qemu_log="${repo_root}/build/qemu-debug-launch.log"
 serial_log="${repo_root}/build/qemu-debug-serial.log"
 gdb_cmds="${repo_root}/build/gdb-debug-init.gdb"
+busybox_debug_binary="${repo_root}/build/busybox.debug"
+busybox_rootfs_binary="${repo_root}/initramfs/rootfs/bin/busybox"
 qemu_pid=""
 
 pick_objdump() {
@@ -38,6 +40,31 @@ detect_bootloader_text_vma() {
     fi
 
     "${objdump_cmd}" -h "${bootloader_efi}" 2>/dev/null | awk '$2 == ".text" { print "0x" $4; exit }'
+}
+
+pick_readelf() {
+    if command -v x86_64-linux-musl-readelf >/dev/null 2>&1; then
+        echo "x86_64-linux-musl-readelf"
+        return 0
+    fi
+
+    if command -v readelf >/dev/null 2>&1; then
+        echo "readelf"
+        return 0
+    fi
+
+    return 1
+}
+
+detect_elf_text_vma() {
+    local elf_file="$1"
+    local readelf_cmd
+
+    if ! readelf_cmd="$(pick_readelf)"; then
+        return 1
+    fi
+
+    "${readelf_cmd}" -W -S "${elf_file}" 2>/dev/null | awk '$2 == ".text" { print "0x" $4; exit }'
 }
 
 cleanup() {
@@ -125,6 +152,18 @@ if [[ -z "${bootloader_text_vma}" ]]; then
     bootloader_text_vma="0x140001000"
 fi
 
+busybox_symbol_file=""
+if [[ -f "${busybox_debug_binary}" ]]; then
+    busybox_symbol_file="${busybox_debug_binary}"
+elif [[ -f "${busybox_rootfs_binary}" ]]; then
+    busybox_symbol_file="${busybox_rootfs_binary}"
+fi
+
+busybox_text_vma=""
+if [[ -n "${busybox_symbol_file}" ]]; then
+    busybox_text_vma="$(detect_elf_text_vma "${busybox_symbol_file}" || true)"
+fi
+
 ensure_port_is_free
 
 echo "Starting QEMU paused with GDB stub on localhost:${port}"
@@ -151,6 +190,20 @@ echo Connected. Use 'continue' to reach efi_main, then continue into kernel.\\n
 echo Run 'twistedos-help' to inspect kernel scheduler state.\\n
 EOF
 
+if [[ -n "${busybox_symbol_file}" && -n "${busybox_text_vma}" ]]; then
+    cat >>"${gdb_cmds}" <<EOF
+add-symbol-file ${busybox_symbol_file} ${busybox_text_vma}
+hbreak ash_main
+echo BusyBox symbols loaded from ${busybox_symbol_file} at ${busybox_text_vma}.\\n
+echo Breakpoint set on ash_main (used by /bin/sh).\\n
+EOF
+fi
+
 echo "Launching GDB (TUI mode) with symbols from ${bootloader_efi} and ${kernel_elf}"
 echo "Bootloader .text assumed at ${bootloader_text_vma}"
+if [[ -n "${busybox_symbol_file}" && -n "${busybox_text_vma}" ]]; then
+    echo "BusyBox symbols: ${busybox_symbol_file} (.text ${busybox_text_vma})"
+else
+    echo "BusyBox symbols: unavailable (build with DEBUG=1 and ensure ${busybox_debug_binary} exists)"
+fi
 "${GDB:-gdb}" -tui -x "${gdb_cmds}"

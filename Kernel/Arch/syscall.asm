@@ -129,6 +129,14 @@ SystemCallEntry:
     mov rax, [rcx + CPUSTATE_RAX]
     mov r11, [rcx + CPUSTATE_R11]
 
+    push rax
+    mov ax, USER_SS
+    mov ds, ax
+    mov es, ax
+    mov fs, ax
+    mov gs, ax
+    pop rax
+
     push qword [rcx + CPUSTATE_SS]
     push qword [rcx + CPUSTATE_RSP]
     push qword [rcx + CPUSTATE_RFLAGS]
@@ -156,6 +164,14 @@ SystemCallEntry:
     mov r13, [SavedSystemCallUserR13]
     mov r14, [SavedSystemCallUserR14]
     mov r15, [SavedSystemCallUserR15]
+
+    push rax
+    mov ax, USER_SS
+    mov ds, ax
+    mov es, ax
+    mov fs, ax
+    mov gs, ax
+    pop rax
 
     push USER_SS
     push qword [SavedSystemCallUserRSP]
