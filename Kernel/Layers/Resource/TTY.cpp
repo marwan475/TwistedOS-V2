@@ -120,7 +120,7 @@ FileOperations TTY::TerminalFileOperations = {
 };
 
 TTY::TTY(FrameBuffer* FrameBuffer, uint32_t InitialCursorX, uint32_t InitialCursorY)
-    : FrameBufferDevice(FrameBuffer), CursorX(InitialCursorX), CursorY(InitialCursorY), TextColor(0xFFFFFFFF), BackgroundColor(0x00000000), BufferHead(0), BufferTail(0), BufferedBytes(0)
+    : FrameBufferDevice(FrameBuffer), CursorX(InitialCursorX), CursorY(InitialCursorY), TextColor(0xFFFFFFFF), BackgroundColor(0x00000000), BufferHead(0), BufferTail(0), BufferedBytes(0), CommittedBytes(0)
 {
     for (uint64_t Index = 0; Index < KEYBOARD_BUFFER_CAPACITY; ++Index)
     {
@@ -267,7 +267,7 @@ int64_t TTY::Read(File* OpenFile, void* Buffer, uint64_t Count)
         return 0;
     }
 
-    while (BufferedBytes == 0)
+    while (CommittedBytes == 0)
     {
         Dispatcher* ActiveDispatcher = Dispatcher::GetActive();
         if (ActiveDispatcher == nullptr)
@@ -299,11 +299,12 @@ int64_t TTY::Read(File* OpenFile, void* Buffer, uint64_t Count)
     char*    OutBuffer   = reinterpret_cast<char*>(Buffer);
     uint64_t BytesCopied = 0;
 
-    while (BytesCopied < Count && BufferedBytes > 0)
+    while (BytesCopied < Count && CommittedBytes > 0)
     {
         OutBuffer[BytesCopied] = KeyboardBuffer[BufferTail];
         BufferTail             = (BufferTail + 1) % KEYBOARD_BUFFER_CAPACITY;
         --BufferedBytes;
+        --CommittedBytes;
         ++BytesCopied;
     }
 
@@ -418,7 +419,7 @@ int64_t TTY::Ioctl(File* OpenFile, uint64_t Request, uint64_t Argument, LogicLay
             return LINUX_ERR_EFAULT;
         }
 
-        int32_t BytesAvailable = static_cast<int32_t>(BufferedBytes);
+        int32_t BytesAvailable = static_cast<int32_t>(CommittedBytes);
         return Logic->CopyFromKernelToUser(&BytesAvailable, reinterpret_cast<void*>(Argument), sizeof(BytesAvailable)) ? 0 : LINUX_ERR_EFAULT;
     }
 
@@ -458,13 +459,15 @@ uint64_t TTY::PushKeyboardInputChar(char Character)
 
     if (Character == '\b')
     {
-        if (BufferedBytes > 0)
+        uint64_t EditableBytes = BufferedBytes - CommittedBytes;
+        if (EditableBytes > 0)
         {
             BufferHead = (BufferHead + KEYBOARD_BUFFER_CAPACITY - 1) % KEYBOARD_BUFFER_CAPACITY;
             --BufferedBytes;
+
+            PutChar('\b');
         }
 
-        PutChar('\b');
         return 1;
     }
 
@@ -474,13 +477,18 @@ uint64_t TTY::PushKeyboardInputChar(char Character)
         return 0;
     }
 
+    if (Character == '\n')
+    {
+        CommittedBytes = BufferedBytes;
+    }
+
     PutChar(Character);
     return BytesStored;
 }
 
 uint64_t TTY::GetBufferedInputBytes() const
 {
-    return BufferedBytes;
+    return CommittedBytes;
 }
 
 FileOperations* TTY::GetFileOperations()

@@ -30,6 +30,7 @@ private:
     uint64_t     BufferHead;
     uint64_t     BufferTail;
     uint64_t     BufferedBytes;
+    uint64_t     CommittedBytes;
 
     void ClearScreen();
     void DrawChar(uint32_t X, uint32_t Y, char Character);

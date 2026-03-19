@@ -57,6 +57,9 @@ int64_t TranslationLayer::HandlePosixSystemCallNumber(uint64_t SystemCallNumber,
         case 10: // mprotect
             return HandleMprotectSystemCall(reinterpret_cast<void*>(Arg1), Arg2, static_cast<int64_t>(Arg3));
             break;
+        case 11: // munmap
+            return HandleMunmapSystemCall(reinterpret_cast<void*>(Arg1), Arg2);
+            break;
         case 12: // brk
             return HandleBrkSystemCall(Arg1);
             break;

@@ -3016,6 +3016,207 @@ int64_t TranslationLayer::HandleMmapSystemCall(void* Address, uint64_t Length, i
     return static_cast<int64_t>(FileMappedAddress);
 }
 
+int64_t TranslationLayer::HandleMunmapSystemCall(void* Address, uint64_t Length)
+{
+    if (Logic == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    if (Length == 0)
+    {
+        return LINUX_ERR_EINVAL;
+    }
+
+    uint64_t UnmapStart = reinterpret_cast<uint64_t>(Address);
+    if ((UnmapStart & (PAGE_SIZE - 1)) != 0)
+    {
+        return LINUX_ERR_EINVAL;
+    }
+
+    uint64_t UnmapLength = AlignUpToPageBoundary(Length);
+    if (UnmapLength == 0)
+    {
+        return LINUX_ERR_EINVAL;
+    }
+
+    uint64_t UnmapEnd = UnmapStart + UnmapLength;
+    if (UnmapEnd < UnmapStart)
+    {
+        return LINUX_ERR_EINVAL;
+    }
+
+    ProcessManager* PM = Logic->GetProcessManager();
+    if (PM == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    Process* CurrentProcess = PM->GetRunningProcess();
+    if (CurrentProcess == nullptr || CurrentProcess->Level != PROCESS_LEVEL_USER || CurrentProcess->AddressSpace == nullptr)
+    {
+        return LINUX_ERR_EINVAL;
+    }
+
+    size_t ResultingInUseMappings = 0;
+
+    for (size_t MappingIndex = 0; MappingIndex < MAX_MEMORY_MAPPINGS_PER_PROCESS; ++MappingIndex)
+    {
+        const ProcessMemoryMapping& Mapping = CurrentProcess->MemoryMappings[MappingIndex];
+        if (!Mapping.InUse)
+        {
+            continue;
+        }
+
+        uint64_t MappingStart = Mapping.VirtualAddressStart;
+        uint64_t MappingEnd   = MappingStart + Mapping.Length;
+        if (MappingEnd <= MappingStart)
+        {
+            continue;
+        }
+
+        uint64_t OverlapStart = (UnmapStart > MappingStart) ? UnmapStart : MappingStart;
+        uint64_t OverlapEnd   = (UnmapEnd < MappingEnd) ? UnmapEnd : MappingEnd;
+
+        if (OverlapStart >= OverlapEnd)
+        {
+            ++ResultingInUseMappings;
+            continue;
+        }
+
+        bool TrimsLeft  = (OverlapStart > MappingStart);
+        bool TrimsRight = (OverlapEnd < MappingEnd);
+
+        if (TrimsLeft && TrimsRight)
+        {
+            ResultingInUseMappings += 2;
+        }
+        else if (TrimsLeft || TrimsRight)
+        {
+            ResultingInUseMappings += 1;
+        }
+    }
+
+    if (ResultingInUseMappings > MAX_MEMORY_MAPPINGS_PER_PROCESS)
+    {
+        return LINUX_ERR_ENOMEM;
+    }
+
+    Dispatcher* ActiveDispatcher = Dispatcher::GetActive();
+    if (ActiveDispatcher == nullptr || ActiveDispatcher->GetResourceLayer() == nullptr || ActiveDispatcher->GetResourceLayer()->GetPMM() == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    ResourceLayer*         Resource = ActiveDispatcher->GetResourceLayer();
+    PhysicalMemoryManager* PMM      = Resource->GetPMM();
+
+    uint64_t UserPageTable = CurrentProcess->AddressSpace->GetPageMapL4TableAddr();
+    if (UserPageTable == 0)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    VirtualMemoryManager UserVMM(UserPageTable, *PMM);
+
+    for (size_t MappingIndex = 0; MappingIndex < MAX_MEMORY_MAPPINGS_PER_PROCESS; ++MappingIndex)
+    {
+        ProcessMemoryMapping& Mapping = CurrentProcess->MemoryMappings[MappingIndex];
+        if (!Mapping.InUse)
+        {
+            continue;
+        }
+
+        ProcessMemoryMapping OriginalMapping = Mapping;
+
+        uint64_t MappingStart = OriginalMapping.VirtualAddressStart;
+        uint64_t MappingEnd   = MappingStart + OriginalMapping.Length;
+        if (MappingEnd <= MappingStart)
+        {
+            continue;
+        }
+
+        uint64_t OverlapStart = (UnmapStart > MappingStart) ? UnmapStart : MappingStart;
+        uint64_t OverlapEnd   = (UnmapEnd < MappingEnd) ? UnmapEnd : MappingEnd;
+
+        if (OverlapStart >= OverlapEnd)
+        {
+            continue;
+        }
+
+        uint64_t OverlapLength = OverlapEnd - OverlapStart;
+
+        if (OriginalMapping.IsAnonymous && OriginalMapping.PhysicalAddressStart != 0)
+        {
+            uint64_t PhysicalOverlapStart = OriginalMapping.PhysicalAddressStart + (OverlapStart - MappingStart);
+            uint64_t OverlapPages         = OverlapLength / PAGE_SIZE;
+            if (OverlapPages != 0)
+            {
+                PMM->FreePagesFromDescriptor(reinterpret_cast<void*>(PhysicalOverlapStart), OverlapPages);
+            }
+        }
+
+        for (uint64_t VirtualAddress = OverlapStart; VirtualAddress < OverlapEnd; VirtualAddress += PAGE_SIZE)
+        {
+            UserVMM.UnmapPage(VirtualAddress);
+        }
+
+        bool TrimsLeft  = (OverlapStart > MappingStart);
+        bool TrimsRight = (OverlapEnd < MappingEnd);
+
+        if (!TrimsLeft && !TrimsRight)
+        {
+            Mapping = {};
+            continue;
+        }
+
+        if (!TrimsLeft && TrimsRight)
+        {
+            uint64_t NewLength            = MappingEnd - OverlapEnd;
+            Mapping.VirtualAddressStart    = OverlapEnd;
+            Mapping.Length                 = NewLength;
+            if (Mapping.PhysicalAddressStart != 0)
+            {
+                Mapping.PhysicalAddressStart = OriginalMapping.PhysicalAddressStart + (OverlapEnd - MappingStart);
+            }
+            continue;
+        }
+
+        if (TrimsLeft && !TrimsRight)
+        {
+            Mapping.Length = OverlapStart - MappingStart;
+            continue;
+        }
+
+        int64_t FreeSlot = FindAvailableMappingSlot(CurrentProcess);
+        if (FreeSlot < 0)
+        {
+            return LINUX_ERR_ENOMEM;
+        }
+
+        ProcessMemoryMapping& RightMapping = CurrentProcess->MemoryMappings[static_cast<size_t>(FreeSlot)];
+        RightMapping                       = OriginalMapping;
+        RightMapping.InUse                 = true;
+        RightMapping.VirtualAddressStart   = OverlapEnd;
+        RightMapping.Length                = MappingEnd - OverlapEnd;
+        if (RightMapping.PhysicalAddressStart != 0)
+        {
+            RightMapping.PhysicalAddressStart = OriginalMapping.PhysicalAddressStart + (OverlapEnd - MappingStart);
+        }
+
+        Mapping.VirtualAddressStart = MappingStart;
+        Mapping.Length              = OverlapStart - MappingStart;
+    }
+
+    uint64_t ActivePageTable = Resource->ReadCurrentPageTable();
+    if (ActivePageTable == UserPageTable)
+    {
+        Resource->LoadPageTable(ActivePageTable);
+    }
+
+    return 0;
+}
+
 int64_t TranslationLayer::HandleArchPrctlSystemCall(uint64_t Code, uint64_t Address)
 {
     if (Logic == nullptr)
