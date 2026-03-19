@@ -23,6 +23,7 @@ public:
     // Posix system call handlers
     int64_t HandleReadSystemCall(uint64_t FileDescriptor, void* Buffer, uint64_t Count);
     int64_t HandleWriteSystemCall(uint64_t FileDescriptor, const void* Buffer, uint64_t Count);
+    int64_t HandleIoctlSystemCall(uint64_t FileDescriptor, uint64_t Request, uint64_t Argument);
     int64_t HandleOpenSystemCall(const char* Path, uint64_t Flags);
     int64_t HandleCloseSystemCall(uint64_t FileDescriptor);
     int64_t HandleGetcwdSystemCall(char* Buffer, uint64_t Size);

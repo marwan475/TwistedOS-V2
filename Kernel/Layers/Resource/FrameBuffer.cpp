@@ -8,6 +8,7 @@
 
 #include <CommonUtils.hpp>
 #include <Layers/Dispatcher.hpp>
+#include <Layers/Logic/LogicLayer.hpp>
 #include <Layers/Logic/VirtualFileSystem.hpp>
 #include <Layers/Resource/VirtualAddressSpace.hpp>
 #include <Memory/VirtualMemoryManager.hpp>
@@ -17,6 +18,7 @@ namespace
 constexpr int64_t LINUX_ERR_EFAULT = -14;
 constexpr int64_t LINUX_ERR_EINVAL = -22;
 constexpr int64_t LINUX_ERR_ENODEV = -19;
+constexpr int64_t LINUX_ERR_ENOTTY = -25;
 
 constexpr int32_t LINUX_SEEK_SET = 0;
 constexpr int32_t LINUX_SEEK_CUR = 1;
@@ -32,6 +34,7 @@ FileOperations FrameBuffer::FrameBufferFileOperations = {
         &FrameBuffer::WriteFileOperation,
         &FrameBuffer::SeekFileOperation,
         &FrameBuffer::MemoryMapFileOperation,
+    &FrameBuffer::IoctlFileOperation,
 };
 
 /**
@@ -241,6 +244,15 @@ int64_t FrameBuffer::MemoryMap(File* OpenFile, uint64_t Length, uint64_t Offset,
     return static_cast<int64_t>(Length);
 }
 
+int64_t FrameBuffer::Ioctl(File* OpenFile, uint64_t Request, uint64_t Argument, LogicLayer* Logic)
+{
+    (void) OpenFile;
+    (void) Request;
+    (void) Argument;
+    (void) Logic;
+    return LINUX_ERR_ENOTTY;
+}
+
 FileOperations* FrameBuffer::GetFileOperations()
 {
     return &FrameBufferFileOperations;
@@ -292,6 +304,22 @@ int64_t FrameBuffer::MemoryMapFileOperation(File* OpenFile, uint64_t Length, uin
     }
 
     return FB->MemoryMap(OpenFile, Length, Offset, AddressSpace, Address);
+}
+
+int64_t FrameBuffer::IoctlFileOperation(File* OpenFile, uint64_t Request, uint64_t Argument, LogicLayer* Logic)
+{
+    if (OpenFile == nullptr || OpenFile->Node == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    FrameBuffer* FB = reinterpret_cast<FrameBuffer*>(OpenFile->Node->NodeData);
+    if (FB == nullptr)
+    {
+        return LINUX_ERR_EINVAL;
+    }
+
+    return FB->Ioctl(OpenFile, Request, Argument, Logic);
 }
 
 uint32_t* FrameBuffer::GetBuffer() const

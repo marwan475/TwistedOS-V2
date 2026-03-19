@@ -140,11 +140,21 @@ int64_t DefaultMemoryMapFileOperation(File* OpenFile, uint64_t Length, uint64_t 
     return LINUX_ERR_ENOSYS;
 }
 
+int64_t DefaultIoctlFileOperation(File* OpenFile, uint64_t Request, uint64_t Argument, LogicLayer* Logic)
+{
+    (void) OpenFile;
+    (void) Request;
+    (void) Argument;
+    (void) Logic;
+    return LINUX_ERR_ENOSYS;
+}
+
 FileOperations DefaultFileOperations = {
         &DefaultReadFileOperation,
         &DefaultWriteFileOperation,
         &DefaultSeekFileOperation,
         &DefaultMemoryMapFileOperation,
+        &DefaultIoctlFileOperation,
 };
 
 /**

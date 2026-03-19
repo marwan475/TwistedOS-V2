@@ -6,6 +6,7 @@
 
 #include "TTY.hpp"
 
+#include <Layers/Logic/LogicLayer.hpp>
 #include <Layers/Logic/VirtualFileSystem.hpp>
 #include <Logging/font.hpp>
 #include <printf.hpp>
@@ -20,6 +21,33 @@ constexpr int64_t LINUX_ERR_EINVAL = -22;
 constexpr int64_t LINUX_ERR_ENODEV = -19;
 constexpr int64_t LINUX_ERR_ENOSPC = -28;
 constexpr int64_t LINUX_ERR_ENOSYS = -38;
+constexpr int64_t LINUX_ERR_ENOTTY = -25;
+
+constexpr uint64_t LINUX_IOCTL_TCGETS    = 0x5401;
+constexpr uint64_t LINUX_IOCTL_TCSETS    = 0x5402;
+constexpr uint64_t LINUX_IOCTL_TCSETSW   = 0x5403;
+constexpr uint64_t LINUX_IOCTL_TCSETSF   = 0x5404;
+constexpr uint64_t LINUX_IOCTL_TIOCGWINSZ = 0x5413;
+constexpr uint64_t LINUX_IOCTL_TIOCSWINSZ = 0x5414;
+constexpr uint64_t LINUX_IOCTL_FIONREAD   = 0x541B;
+
+struct LinuxTermios
+{
+    uint32_t InputFlags;
+    uint32_t OutputFlags;
+    uint32_t ControlFlags;
+    uint32_t LocalFlags;
+    uint8_t  LineDiscipline;
+    uint8_t  ControlCharacters[19];
+};
+
+struct LinuxWinSize
+{
+    uint16_t Rows;
+    uint16_t Columns;
+    uint16_t XPixel;
+    uint16_t YPixel;
+};
 
 static inline void outb(uint16_t port, uint8_t value)
 {
@@ -87,6 +115,7 @@ FileOperations TTY::TerminalFileOperations = {
         &TTY::WriteFileOperation,
         &TTY::SeekFileOperation,
         &TTY::MemoryMapFileOperation,
+    &TTY::IoctlFileOperation,
 };
 
 TTY::TTY(FrameBuffer* FrameBuffer, uint32_t InitialCursorX, uint32_t InitialCursorY)
@@ -293,6 +322,84 @@ int64_t TTY::Write(File* OpenFile, const void* Buffer, uint64_t Count)
     return static_cast<int64_t>(Count);
 }
 
+int64_t TTY::Ioctl(File* OpenFile, uint64_t Request, uint64_t Argument, LogicLayer* Logic)
+{
+    if (OpenFile == nullptr || OpenFile->Node == nullptr || Logic == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    if (Request == LINUX_IOCTL_TCGETS)
+    {
+        if (Argument == 0)
+        {
+            return LINUX_ERR_EFAULT;
+        }
+
+        LinuxTermios Termios = {};
+        return Logic->CopyFromKernelToUser(&Termios, reinterpret_cast<void*>(Argument), sizeof(Termios)) ? 0 : LINUX_ERR_EFAULT;
+    }
+
+    if (Request == LINUX_IOCTL_TCSETS || Request == LINUX_IOCTL_TCSETSW || Request == LINUX_IOCTL_TCSETSF)
+    {
+        if (Argument == 0)
+        {
+            return LINUX_ERR_EFAULT;
+        }
+
+        LinuxTermios Incoming = {};
+        return Logic->CopyFromUserToKernel(reinterpret_cast<const void*>(Argument), &Incoming, sizeof(Incoming)) ? 0 : LINUX_ERR_EFAULT;
+    }
+
+    if (Request == LINUX_IOCTL_TIOCGWINSZ)
+    {
+        if (Argument == 0)
+        {
+            return LINUX_ERR_EFAULT;
+        }
+
+        LinuxWinSize WindowSize = {};
+        if (FrameBufferDevice != nullptr && FrameBufferDevice->IsValid())
+        {
+            WindowSize.Columns = static_cast<uint16_t>(FrameBufferDevice->GetWidth() / FONT_WIDTH);
+            WindowSize.Rows    = static_cast<uint16_t>(FrameBufferDevice->GetHeight() / FONT_HEIGHT);
+            WindowSize.XPixel  = static_cast<uint16_t>(FrameBufferDevice->GetWidth());
+            WindowSize.YPixel  = static_cast<uint16_t>(FrameBufferDevice->GetHeight());
+        }
+        else
+        {
+            WindowSize.Columns = 80;
+            WindowSize.Rows    = 25;
+        }
+
+        return Logic->CopyFromKernelToUser(&WindowSize, reinterpret_cast<void*>(Argument), sizeof(WindowSize)) ? 0 : LINUX_ERR_EFAULT;
+    }
+
+    if (Request == LINUX_IOCTL_TIOCSWINSZ)
+    {
+        if (Argument == 0)
+        {
+            return LINUX_ERR_EFAULT;
+        }
+
+        LinuxWinSize Incoming = {};
+        return Logic->CopyFromUserToKernel(reinterpret_cast<const void*>(Argument), &Incoming, sizeof(Incoming)) ? 0 : LINUX_ERR_EFAULT;
+    }
+
+    if (Request == LINUX_IOCTL_FIONREAD)
+    {
+        if (Argument == 0)
+        {
+            return LINUX_ERR_EFAULT;
+        }
+
+        int32_t BytesAvailable = static_cast<int32_t>(BufferedBytes);
+        return Logic->CopyFromKernelToUser(&BytesAvailable, reinterpret_cast<void*>(Argument), sizeof(BytesAvailable)) ? 0 : LINUX_ERR_EFAULT;
+    }
+
+    return LINUX_ERR_ENOTTY;
+}
+
 uint64_t TTY::PushKeyboardInput(const char* Buffer, uint64_t Count)
 {
     if (Buffer == nullptr || Count == 0)
@@ -375,4 +482,20 @@ int64_t TTY::MemoryMapFileOperation(File* OpenFile, uint64_t Length, uint64_t Of
     (void) AddressSpace;
     (void) Address;
     return LINUX_ERR_ENOSYS;
+}
+
+int64_t TTY::IoctlFileOperation(File* OpenFile, uint64_t Request, uint64_t Argument, LogicLayer* Logic)
+{
+    if (OpenFile == nullptr || OpenFile->Node == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    TTY* Terminal = reinterpret_cast<TTY*>(OpenFile->Node->NodeData);
+    if (Terminal == nullptr)
+    {
+        return LINUX_ERR_EINVAL;
+    }
+
+    return Terminal->Ioctl(OpenFile, Request, Argument, Logic);
 }

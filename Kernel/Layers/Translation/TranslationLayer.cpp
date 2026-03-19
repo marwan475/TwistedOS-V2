@@ -25,6 +25,7 @@ constexpr int64_t LINUX_ERR_EMFILE = -24;
 constexpr int64_t LINUX_ERR_EINVAL = -22;
 constexpr int64_t LINUX_ERR_EBADF  = -9;
 constexpr int64_t LINUX_ERR_ENOSYS = -38;
+constexpr int64_t LINUX_ERR_ENOTTY = -25;
 constexpr int64_t LINUX_ERR_ECHILD = -10;
 constexpr int64_t LINUX_ERR_ENODEV = -19;
 constexpr int64_t LINUX_ERR_EPERM  = -1;
@@ -809,6 +810,44 @@ int64_t TranslationLayer::HandleWriteSystemCall(uint64_t FileDescriptor, const v
     }
 
     return static_cast<int64_t>(TotalCopied);
+}
+
+int64_t TranslationLayer::HandleIoctlSystemCall(uint64_t FileDescriptor, uint64_t Request, uint64_t Argument)
+{
+    if (Logic == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    ProcessManager* PM = Logic->GetProcessManager();
+    if (PM == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    Process* CurrentProcess = PM->GetRunningProcess();
+    if (CurrentProcess == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    if (FileDescriptor >= MAX_OPEN_FILES_PER_PROCESS)
+    {
+        return LINUX_ERR_EBADF;
+    }
+
+    File* OpenFile = CurrentProcess->FileTable[FileDescriptor];
+    if (OpenFile == nullptr || OpenFile->Node == nullptr)
+    {
+        return LINUX_ERR_EBADF;
+    }
+
+    if (OpenFile->Node->FileOps == nullptr || OpenFile->Node->FileOps->Ioctl == nullptr)
+    {
+        return LINUX_ERR_ENOTTY;
+    }
+
+    return OpenFile->Node->FileOps->Ioctl(OpenFile, Request, Argument, Logic);
 }
 
 int64_t TranslationLayer::HandleOpenSystemCall(const char* Path, uint64_t Flags)

@@ -12,6 +12,7 @@
 
 struct File;
 struct FileOperations;
+class LogicLayer;
 
 class TTY
 {
@@ -41,6 +42,7 @@ public:
 
     int64_t Read(File* OpenFile, void* Buffer, uint64_t Count);
     int64_t Write(File* OpenFile, const void* Buffer, uint64_t Count);
+    int64_t Ioctl(File* OpenFile, uint64_t Request, uint64_t Argument, LogicLayer* Logic);
     int     printf_(const char* Format, ...);
 
     uint64_t PushKeyboardInput(const char* Buffer, uint64_t Count);
@@ -52,4 +54,5 @@ public:
     static int64_t WriteFileOperation(File* OpenFile, const void* Buffer, uint64_t Count);
     static int64_t SeekFileOperation(File* OpenFile, int64_t Offset, int32_t Whence);
     static int64_t MemoryMapFileOperation(File* OpenFile, uint64_t Length, uint64_t Offset, VirtualAddressSpace* AddressSpace, uint64_t* Address);
+    static int64_t IoctlFileOperation(File* OpenFile, uint64_t Request, uint64_t Argument, LogicLayer* Logic);
 };

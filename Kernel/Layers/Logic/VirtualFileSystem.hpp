@@ -11,6 +11,7 @@
 class RamFileSystemManager;
 class TTY;
 class VirtualAddressSpace;
+class LogicLayer;
 
 enum FileType
 {
@@ -35,6 +36,7 @@ struct FileOperations
     int64_t (*Write)(File* OpenFile, const void* Buffer, uint64_t Count);
     int64_t (*Seek)(File* OpenFile, int64_t Offset, int32_t Whence);
     int64_t (*MemoryMap)(File* OpenFile, uint64_t Length, uint64_t Offset, VirtualAddressSpace* AddressSpace, uint64_t* Address);
+    int64_t (*Ioctl)(File* OpenFile, uint64_t Request, uint64_t Argument, LogicLayer* Logic);
 };
 
 struct INodeOperations
