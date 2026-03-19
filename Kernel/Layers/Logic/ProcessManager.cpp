@@ -60,6 +60,7 @@ ProcessManager::ProcessManager() : CurrentProcessId(PROCESS_ID_INVALID)
         Processes[index].FileType                   = FILE_TYPE_RAW_BINARY;
         Processes[index].StackPointer               = nullptr;
         Processes[index].UserFSBase                 = 0;
+        Processes[index].BlockedSignalMask          = 0;
         Processes[index].ClearChildTidAddress       = nullptr;
         Processes[index].ProgramBreak               = 0;
         Processes[index].AddressSpace               = nullptr;
@@ -173,6 +174,7 @@ uint8_t ProcessManager::CreateKernelProcess(void* StackPointer, CpuState Initial
             Processes[index].FileType                   = FILE_TYPE_RAW_BINARY;
             Processes[index].StackPointer               = StackPointer;
             Processes[index].UserFSBase                 = 0;
+            Processes[index].BlockedSignalMask          = 0;
             Processes[index].ClearChildTidAddress       = nullptr;
             Processes[index].ProgramBreak               = 0;
             Processes[index].AddressSpace               = nullptr;
@@ -216,6 +218,7 @@ uint8_t ProcessManager::CreateUserProcess(void* StackPointer, CpuState InitialSt
             Processes[index].FileType                   = FileType;
             Processes[index].StackPointer               = StackPointer;
             Processes[index].UserFSBase                 = 0;
+            Processes[index].BlockedSignalMask          = 0;
             Processes[index].ClearChildTidAddress       = nullptr;
             Processes[index].ProgramBreak               = (AddressSpace != nullptr) ? AddressSpace->GetHeapVirtualAddressStart() : 0;
             Processes[index].AddressSpace               = AddressSpace;
@@ -259,6 +262,7 @@ void* ProcessManager::KillProcess(uint8_t Id)
     Processes[Id].FileType                   = FILE_TYPE_RAW_BINARY;
     Processes[Id].StackPointer               = nullptr;
     Processes[Id].UserFSBase                 = 0;
+    Processes[Id].BlockedSignalMask          = 0;
     Processes[Id].ClearChildTidAddress       = nullptr;
     Processes[Id].ProgramBreak               = 0;
     Processes[Id].AddressSpace               = nullptr;

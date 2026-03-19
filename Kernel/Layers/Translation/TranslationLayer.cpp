@@ -49,6 +49,16 @@ constexpr uint64_t LINUX_O_ACCMODE = 0x3;
 
 constexpr uint64_t LINUX_ARCH_SET_FS = 0x1002;
 
+constexpr int64_t LINUX_SIG_BLOCK   = 0;
+constexpr int64_t LINUX_SIG_UNBLOCK = 1;
+constexpr int64_t LINUX_SIG_SETMASK = 2;
+
+constexpr uint64_t LINUX_RT_SIGSET_SIZE = sizeof(uint64_t);
+
+constexpr uint64_t LINUX_SIGKILL_MASK = (1ULL << (9 - 1));
+constexpr uint64_t LINUX_SIGSTOP_MASK = (1ULL << (19 - 1));
+constexpr uint64_t LINUX_UNBLOCKABLE_SIGNAL_MASK = (LINUX_SIGKILL_MASK | LINUX_SIGSTOP_MASK);
+
 bool IsCanonicalX86_64Address(uint64_t Address)
 {
     constexpr uint64_t LOWER_CANONICAL_MAX = 0x00007FFFFFFFFFFFULL;
@@ -1501,6 +1511,69 @@ int64_t TranslationLayer::HandleArchPrctlSystemCall(uint64_t Code, uint64_t Addr
 
     CurrentProcess->UserFSBase = Address;
     SetUserFSBase(Address);
+    return 0;
+}
+
+int64_t TranslationLayer::HandleRtSigprocmaskSystemCall(int64_t How, const void* Set, void* OldSet, uint64_t SigsetSize)
+{
+    if (Logic == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    ProcessManager* PM = Logic->GetProcessManager();
+    if (PM == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    Process* CurrentProcess = PM->GetRunningProcess();
+    if (CurrentProcess == nullptr || CurrentProcess->Level != PROCESS_LEVEL_USER)
+    {
+        return LINUX_ERR_EINVAL;
+    }
+
+    if (SigsetSize != LINUX_RT_SIGSET_SIZE)
+    {
+        return LINUX_ERR_EINVAL;
+    }
+
+    uint64_t RequestedMask = 0;
+    bool ShouldUpdateMask  = (Set != nullptr);
+    if (ShouldUpdateMask)
+    {
+        if (!Logic->CopyFromUserToKernel(Set, &RequestedMask, sizeof(RequestedMask)))
+        {
+            return LINUX_ERR_EFAULT;
+        }
+
+        RequestedMask &= ~LINUX_UNBLOCKABLE_SIGNAL_MASK;
+
+        if (How == LINUX_SIG_BLOCK)
+        {
+            RequestedMask |= CurrentProcess->BlockedSignalMask;
+        }
+        else if (How == LINUX_SIG_UNBLOCK)
+        {
+            RequestedMask = CurrentProcess->BlockedSignalMask & ~RequestedMask;
+        }
+        else if (How != LINUX_SIG_SETMASK)
+        {
+            return LINUX_ERR_EINVAL;
+        }
+    }
+
+    uint64_t PreviousMask = CurrentProcess->BlockedSignalMask;
+    if (ShouldUpdateMask)
+    {
+        CurrentProcess->BlockedSignalMask = RequestedMask;
+    }
+
+    if (OldSet != nullptr && !Logic->CopyFromKernelToUser(&PreviousMask, OldSet, sizeof(PreviousMask)))
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
     return 0;
 }
 

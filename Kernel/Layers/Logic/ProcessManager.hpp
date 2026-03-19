@@ -85,6 +85,7 @@ struct Process
     FILE_TYPE                   FileType;
     void*                       StackPointer;
     uint64_t                    UserFSBase               = 0;
+    uint64_t                    BlockedSignalMask        = 0;
     int*                        ClearChildTidAddress     = nullptr;
     uint64_t                    ProgramBreak             = 0;
     VirtualAddressSpace*        AddressSpace              = nullptr;
