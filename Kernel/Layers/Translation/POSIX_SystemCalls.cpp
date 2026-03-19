@@ -75,6 +75,9 @@ int64_t TranslationLayer::HandlePosixSystemCallNumber(uint64_t SystemCallNumber,
         case 61: // wait
             return HandleWaitSystemCall(reinterpret_cast<int*>(Arg1));
             break;
+        case 79: // getcwd
+            return HandleGetcwdSystemCall(reinterpret_cast<char*>(Arg1), Arg2);
+            break;
         case 102: // getuid
             return HandleGetuidSystemCall();
             break;
@@ -86,6 +89,9 @@ int64_t TranslationLayer::HandlePosixSystemCallNumber(uint64_t SystemCallNumber,
             break;
         case 108: // getegid
             return HandleGetegidSystemCall();
+            break;
+        case 110: // getppid
+            return HandleGetppidSystemCall();
             break;
         case 158: // arch_prctl
             return HandleArchPrctlSystemCall(Arg1, Arg2);

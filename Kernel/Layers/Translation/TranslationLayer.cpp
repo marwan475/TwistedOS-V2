@@ -28,10 +28,12 @@ constexpr int64_t LINUX_ERR_ENOSYS = -38;
 constexpr int64_t LINUX_ERR_ECHILD = -10;
 constexpr int64_t LINUX_ERR_ENODEV = -19;
 constexpr int64_t LINUX_ERR_EPERM  = -1;
+constexpr int64_t LINUX_ERR_ERANGE = -34;
 
 constexpr uint64_t SYSCALL_COPY_CHUNK_SIZE = 4096;
 constexpr uint64_t SYSCALL_PATH_MAX        = 4096;
 constexpr uint64_t SYSCALL_EXEC_MAX_VECTOR = 128;
+constexpr uint64_t SYSCALL_MAX_PATH_SEGMENTS = 256;
 
 constexpr int64_t LINUX_MAP_SHARED    = 0x01;
 constexpr int64_t LINUX_MAP_PRIVATE   = 0x02;
@@ -252,6 +254,84 @@ bool ProcessHasLiveChild(ProcessManager* PM, uint8_t ParentId)
     }
 
     return false;
+}
+
+bool BuildAbsolutePathFromDentry(const Dentry* Node, char* Buffer, uint64_t BufferSize)
+{
+    if (Node == nullptr || Buffer == nullptr || BufferSize == 0)
+    {
+        return false;
+    }
+
+    const char* SegmentStack[SYSCALL_MAX_PATH_SEGMENTS] = {};
+    uint64_t    SegmentCount = 0;
+
+    const Dentry* Current = Node;
+    while (Current != nullptr && Current->parent != nullptr)
+    {
+        if (SegmentCount >= SYSCALL_MAX_PATH_SEGMENTS)
+        {
+            return false;
+        }
+
+        if (Current->name == nullptr)
+        {
+            return false;
+        }
+
+        SegmentStack[SegmentCount++] = Current->name;
+        Current = Current->parent;
+    }
+
+    uint64_t Cursor = 0;
+    Buffer[Cursor++] = '/';
+
+    if (SegmentCount == 0)
+    {
+        if (Cursor >= BufferSize)
+        {
+            return false;
+        }
+
+        Buffer[Cursor] = '\0';
+        return true;
+    }
+
+    for (uint64_t SegmentIndex = SegmentCount; SegmentIndex > 0; --SegmentIndex)
+    {
+        const char* Segment = SegmentStack[SegmentIndex - 1];
+        uint64_t SegmentLength = CStrLength(Segment);
+        if (SegmentLength == 0)
+        {
+            continue;
+        }
+
+        if ((Cursor + SegmentLength) >= BufferSize)
+        {
+            return false;
+        }
+
+        memcpy(Buffer + Cursor, Segment, static_cast<size_t>(SegmentLength));
+        Cursor += SegmentLength;
+
+        if (SegmentIndex != 1)
+        {
+            if (Cursor >= BufferSize)
+            {
+                return false;
+            }
+
+            Buffer[Cursor++] = '/';
+        }
+    }
+
+    if (Cursor >= BufferSize)
+    {
+        return false;
+    }
+
+    Buffer[Cursor] = '\0';
+    return true;
 }
 
 uint64_t AlignDownToPageBoundary(uint64_t Address)
@@ -814,6 +894,60 @@ int64_t TranslationLayer::HandleCloseSystemCall(uint64_t FileDescriptor)
     return 0;
 }
 
+int64_t TranslationLayer::HandleGetcwdSystemCall(char* Buffer, uint64_t Size)
+{
+    if (Logic == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    if (Buffer == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    if (Size == 0)
+    {
+        return LINUX_ERR_EINVAL;
+    }
+
+    ProcessManager* PM = Logic->GetProcessManager();
+    if (PM == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    Process* CurrentProcess = PM->GetRunningProcess();
+    if (CurrentProcess == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    if (CurrentProcess->CurrentFileSystemLocation == nullptr)
+    {
+        return LINUX_ERR_ENOENT;
+    }
+
+    char KernelPathBuffer[SYSCALL_PATH_MAX] = {};
+    if (!BuildAbsolutePathFromDentry(CurrentProcess->CurrentFileSystemLocation, KernelPathBuffer, sizeof(KernelPathBuffer)))
+    {
+        return LINUX_ERR_ENOENT;
+    }
+
+    uint64_t PathBytesWithNull = CStrLength(KernelPathBuffer) + 1;
+    if (PathBytesWithNull > Size)
+    {
+        return LINUX_ERR_ERANGE;
+    }
+
+    if (!Logic->CopyFromKernelToUser(KernelPathBuffer, Buffer, PathBytesWithNull))
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    return reinterpret_cast<int64_t>(Buffer);
+}
+
 int64_t TranslationLayer::HandleMprotectSystemCall(void* Address, uint64_t Length, int64_t Protection)
 {
     if (Logic == nullptr)
@@ -1063,6 +1197,33 @@ int64_t TranslationLayer::HandleGetpidSystemCall()
     }
 
     return static_cast<int64_t>(CurrentProcess->Id);
+}
+
+int64_t TranslationLayer::HandleGetppidSystemCall()
+{
+    if (Logic == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    ProcessManager* PM = Logic->GetProcessManager();
+    if (PM == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    Process* CurrentProcess = PM->GetRunningProcess();
+    if (CurrentProcess == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    if (CurrentProcess->ParrentId == PROCESS_ID_INVALID)
+    {
+        return 0;
+    }
+
+    return static_cast<int64_t>(CurrentProcess->ParrentId);
 }
 
 int64_t TranslationLayer::HandleGetuidSystemCall()
