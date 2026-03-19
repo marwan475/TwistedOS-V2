@@ -16,6 +16,7 @@ enum FileType
 {
     INODE_FILE,
     INODE_DIR,
+    INODE_SYMLINK,
     INODE_DEV
 };
 

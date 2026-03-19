@@ -20,6 +20,7 @@ constexpr uint64_t CHILDREN_GROWTH_ONE     = 1;
 constexpr uint64_t ROOT_FILE_SIZE          = 0;
 constexpr uint64_t ROOT_TREE_DEPTH         = 0;
 constexpr uint64_t INDENT_SPACES_PER_LEVEL = 2;
+constexpr uint64_t MAX_SYMLINK_FOLLOW_DEPTH = 40;
 
 constexpr int64_t LINUX_ERR_EFAULT = -14;
 constexpr int64_t LINUX_ERR_EISDIR = -21;
@@ -31,6 +32,9 @@ typedef struct
     Dentry* RootDentry;
     bool    IsSuccessful;
 } MountInitRamFileSystemContext;
+
+bool   IsRootAliasPath(const char* NormalizedPath);
+Dentry* FindChildBySegment(Dentry* Parent, const char* SegmentStart, uint64_t SegmentLength);
 
 int64_t DefaultReadFileOperation(File* OpenFile, void* Buffer, uint64_t Count)
 {
@@ -288,7 +292,162 @@ FileType DecodeNodeType(RamFileSystemEntryType EntryType)
         return INODE_FILE;
     }
 
+    if (EntryType == RamFileSystemEntryTypeSymbolicLink)
+    {
+        return INODE_SYMLINK;
+    }
+
     return INODE_DEV;
+}
+
+bool IsDotSegment(const char* SegmentStart, uint64_t SegmentLength)
+{
+    return SegmentLength == 1 && SegmentStart[0] == PATH_DOT;
+}
+
+bool IsDotDotSegment(const char* SegmentStart, uint64_t SegmentLength)
+{
+    return SegmentLength == 2 && SegmentStart[0] == PATH_DOT && SegmentStart[1] == PATH_DOT;
+}
+
+Dentry* ResolvePathInternal(Dentry* RootDentry, Dentry* StartDentry, const char* Path, uint64_t RemainingSymlinkDepth)
+{
+    if (RootDentry == nullptr || StartDentry == nullptr || Path == nullptr)
+    {
+        return nullptr;
+    }
+
+    const char* EffectivePath = Path;
+    Dentry*     Current       = StartDentry;
+
+    if (Path[0] == PATH_SEPARATOR)
+    {
+        Current       = RootDentry;
+        EffectivePath = NormalizePathStart(Path);
+
+        if (IsRootAliasPath(EffectivePath))
+        {
+            return RootDentry;
+        }
+    }
+    else
+    {
+        while (EffectivePath[0] == PATH_DOT && EffectivePath[1] == PATH_SEPARATOR)
+        {
+            EffectivePath += 2;
+        }
+
+        if (EffectivePath[0] == STRING_TERMINATOR)
+        {
+            return Current;
+        }
+    }
+
+    const char* SegmentStart = EffectivePath;
+    while (*SegmentStart != STRING_TERMINATOR)
+    {
+        while (*SegmentStart == PATH_SEPARATOR)
+        {
+            ++SegmentStart;
+        }
+
+        if (*SegmentStart == STRING_TERMINATOR)
+        {
+            break;
+        }
+
+        const char* SegmentEnd = SegmentStart;
+        while (*SegmentEnd != STRING_TERMINATOR && *SegmentEnd != PATH_SEPARATOR)
+        {
+            ++SegmentEnd;
+        }
+
+        uint64_t SegmentLength = static_cast<uint64_t>(SegmentEnd - SegmentStart);
+        if (IsDotSegment(SegmentStart, SegmentLength))
+        {
+            SegmentStart = SegmentEnd;
+            continue;
+        }
+
+        if (IsDotDotSegment(SegmentStart, SegmentLength))
+        {
+            if (Current->parent != nullptr)
+            {
+                Current = Current->parent;
+            }
+
+            SegmentStart = SegmentEnd;
+            continue;
+        }
+
+        Dentry* Next = FindChildBySegment(Current, SegmentStart, SegmentLength);
+        if (Next == nullptr || Next->inode == nullptr)
+        {
+            return nullptr;
+        }
+
+        if (Next->inode->NodeType == INODE_SYMLINK)
+        {
+            if (RemainingSymlinkDepth == 0)
+            {
+                return nullptr;
+            }
+
+            if (Next->inode->NodeData == nullptr)
+            {
+                return nullptr;
+            }
+
+            uint64_t TargetLength = Next->inode->NodeSize;
+            char*    TargetPath   = new char[TargetLength + 1];
+            memcpy(TargetPath, Next->inode->NodeData, static_cast<size_t>(TargetLength));
+            TargetPath[TargetLength] = STRING_TERMINATOR;
+
+            const char* RemainderPath = SegmentEnd;
+            if (*RemainderPath == PATH_SEPARATOR)
+            {
+                ++RemainderPath;
+            }
+
+            uint64_t RemainderLength = GetStringLength(RemainderPath);
+            bool     AppendSeparator = (RemainderLength > 0 && TargetLength > 0 && TargetPath[TargetLength - 1] != PATH_SEPARATOR);
+            uint64_t CombinedLength  = TargetLength + (AppendSeparator ? 1 : 0) + RemainderLength;
+            char*    CombinedPath    = new char[CombinedLength + 1];
+
+            uint64_t Cursor = 0;
+            if (TargetLength > 0)
+            {
+                memcpy(CombinedPath + Cursor, TargetPath, static_cast<size_t>(TargetLength));
+                Cursor += TargetLength;
+            }
+
+            if (AppendSeparator)
+            {
+                CombinedPath[Cursor] = PATH_SEPARATOR;
+                ++Cursor;
+            }
+
+            if (RemainderLength > 0)
+            {
+                memcpy(CombinedPath + Cursor, RemainderPath, static_cast<size_t>(RemainderLength));
+                Cursor += RemainderLength;
+            }
+
+            CombinedPath[Cursor] = STRING_TERMINATOR;
+
+            Dentry* SymlinkBase = (TargetLength > 0 && TargetPath[0] == PATH_SEPARATOR) ? RootDentry : ((Next->parent != nullptr) ? Next->parent : RootDentry);
+            Dentry* Resolved    = ResolvePathInternal(RootDentry, SymlinkBase, CombinedPath, RemainingSymlinkDepth - 1);
+
+            delete[] CombinedPath;
+            delete[] TargetPath;
+            return Resolved;
+        }
+
+        Current      = Next;
+        SegmentStart = SegmentEnd;
+    }
+
+    return Current;
 }
 
 /**
@@ -578,6 +737,11 @@ const char* FileTypeToString(FileType Type)
         return "file";
     }
 
+    if (Type == INODE_SYMLINK)
+    {
+        return "symlink";
+    }
+
     return "dev";
 }
 
@@ -729,44 +893,7 @@ Dentry* VirtualFileSystem::Lookup(const char* path)
         return nullptr;
     }
 
-    const char* NormalizedPath = NormalizePathStart(path);
-    if (IsRootAliasPath(NormalizedPath))
-    {
-        return Root;
-    }
-
-    Dentry*     Current      = Root;
-    const char* SegmentStart = NormalizedPath;
-
-    while (*SegmentStart != STRING_TERMINATOR)
-    {
-        while (*SegmentStart == PATH_SEPARATOR)
-        {
-            ++SegmentStart;
-        }
-
-        if (*SegmentStart == STRING_TERMINATOR)
-        {
-            break;
-        }
-
-        const char* SegmentEnd = SegmentStart;
-        while (*SegmentEnd != STRING_TERMINATOR && *SegmentEnd != PATH_SEPARATOR)
-        {
-            ++SegmentEnd;
-        }
-
-        uint64_t SegmentLength = static_cast<uint64_t>(SegmentEnd - SegmentStart);
-        Current                = FindChildBySegment(Current, SegmentStart, SegmentLength);
-        if (Current == nullptr)
-        {
-            return nullptr;
-        }
-
-        SegmentStart = SegmentEnd;
-    }
-
-    return Current;
+    return ResolvePathInternal(Root, Root, path, MAX_SYMLINK_FOLLOW_DEPTH);
 }
 
 /**

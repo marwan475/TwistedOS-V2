@@ -15,6 +15,7 @@ enum RamFileSystemEntryType
     RamFileSystemEntryTypeUnknown = 0,
     RamFileSystemEntryTypeRegularFile,
     RamFileSystemEntryTypeDirectory,
+    RamFileSystemEntryTypeSymbolicLink,
     RamFileSystemEntryTypeOther
 };
 

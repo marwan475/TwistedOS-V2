@@ -13,6 +13,7 @@ namespace
 constexpr uint64_t CpioModeFileTypeMask = 0170000;
 constexpr uint64_t CpioModeRegularFile  = 0100000;
 constexpr uint64_t CpioModeDirectory    = 0040000;
+constexpr uint64_t CpioModeSymbolicLink = 0120000;
 
 struct CpioNewcHeader
 {
@@ -147,6 +148,11 @@ RamFileSystemEntryType DecodeEntryType(uint64_t Mode)
         return RamFileSystemEntryTypeDirectory;
     }
 
+    if (FileTypeBits == CpioModeSymbolicLink)
+    {
+        return RamFileSystemEntryTypeSymbolicLink;
+    }
+
     if (FileTypeBits == 0)
     {
         return RamFileSystemEntryTypeUnknown;
@@ -171,6 +177,8 @@ const char* EntryTypeToString(RamFileSystemEntryType Type)
             return "file";
         case RamFileSystemEntryTypeDirectory:
             return "directory";
+        case RamFileSystemEntryTypeSymbolicLink:
+            return "symlink";
         case RamFileSystemEntryTypeOther:
             return "other";
         case RamFileSystemEntryTypeUnknown:
