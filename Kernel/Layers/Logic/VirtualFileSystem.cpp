@@ -320,7 +320,7 @@ bool IsDotDotSegment(const char* SegmentStart, uint64_t SegmentLength)
     return SegmentLength == 2 && SegmentStart[0] == PATH_DOT && SegmentStart[1] == PATH_DOT;
 }
 
-Dentry* ResolvePathInternal(Dentry* RootDentry, Dentry* StartDentry, const char* Path, uint64_t RemainingSymlinkDepth)
+Dentry* ResolvePathInternal(Dentry* RootDentry, Dentry* StartDentry, const char* Path, uint64_t RemainingSymlinkDepth, bool FollowFinalSymlink)
 {
     if (RootDentry == nullptr || StartDentry == nullptr || Path == nullptr)
     {
@@ -396,8 +396,17 @@ Dentry* ResolvePathInternal(Dentry* RootDentry, Dentry* StartDentry, const char*
             return nullptr;
         }
 
+        bool IsFinalSegment = (*SegmentEnd == STRING_TERMINATOR);
+
         if (Next->inode->NodeType == INODE_SYMLINK)
         {
+            if (!FollowFinalSymlink && IsFinalSegment)
+            {
+                Current      = Next;
+                SegmentStart = SegmentEnd;
+                continue;
+            }
+
             if (RemainingSymlinkDepth == 0)
             {
                 return nullptr;
@@ -446,7 +455,7 @@ Dentry* ResolvePathInternal(Dentry* RootDentry, Dentry* StartDentry, const char*
             CombinedPath[Cursor] = STRING_TERMINATOR;
 
             Dentry* SymlinkBase = (TargetLength > 0 && TargetPath[0] == PATH_SEPARATOR) ? RootDentry : ((Next->parent != nullptr) ? Next->parent : RootDentry);
-            Dentry* Resolved    = ResolvePathInternal(RootDentry, SymlinkBase, CombinedPath, RemainingSymlinkDepth - 1);
+            Dentry* Resolved    = ResolvePathInternal(RootDentry, SymlinkBase, CombinedPath, RemainingSymlinkDepth - 1, FollowFinalSymlink);
 
             delete[] CombinedPath;
             delete[] TargetPath;
@@ -903,7 +912,25 @@ Dentry* VirtualFileSystem::Lookup(const char* path)
         return nullptr;
     }
 
-    return ResolvePathInternal(Root, Root, path, MAX_SYMLINK_FOLLOW_DEPTH);
+    return ResolvePathInternal(Root, Root, path, MAX_SYMLINK_FOLLOW_DEPTH, true);
+}
+
+/**
+ * Function: LookupNoFollowFinal
+ * Description: Resolves a path while not following a symbolic link in the final path component.
+ * Parameters:
+ *   const char* path - Path to resolve.
+ * Returns:
+ *   Dentry* - Matching dentry pointer, or nullptr when not found.
+ */
+Dentry* VirtualFileSystem::LookupNoFollowFinal(const char* path)
+{
+    if (Root == nullptr || path == nullptr)
+    {
+        return nullptr;
+    }
+
+    return ResolvePathInternal(Root, Root, path, MAX_SYMLINK_FOLLOW_DEPTH, false);
 }
 
 /**

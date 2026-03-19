@@ -86,5 +86,6 @@ public:
     void    MountInitRamFileSystem(RamFileSystemManager* ramFileSystemManager);
     bool    RegisterDevice(const char* path, void* deviceData, FileOperations* fileOperations);
     Dentry* Lookup(const char* path);
+    Dentry* LookupNoFollowFinal(const char* path);
     void    PrintVFS(TTY* Terminal);
 };

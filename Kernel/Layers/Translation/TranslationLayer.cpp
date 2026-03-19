@@ -1478,6 +1478,92 @@ int64_t TranslationLayer::HandleStatSystemCall(const char* Path, void* Buffer)
     return 0;
 }
 
+int64_t TranslationLayer::HandleLstatSystemCall(const char* Path, void* Buffer)
+{
+    if (Logic == nullptr || Path == nullptr || Buffer == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    VirtualFileSystem* VFS = Logic->GetVirtualFileSystem();
+    if (VFS == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    char KernelPath[SYSCALL_PATH_MAX] = {};
+    if (!CopyUserCString(Logic, Path, KernelPath, sizeof(KernelPath)))
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    ProcessManager* PM = Logic->GetProcessManager();
+    if (PM == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    Process* CurrentProcess = PM->GetRunningProcess();
+    if (CurrentProcess == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    char EffectivePath[SYSCALL_PATH_MAX] = {};
+    const char* LookupPath               = KernelPath;
+
+    if (KernelPath[0] != '/')
+    {
+        Dentry* BaseDirectory = CurrentProcess->CurrentFileSystemLocation;
+        if (BaseDirectory == nullptr)
+        {
+            return LINUX_ERR_ENOENT;
+        }
+
+        char BasePath[SYSCALL_PATH_MAX] = {};
+        if (!BuildAbsolutePathFromDentry(BaseDirectory, BasePath, sizeof(BasePath)))
+        {
+            return LINUX_ERR_EFAULT;
+        }
+
+        uint64_t BasePathLength = CStrLength(BasePath);
+        uint64_t RelativeLength = CStrLength(KernelPath);
+        uint64_t NeedsSeparator = (BasePathLength > 1) ? 1 : 0;
+        uint64_t RequiredBytes  = BasePathLength + NeedsSeparator + RelativeLength + 1;
+        if (RequiredBytes > sizeof(EffectivePath))
+        {
+            return LINUX_ERR_EINVAL;
+        }
+
+        memcpy(EffectivePath, BasePath, static_cast<size_t>(BasePathLength));
+        uint64_t Cursor = BasePathLength;
+        if (NeedsSeparator != 0)
+        {
+            EffectivePath[Cursor++] = '/';
+        }
+
+        memcpy(EffectivePath + Cursor, KernelPath, static_cast<size_t>(RelativeLength));
+        EffectivePath[Cursor + RelativeLength] = '\0';
+        LookupPath = EffectivePath;
+    }
+
+    Dentry* NodeDentry = VFS->LookupNoFollowFinal(LookupPath);
+    if (NodeDentry == nullptr || NodeDentry->inode == nullptr)
+    {
+        return LINUX_ERR_ENOENT;
+    }
+
+    LinuxStat KernelStat = {};
+    PopulateLinuxStatFromNode(NodeDentry->inode, &KernelStat);
+
+    if (!Logic->CopyFromKernelToUser(&KernelStat, Buffer, sizeof(KernelStat)))
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    return 0;
+}
+
 int64_t TranslationLayer::HandleNewFstatatSystemCall(int64_t DirectoryFileDescriptor, const char* Path, void* Buffer, int64_t Flags)
 {
     if (Logic == nullptr || Buffer == nullptr || Path == nullptr)
@@ -1547,7 +1633,7 @@ int64_t TranslationLayer::HandleNewFstatatSystemCall(int64_t DirectoryFileDescri
 
         if (KernelPath[0] == '/')
         {
-            NodeDentry = VFS->Lookup(KernelPath);
+            NodeDentry = ((Flags & LINUX_AT_SYMLINK_NOFOLLOW) != 0) ? VFS->LookupNoFollowFinal(KernelPath) : VFS->Lookup(KernelPath);
         }
         else
         {
@@ -1610,7 +1696,7 @@ int64_t TranslationLayer::HandleNewFstatatSystemCall(int64_t DirectoryFileDescri
             memcpy(AbsolutePath + Cursor, KernelPath, static_cast<size_t>(RelativeLength));
             AbsolutePath[Cursor + RelativeLength] = '\0';
 
-            NodeDentry = VFS->Lookup(AbsolutePath);
+            NodeDentry = ((Flags & LINUX_AT_SYMLINK_NOFOLLOW) != 0) ? VFS->LookupNoFollowFinal(AbsolutePath) : VFS->Lookup(AbsolutePath);
         }
     }
 
