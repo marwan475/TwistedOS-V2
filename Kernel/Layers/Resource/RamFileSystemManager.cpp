@@ -598,5 +598,4 @@ void RamFileSystemManager::ParseAndPrintInitramfs(FrameBufferConsole* Console) c
     }
 
     Console->printf_("Initramfs entries: %llu\n", static_cast<unsigned long long>(Context.EntryCount));
-
 }

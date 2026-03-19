@@ -15,9 +15,9 @@ namespace
 {
 constexpr uint8_t INVALID_PROCESS_ID = 0xFF;
 
-constexpr bool ENABLE_MEMORY_TEST      = false;
-constexpr bool ENABLE_MULTITASK_TEST   = false;
-constexpr bool ENABLE_USER_MODE_TEST   = true;
+constexpr bool ENABLE_MEMORY_TEST    = false;
+constexpr bool ENABLE_MULTITASK_TEST = false;
+constexpr bool ENABLE_USER_MODE_TEST = true;
 
 constexpr uint64_t KERNEL_SLEEP_FAST_TICKS   = 10;
 constexpr uint64_t KERNEL_SLEEP_MEDIUM_TICKS = 300;
@@ -34,6 +34,8 @@ constexpr uint64_t BURST_MIN_LOOPS   = 500;
 
 // 30 validator sleep iterations × 100 ms each = 3 seconds.
 constexpr uint64_t USER_MODE_TEST_DURATION_LOOPS = 30;
+// 300 validator iterations × 100 ms each = 30 seconds max wait for child execve.
+constexpr uint64_t USER_MODE_TEST_EXECVE_TIMEOUT_LOOPS = 300;
 
 enum SelfTestPhase
 {
@@ -45,7 +47,7 @@ enum SelfTestPhase
     SELF_TEST_PHASE_MULTITASK_MONITOR,
     // Phase 4: spawn the execve-chaining user mode test process.
     SELF_TEST_PHASE_USER_MODE_SETUP,
-    // Phase 5: wait 3 seconds then kill the user mode test process.
+    // Phase 5: wait 3 seconds then kill the forked child process.
     SELF_TEST_PHASE_USER_MODE_MONITOR,
     // Phase 6: all suites completed successfully; print summary then idle.
     SELF_TEST_PHASE_COMPLETE,
@@ -80,6 +82,8 @@ struct KernelSelfTestState
 
     uint8_t  UserModeTestProcessId;
     uint64_t UserModeTestLoopCount;
+    uint64_t UserModeExecveObservedLoop;
+    bool     UserModeObservedExecve;
     bool     UserModeTestResultLogged;
 
     uint32_t TestsPassed;
@@ -111,6 +115,8 @@ KernelSelfTestState State = {
         false,
         INVALID_PROCESS_ID,
         0,
+        0,
+        false,
         false,
         0,
         0,
@@ -343,20 +349,20 @@ void PrintMemoryTestResult(Dispatcher* ActiveDispatcher)
     (void) ActiveDispatcher;
 }
 
-void KillChildProcessesOf(Dispatcher* ActiveDispatcher, uint8_t ParentProcessId)
+uint8_t KillFirstChildProcessOf(Dispatcher* ActiveDispatcher, uint8_t ParentProcessId)
 {
     if (ActiveDispatcher == nullptr || ParentProcessId == INVALID_PROCESS_ID)
     {
-        return;
+        return INVALID_PROCESS_ID;
     }
 
     ProcessManager* PM = ActiveDispatcher->GetLogicLayer()->GetProcessManager();
     if (PM == nullptr)
     {
-        return;
+        return INVALID_PROCESS_ID;
     }
 
-    Process* RunningProcess = PM->GetRunningProcess();
+    Process* RunningProcess   = PM->GetRunningProcess();
     uint8_t  RunningProcessId = (RunningProcess != nullptr) ? RunningProcess->Id : INVALID_PROCESS_ID;
 
     for (uint8_t ProcessId = 0; ProcessId < TEST_MAX_PROCESS_COUNT; ++ProcessId)
@@ -374,9 +380,13 @@ void KillChildProcessesOf(Dispatcher* ActiveDispatcher, uint8_t ParentProcessId)
                 continue;
             }
 
+            ActiveDispatcher->GetResourceLayer()->GetTTY()->printf_("[SelfTest] [User Mode] terminating child process id=%u of parent id=%u\n", ProcessId, ParentProcessId);
             ActiveDispatcher->GetLogicLayer()->KillProcess(ProcessId);
+            return ProcessId;
         }
     }
+
+    return INVALID_PROCESS_ID;
 }
 
 /**
@@ -518,17 +528,17 @@ bool KernelSelfTestStart(Dispatcher* ActiveDispatcher)
         return false;
     }
 
-    State                     = {};
-    State.DispatcherRef       = ActiveDispatcher;
-    State.KernelSleepFastId   = INVALID_PROCESS_ID;
-    State.KernelSleepMediumId = INVALID_PROCESS_ID;
-    State.KernelSleepSlowId   = INVALID_PROCESS_ID;
-    State.KernelBurstId       = INVALID_PROCESS_ID;
-    State.KernelValidatorId   = INVALID_PROCESS_ID;
+    State                       = {};
+    State.DispatcherRef         = ActiveDispatcher;
+    State.KernelSleepFastId     = INVALID_PROCESS_ID;
+    State.KernelSleepMediumId   = INVALID_PROCESS_ID;
+    State.KernelSleepSlowId     = INVALID_PROCESS_ID;
+    State.KernelBurstId         = INVALID_PROCESS_ID;
+    State.KernelValidatorId     = INVALID_PROCESS_ID;
     State.UserModeTestProcessId = INVALID_PROCESS_ID;
-    State.Phase               = SELF_TEST_PHASE_MEMORY;
-    State.Initialized         = true;
-    State.Passed              = false;
+    State.Phase                 = SELF_TEST_PHASE_MEMORY;
+    State.Initialized           = true;
+    State.Passed                = false;
 
     State.KernelValidatorId = ActiveDispatcher->GetLogicLayer()->CreateKernelProcess(KernelValidatorTask);
 
@@ -552,7 +562,13 @@ bool KernelSelfTestStart(Dispatcher* ActiveDispatcher)
  */
 void KernelSelfTestsOnSystemCall(uint64_t SystemCallNumber)
 {
-    (void) SystemCallNumber;
+    if (State.Phase == SELF_TEST_PHASE_USER_MODE_MONITOR && SystemCallNumber == 59 /* execve */ && !State.UserModeObservedExecve)
+    {
+        Dispatcher* ActiveDispatcher = RequireDispatcher();
+        State.UserModeObservedExecve = true;
+        State.UserModeExecveObservedLoop = State.UserModeTestLoopCount;
+        ActiveDispatcher->GetResourceLayer()->GetTTY()->printf_("[SelfTest] [User Mode] observed child execve syscall\n");
+    }
 }
 
 /**
@@ -629,10 +645,9 @@ void KernelValidatorTask()
                 // Observe counters from kernel sleepers and burst task.
                 if (State.BurstLoops >= State.NextMultitaskProgressBurstLoops)
                 {
-                    ActiveDispatcher->GetResourceLayer()->GetTTY()->printf_(
-                        "[SelfTest] [Multitasking and Sleep] progress: fast=%llu medium=%llu slow=%llu burst=%llu/%llu\n",
-                        (unsigned long long) State.FastCycles, (unsigned long long) State.MediumCycles, (unsigned long long) State.SlowCycles, (unsigned long long) State.BurstLoops,
-                        (unsigned long long) BURST_MIN_LOOPS);
+                    ActiveDispatcher->GetResourceLayer()->GetTTY()->printf_("[SelfTest] [Multitasking and Sleep] progress: fast=%llu medium=%llu slow=%llu burst=%llu/%llu\n",
+                                                                            (unsigned long long) State.FastCycles, (unsigned long long) State.MediumCycles, (unsigned long long) State.SlowCycles,
+                                                                            (unsigned long long) State.BurstLoops, (unsigned long long) BURST_MIN_LOOPS);
 
                     State.NextMultitaskProgressBurstLoops += 200;
                 }
@@ -685,8 +700,7 @@ void KernelValidatorTask()
 
                 if (State.UserModeTestProcessId == State.KernelValidatorId)
                 {
-                    ActiveDispatcher->GetResourceLayer()->GetTTY()->printf_("[SelfTest] [User Mode] pid collision detected: validator id=%u\n",
-                                                                            State.KernelValidatorId);
+                    ActiveDispatcher->GetResourceLayer()->GetTTY()->printf_("[SelfTest] [User Mode] pid collision detected: validator id=%u\n", State.KernelValidatorId);
                     LogTestResult(ActiveDispatcher, "User Mode", false);
                     State.UserModeTestProcessId = INVALID_PROCESS_ID;
                     State.Phase                 = SELF_TEST_PHASE_FAILED;
@@ -695,45 +709,74 @@ void KernelValidatorTask()
 
                 RegisterTestProcess(State.UserModeTestProcessId);
                 State.UserModeTestLoopCount = 0;
+                State.UserModeExecveObservedLoop = 0;
+                State.UserModeObservedExecve = false;
                 State.Phase                 = SELF_TEST_PHASE_USER_MODE_MONITOR;
             }
             break;
 
             case SELF_TEST_PHASE_USER_MODE_MONITOR:
             {
-                // Each validator wake-up is ~100 ms; after 30 iterations (~3 s) kill the user
-                // process and record the result.
+                // Each validator wake-up is ~100 ms; after 30 iterations (~3 s) terminate the
+                // forked child and verify parent wait() can resume.
                 ++State.UserModeTestLoopCount;
 
-                if (State.UserModeTestLoopCount >= USER_MODE_TEST_DURATION_LOOPS && !State.UserModeTestResultLogged)
+                if (!State.UserModeObservedExecve)
                 {
-                    uint8_t ParentUserProcessId = State.UserModeTestProcessId;
-                    ProcessManager* PM = ActiveDispatcher->GetLogicLayer()->GetProcessManager();
-                    Process* RunningProcess = (PM != nullptr) ? PM->GetRunningProcess() : nullptr;
-                    uint8_t RunningProcessId = (RunningProcess != nullptr) ? RunningProcess->Id : INVALID_PROCESS_ID;
-
-                    if (State.UserModeTestProcessId != INVALID_PROCESS_ID)
+                    if ((State.UserModeTestLoopCount % 20) == 0)
                     {
-                        if (State.UserModeTestProcessId == State.KernelValidatorId || State.UserModeTestProcessId == RunningProcessId)
-                        {
-                            ActiveDispatcher->GetResourceLayer()->GetTTY()->printf_(
-                                "[SelfTest] [User Mode] refusing to kill active validator/running process id=%u\n", State.UserModeTestProcessId);
-                            LogTestResult(ActiveDispatcher, "User Mode", false);
-                            State.Phase = SELF_TEST_PHASE_FAILED;
-                            break;
-                        }
-
-                        ActiveDispatcher->GetLogicLayer()->KillProcess(State.UserModeTestProcessId);
-                        State.UserModeTestProcessId = INVALID_PROCESS_ID;
+                        ActiveDispatcher->GetResourceLayer()->GetTTY()->printf_("[SelfTest] [User Mode] waiting for child execve... loop=%llu\n",
+                                                                                (unsigned long long) State.UserModeTestLoopCount);
                     }
 
-                    KillChildProcessesOf(ActiveDispatcher, ParentUserProcessId);
+                    if (State.UserModeTestLoopCount >= USER_MODE_TEST_EXECVE_TIMEOUT_LOOPS)
+                    {
+                        ActiveDispatcher->GetResourceLayer()->GetTTY()->printf_("[SelfTest] [User Mode] timeout: child never reached execve\n");
+                        LogTestResult(ActiveDispatcher, "User Mode", false);
+                        State.Phase = SELF_TEST_PHASE_FAILED;
+                    }
+
+                    break;
+                }
+
+                if ((State.UserModeTestLoopCount - State.UserModeExecveObservedLoop) >= USER_MODE_TEST_DURATION_LOOPS && !State.UserModeTestResultLogged)
+                {
+                    uint8_t         ParentUserProcessId = State.UserModeTestProcessId;
+                    ProcessManager* PM                  = ActiveDispatcher->GetLogicLayer()->GetProcessManager();
+                    Process*        RunningProcess      = (PM != nullptr) ? PM->GetRunningProcess() : nullptr;
+                    uint8_t         RunningProcessId    = (RunningProcess != nullptr) ? RunningProcess->Id : INVALID_PROCESS_ID;
+
+                    if (ParentUserProcessId == INVALID_PROCESS_ID)
+                    {
+                        ActiveDispatcher->GetResourceLayer()->GetTTY()->printf_("[SelfTest] [User Mode] invalid parent process id\n");
+                        LogTestResult(ActiveDispatcher, "User Mode", false);
+                        State.Phase = SELF_TEST_PHASE_FAILED;
+                        break;
+                    }
+
+                    if (ParentUserProcessId == State.KernelValidatorId || ParentUserProcessId == RunningProcessId)
+                    {
+                        ActiveDispatcher->GetResourceLayer()->GetTTY()->printf_("[SelfTest] [User Mode] refusing to target active validator/running process id=%u\n", ParentUserProcessId);
+                        LogTestResult(ActiveDispatcher, "User Mode", false);
+                        State.Phase = SELF_TEST_PHASE_FAILED;
+                        break;
+                    }
+
+                    uint8_t KilledChildId = KillFirstChildProcessOf(ActiveDispatcher, ParentUserProcessId);
+                    if (KilledChildId == INVALID_PROCESS_ID)
+                    {
+                        ActiveDispatcher->GetResourceLayer()->GetTTY()->printf_("[SelfTest] [User Mode] no child process found for parent id=%u\n", ParentUserProcessId);
+                        LogTestResult(ActiveDispatcher, "User Mode", false);
+                        State.Phase = SELF_TEST_PHASE_FAILED;
+                        break;
+                    }
 
                     LogTestResult(ActiveDispatcher, "User Mode", true);
-                    ActiveDispatcher->GetResourceLayer()->GetTTY()->printf_("[SelfTest] [User Mode] parent user process ran for 3 seconds and was terminated by validator\n");
+                    ActiveDispatcher->GetResourceLayer()->GetTTY()->printf_(
+                            "[SelfTest] [User Mode] child id=%u terminated by validator; parent id=%u should wake from wait()\n", KilledChildId, ParentUserProcessId);
                     State.UserModeTestResultLogged = true;
-                    State.Passed                  = true;
-                    State.Phase                   = SELF_TEST_PHASE_COMPLETE;
+                    State.Passed                   = true;
+                    State.Phase                    = SELF_TEST_PHASE_COMPLETE;
                 }
             }
             break;

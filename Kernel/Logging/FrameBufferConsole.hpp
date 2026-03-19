@@ -29,11 +29,11 @@ private:
 public:
     FrameBufferConsole();
 
-    void Initialize(uint32_t* buffer, uint32_t width, uint32_t height, uint32_t scanline);
-    void Clear(uint32_t color = 0x00000000);
-    void PutChar(char c);
-    int  printf_(const char* format, ...);
-    int  dbgprintf_(const char* format, ...);
+    void     Initialize(uint32_t* buffer, uint32_t width, uint32_t height, uint32_t scanline);
+    void     Clear(uint32_t color = 0x00000000);
+    void     PutChar(char c);
+    int      printf_(const char* format, ...);
+    int      dbgprintf_(const char* format, ...);
     uint32_t GetCursorX() const;
     uint32_t GetCursorY() const;
 

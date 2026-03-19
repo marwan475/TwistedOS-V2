@@ -8,14 +8,14 @@
 
 #include "../Bootloader/uefi.hpp"
 
-static constexpr UINTN KERNEL_BASE_VIRTUAL_ADDR      = 0xFFFFFFFF80000000;
-static constexpr UINTN KERNEL_HEAP_START             = 0xFFFFFFFF82000000;
-static constexpr UINTN KERNEL_HEAP_PAGES             = 32;
-static constexpr UINTN KERNEL_STACK_SIZE             = (16 * 4096);
-static constexpr UINTN KERNEL_PROCESS_STACK_SIZE     = 4096;
-static constexpr UINTN USER_PROCESS_STACK_SIZE       = 8192;
-static constexpr UINTN USER_PROCESS_HEAP_SIZE        = 8192;
-static constexpr UINTN USER_PROCESS_VIRTUAL_BASE     = 0x400000;
+static constexpr UINTN KERNEL_BASE_VIRTUAL_ADDR       = 0xFFFFFFFF80000000;
+static constexpr UINTN KERNEL_HEAP_START              = 0xFFFFFFFF82000000;
+static constexpr UINTN KERNEL_HEAP_PAGES              = 32;
+static constexpr UINTN KERNEL_STACK_SIZE              = (16 * 4096);
+static constexpr UINTN KERNEL_PROCESS_STACK_SIZE      = 4096;
+static constexpr UINTN USER_PROCESS_STACK_SIZE        = 8192;
+static constexpr UINTN USER_PROCESS_HEAP_SIZE         = 8192;
+static constexpr UINTN USER_PROCESS_VIRTUAL_BASE      = 0x400000;
 static constexpr UINTN USER_PROCESS_VIRTUAL_STACK_TOP = 0x00007FFFFFFFFFFF;
 
 typedef struct

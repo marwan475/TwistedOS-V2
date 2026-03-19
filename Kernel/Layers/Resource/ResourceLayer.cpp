@@ -23,8 +23,8 @@ extern "C" void ResourceLayerTaskSwitchUserAsm(CpuState* OldState, const CpuStat
  *   ResourceLayer - Constructed resource layer instance.
  */
 ResourceLayer::ResourceLayer()
-        : PMM(nullptr), VMM(nullptr), Console(nullptr), KernelHeapVirtualAddrStart(0), KernelHeapVirtualAddrEnd(0), KernelPageMapL4TableAddr(0), InitramfsAddress(0), InitramfsSize(0),
-            KHM(0, 0), RFS(0, 0), Terminal(nullptr), InputKeyboard(nullptr)
+    : PMM(nullptr), VMM(nullptr), Console(nullptr), KernelHeapVirtualAddrStart(0), KernelHeapVirtualAddrEnd(0), KernelPageMapL4TableAddr(0), InitramfsAddress(0), InitramfsSize(0), KHM(0, 0),
+      RFS(0, 0), Terminal(nullptr), InputKeyboard(nullptr)
 {
 }
 

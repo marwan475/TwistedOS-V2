@@ -487,13 +487,13 @@ uint8_t LogicLayer::CreateNullProcess()
  */
 uint8_t LogicLayer::CreateKernelProcess(void (*EntryPoint)())
 {
-    void*    ProcessStack = Resource->kmalloc(KERNEL_PROCESS_STACK_SIZE);
+    void* ProcessStack = Resource->kmalloc(KERNEL_PROCESS_STACK_SIZE);
     if (ProcessStack == nullptr)
     {
         return PROCESS_ID_INVALID;
     }
 
-    uint64_t StackTop     = reinterpret_cast<uint64_t>(ProcessStack) + KERNEL_PROCESS_STACK_SIZE;
+    uint64_t StackTop = reinterpret_cast<uint64_t>(ProcessStack) + KERNEL_PROCESS_STACK_SIZE;
 
     CpuState State = {};
     State.rip      = reinterpret_cast<uint64_t>(EntryPoint);
@@ -609,10 +609,10 @@ uint8_t LogicLayer::ChangeProcessExecution(uint8_t Id, const char* FilePath)
     VirtualAddressSpace* OldAddressSpace = TargetProcess->AddressSpace;
     FILE_TYPE            OldFileType     = TargetProcess->FileType;
 
-    TargetProcess->AddressSpace = NewAddressSpace;
-    TargetProcess->FileType     = IsELF ? FILE_TYPE_ELF : FILE_TYPE_RAW_BINARY;
-    TargetProcess->StackPointer = reinterpret_cast<void*>(NewAddressSpace->GetStackVirtualAddressStart());
-    TargetProcess->State        = NewState;
+    TargetProcess->AddressSpace              = NewAddressSpace;
+    TargetProcess->FileType                  = IsELF ? FILE_TYPE_ELF : FILE_TYPE_RAW_BINARY;
+    TargetProcess->StackPointer              = reinterpret_cast<void*>(NewAddressSpace->GetStackVirtualAddressStart());
+    TargetProcess->State                     = NewState;
     TargetProcess->CurrentFileSystemLocation = (Entry->parent != nullptr) ? Entry->parent : Entry;
 
     Process* RunningProcess = PM->GetRunningProcess();
@@ -671,8 +671,8 @@ uint8_t LogicLayer::CopyProcess(uint8_t Id)
     }
 
     VirtualAddressSpace* SourceAddressSpace = SourceProcess->AddressSpace;
-    uint64_t             SourceCodeSize      = SourceAddressSpace->GetCodeSize();
-    uint64_t             SourceCodePhysAddr  = SourceAddressSpace->GetCodePhysicalAddress();
+    uint64_t             SourceCodeSize     = SourceAddressSpace->GetCodeSize();
+    uint64_t             SourceCodePhysAddr = SourceAddressSpace->GetCodePhysicalAddress();
 
     if (SourceCodeSize == 0 || SourceCodePhysAddr == 0)
     {
@@ -767,7 +767,7 @@ uint8_t LogicLayer::CopyProcess(uint8_t Id)
         return PROCESS_ID_INVALID;
     }
 
-    ChildProcess->ParrentId                = SourceProcess->Id;
+    ChildProcess->ParrentId                 = SourceProcess->Id;
     ChildProcess->CurrentFileSystemLocation = SourceProcess->CurrentFileSystemLocation;
 
     for (size_t FileIndex = 0; FileIndex < MAX_OPEN_FILES_PER_PROCESS; ++FileIndex)
@@ -784,14 +784,13 @@ uint8_t LogicLayer::CopyProcess(uint8_t Id)
             return PROCESS_ID_INVALID;
         }
 
-        *CopiedFile                    = *SourceProcess->FileTable[FileIndex];
+        *CopiedFile                        = *SourceProcess->FileTable[FileIndex];
         ChildProcess->FileTable[FileIndex] = CopiedFile;
     }
 
     Sched->AddToReadyQueue(ChildId);
     return ChildId;
 }
-
 
 /**
  * Function: LogicLayer::CreateUserProcessFromVFS

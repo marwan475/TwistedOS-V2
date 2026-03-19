@@ -6,9 +6,9 @@
 
 #pragma once
 
-#include <stdint.h>
-
 #include "FrameBuffer.hpp"
+
+#include <stdint.h>
 
 struct File;
 struct FileOperations;
@@ -16,8 +16,8 @@ struct FileOperations;
 class TTY
 {
 private:
-    static constexpr uint32_t FONT_WIDTH  = 8;
-    static constexpr uint32_t FONT_HEIGHT = 16;
+    static constexpr uint32_t FONT_WIDTH               = 8;
+    static constexpr uint32_t FONT_HEIGHT              = 16;
     static constexpr uint64_t KEYBOARD_BUFFER_CAPACITY = 1024;
 
     FrameBuffer* FrameBufferDevice;

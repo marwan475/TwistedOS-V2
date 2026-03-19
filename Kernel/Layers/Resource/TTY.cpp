@@ -13,9 +13,7 @@
 
 namespace
 {
-#ifdef DEBUG_BUILD
 constexpr uint16_t COM1_PORT = 0x3F8;
-#endif
 
 constexpr int64_t LINUX_ERR_EFAULT = -14;
 constexpr int64_t LINUX_ERR_EINVAL = -22;
@@ -23,7 +21,6 @@ constexpr int64_t LINUX_ERR_ENODEV = -19;
 constexpr int64_t LINUX_ERR_ENOSPC = -28;
 constexpr int64_t LINUX_ERR_ENOSYS = -38;
 
-#ifdef DEBUG_BUILD
 static inline void outb(uint16_t port, uint8_t value)
 {
     __asm__ __volatile__("outb %0, %1" : : "a"(value), "Nd"(port));
@@ -73,19 +70,27 @@ static void SerialWriteBuffer(const char* Buffer, int Count)
         SerialWriteChar(Buffer[Index]);
     }
 }
-#endif
+
+static void EnsureSerialInitialized()
+{
+    static bool SerialInitialized = false;
+    if (!SerialInitialized)
+    {
+        SerialInit();
+        SerialInitialized = true;
+    }
+}
 } // namespace
 
 FileOperations TTY::TerminalFileOperations = {
-    &TTY::ReadFileOperation,
-    &TTY::WriteFileOperation,
-    &TTY::SeekFileOperation,
-    &TTY::MemoryMapFileOperation,
+        &TTY::ReadFileOperation,
+        &TTY::WriteFileOperation,
+        &TTY::SeekFileOperation,
+        &TTY::MemoryMapFileOperation,
 };
 
 TTY::TTY(FrameBuffer* FrameBuffer, uint32_t InitialCursorX, uint32_t InitialCursorY)
-        : FrameBufferDevice(FrameBuffer), CursorX(InitialCursorX), CursorY(InitialCursorY), TextColor(0xFFFFFFFF), BackgroundColor(0x00000000), BufferHead(0), BufferTail(0),
-            BufferedBytes(0)
+    : FrameBufferDevice(FrameBuffer), CursorX(InitialCursorX), CursorY(InitialCursorY), TextColor(0xFFFFFFFF), BackgroundColor(0x00000000), BufferHead(0), BufferTail(0), BufferedBytes(0)
 {
     for (uint64_t Index = 0; Index < KEYBOARD_BUFFER_CAPACITY; ++Index)
     {
@@ -118,16 +123,8 @@ int TTY::printf_(const char* Format, ...)
         WritableCount = static_cast<int>(sizeof(Buffer) - 1);
     }
 
-#ifdef DEBUG_BUILD
-    static bool SerialInitialized = false;
-    if (!SerialInitialized)
-    {
-        SerialInit();
-        SerialInitialized = true;
-    }
-
+    EnsureSerialInitialized();
     SerialWriteBuffer(Buffer, WritableCount);
-#endif
 
     for (int Index = 0; Index < WritableCount; ++Index)
     {
@@ -278,6 +275,15 @@ int64_t TTY::Write(File* OpenFile, const void* Buffer, uint64_t Count)
     }
 
     const char* InBuffer = reinterpret_cast<const char*>(Buffer);
+
+    EnsureSerialInitialized();
+    int SerialCount = static_cast<int>(Count);
+    if (Count > static_cast<uint64_t>(INT32_MAX))
+    {
+        SerialCount = INT32_MAX;
+    }
+    SerialWriteBuffer(InBuffer, SerialCount);
+
     for (uint64_t Index = 0; Index < Count; ++Index)
     {
         PutChar(InBuffer[Index]);

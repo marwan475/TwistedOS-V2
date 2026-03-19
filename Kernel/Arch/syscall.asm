@@ -8,6 +8,22 @@ default rel
 section .text
 
 global SystemCallEntry
+global SavedSystemCallUserRSP
+global SavedSystemCallUserRIP
+global SavedSystemCallUserRFLAGS
+global SavedSystemCallUserRAX
+global SavedSystemCallUserRDX
+global SavedSystemCallUserRBX
+global SavedSystemCallUserRBP
+global SavedSystemCallUserRSI
+global SavedSystemCallUserRDI
+global SavedSystemCallUserR8
+global SavedSystemCallUserR9
+global SavedSystemCallUserR10
+global SavedSystemCallUserR12
+global SavedSystemCallUserR13
+global SavedSystemCallUserR14
+global SavedSystemCallUserR15
 
 extern HandleSystemCallFromEntry
 extern GetCurrentProcessCpuStateForSyscallReturn
@@ -107,18 +123,29 @@ SystemCallEntry:
 .return_to_saved_syscall_frame:
     add rsp, 8
 
+    push rax
     call RestoreCurrentSavedSystemCallFrame
     call CompleteCurrentSystemCallReturn
+    pop rax
 
-    mov rcx, [SavedSystemCallUserRIP]
-    mov r11, [SavedSystemCallUserRFLAGS]
-    mov r10, [SavedSystemCallUserRSP]
+    mov rdx, [SavedSystemCallUserRDX]
+    mov rbx, [SavedSystemCallUserRBX]
+    mov rbp, [SavedSystemCallUserRBP]
+    mov rsi, [SavedSystemCallUserRSI]
+    mov rdi, [SavedSystemCallUserRDI]
+    mov r8,  [SavedSystemCallUserR8]
+    mov r9,  [SavedSystemCallUserR9]
+    mov r10, [SavedSystemCallUserR10]
+    mov r12, [SavedSystemCallUserR12]
+    mov r13, [SavedSystemCallUserR13]
+    mov r14, [SavedSystemCallUserR14]
+    mov r15, [SavedSystemCallUserR15]
 
     push USER_SS
-    push r10
-    push r11
+    push qword [SavedSystemCallUserRSP]
+    push qword [SavedSystemCallUserRFLAGS]
     push USER_CS
-    push rcx
+    push qword [SavedSystemCallUserRIP]
     iretq
 
 section .bss

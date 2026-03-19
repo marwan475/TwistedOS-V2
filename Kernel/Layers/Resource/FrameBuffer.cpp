@@ -6,11 +6,11 @@
 
 #include "FrameBuffer.hpp"
 
+#include <CommonUtils.hpp>
 #include <Layers/Dispatcher.hpp>
 #include <Layers/Logic/VirtualFileSystem.hpp>
 #include <Layers/Resource/VirtualAddressSpace.hpp>
 #include <Memory/VirtualMemoryManager.hpp>
-#include <CommonUtils.hpp>
 
 namespace
 {
@@ -28,10 +28,10 @@ constexpr uint64_t PAGE_ALIGNMENT_MASK        = PAGE_SIZE_BYTES - 1;
 } // namespace
 
 FileOperations FrameBuffer::FrameBufferFileOperations = {
-    nullptr,
-    &FrameBuffer::WriteFileOperation,
-    &FrameBuffer::SeekFileOperation,
-    &FrameBuffer::MemoryMapFileOperation,
+        nullptr,
+        &FrameBuffer::WriteFileOperation,
+        &FrameBuffer::SeekFileOperation,
+        &FrameBuffer::MemoryMapFileOperation,
 };
 
 /**
@@ -42,8 +42,7 @@ FileOperations FrameBuffer::FrameBufferFileOperations = {
  * Returns:
  *   FrameBuffer - Constructed framebuffer descriptor.
  */
-FrameBuffer::FrameBuffer()
-    : Buffer(nullptr), BufferSizeBytes(0), Width(0), Height(0), PixelsPerScanLine(0), PixelFormat(PixelFormatMax), PixelInformation({0, 0, 0, 0}), Valid(false)
+FrameBuffer::FrameBuffer() : Buffer(nullptr), BufferSizeBytes(0), Width(0), Height(0), PixelsPerScanLine(0), PixelFormat(PixelFormatMax), PixelInformation({0, 0, 0, 0}), Valid(false)
 {
 }
 

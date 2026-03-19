@@ -156,10 +156,10 @@ void PhysicalMemoryManager::InitializeBuddyAllocator()
             Order--;
         }
 
-        uint64_t   BlockAddress = BaseAddress + (CurrentOffset * PAGE_SIZE);
-        BuddyBlock* Block       = (BuddyBlock*) BlockAddress;
-        Block->Next             = BuddyFreeLists[Order];
-        BuddyFreeLists[Order]   = Block;
+        uint64_t    BlockAddress = BaseAddress + (CurrentOffset * PAGE_SIZE);
+        BuddyBlock* Block        = (BuddyBlock*) BlockAddress;
+        Block->Next              = BuddyFreeLists[Order];
+        BuddyFreeLists[Order]    = Block;
 
         uint64_t BlockPages = PagesForOrder(Order);
         CurrentOffset += BlockPages;
@@ -239,19 +239,19 @@ void* PhysicalMemoryManager::AllocatePagesFromDescriptor(UINTN Pages)
         return NULL;
     }
 
-    BuddyBlock* Block       = BuddyFreeLists[CurrentOrder];
+    BuddyBlock* Block            = BuddyFreeLists[CurrentOrder];
     BuddyFreeLists[CurrentOrder] = Block->Next;
-    uint64_t BlockAddress = (uint64_t) Block;
+    uint64_t BlockAddress        = (uint64_t) Block;
 
     while (CurrentOrder > RequestedOrder)
     {
         CurrentOrder--;
 
-        uint64_t   HalfBlockSizeBytes = PagesForOrder(CurrentOrder) * PAGE_SIZE;
-        uint64_t   BuddyAddress       = BlockAddress + HalfBlockSizeBytes;
-        BuddyBlock* Buddy             = (BuddyBlock*) BuddyAddress;
+        uint64_t    HalfBlockSizeBytes = PagesForOrder(CurrentOrder) * PAGE_SIZE;
+        uint64_t    BuddyAddress       = BlockAddress + HalfBlockSizeBytes;
+        BuddyBlock* Buddy              = (BuddyBlock*) BuddyAddress;
 
-        Buddy->Next                 = BuddyFreeLists[CurrentOrder];
+        Buddy->Next                  = BuddyFreeLists[CurrentOrder];
         BuddyFreeLists[CurrentOrder] = Buddy;
     }
 
@@ -300,8 +300,8 @@ bool PhysicalMemoryManager::FreePagesFromDescriptor(void* Address, UINTN Pages)
         return false;
     }
 
-    uint64_t BlockPages  = PagesForOrder(Order);
-    uint64_t StartPage   = (PhysAddr - BaseAddress) / PAGE_SIZE;
+    uint64_t BlockPages = PagesForOrder(Order);
+    uint64_t StartPage  = (PhysAddr - BaseAddress) / PAGE_SIZE;
     if (StartPage + BlockPages > MemoryDescriptorInfo.TotalNumberOfPages)
     {
         return false;
@@ -340,8 +340,8 @@ bool PhysicalMemoryManager::FreePagesFromDescriptor(void* Address, UINTN Pages)
         CurrentOrder++;
     }
 
-    BuddyBlock* Block = (BuddyBlock*) CurrentAddress;
-    Block->Next       = BuddyFreeLists[CurrentOrder];
+    BuddyBlock* Block            = (BuddyBlock*) CurrentAddress;
+    Block->Next                  = BuddyFreeLists[CurrentOrder];
     BuddyFreeLists[CurrentOrder] = Block;
 
     MemoryDescriptorInfo.NumberOfFreePages += BlockPages;
@@ -437,8 +437,8 @@ void PhysicalMemoryManager::PrintMemoryDescriptors(FrameBufferConsole& Console) 
     }
 
     Console.printf_("Largest descriptor: base=0x%llx total=%llu free=%llu buddy=%s maxOrder=%u\n", (unsigned long long) MemoryDescriptorInfo.PhysicalAddressStart,
-                    (unsigned long long) MemoryDescriptorInfo.TotalNumberOfPages, (unsigned long long) MemoryDescriptorInfo.NumberOfFreePages,
-                    MemoryDescriptorInfo.BitMap ? "yes" : "no", (unsigned int) BuddyMaxOrder);
+                    (unsigned long long) MemoryDescriptorInfo.TotalNumberOfPages, (unsigned long long) MemoryDescriptorInfo.NumberOfFreePages, MemoryDescriptorInfo.BitMap ? "yes" : "no",
+                    (unsigned int) BuddyMaxOrder);
 }
 
 /**

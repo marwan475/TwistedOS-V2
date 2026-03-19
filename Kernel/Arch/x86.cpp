@@ -32,22 +32,22 @@ static uint8_t        KernelInterruptStack[16384] __attribute__((aligned(16))) =
 
 extern "C"
 {
-    uint64_t SavedSystemCallUserRSP;
-    uint64_t SavedSystemCallUserRIP;
-    uint64_t SavedSystemCallUserRFLAGS;
-    uint64_t SavedSystemCallUserRAX;
-    uint64_t SavedSystemCallUserRDX;
-    uint64_t SavedSystemCallUserRBX;
-    uint64_t SavedSystemCallUserRBP;
-    uint64_t SavedSystemCallUserRSI;
-    uint64_t SavedSystemCallUserRDI;
-    uint64_t SavedSystemCallUserR8;
-    uint64_t SavedSystemCallUserR9;
-    uint64_t SavedSystemCallUserR10;
-    uint64_t SavedSystemCallUserR12;
-    uint64_t SavedSystemCallUserR13;
-    uint64_t SavedSystemCallUserR14;
-    uint64_t SavedSystemCallUserR15;
+    extern uint64_t SavedSystemCallUserRSP;
+    extern uint64_t SavedSystemCallUserRIP;
+    extern uint64_t SavedSystemCallUserRFLAGS;
+    extern uint64_t SavedSystemCallUserRAX;
+    extern uint64_t SavedSystemCallUserRDX;
+    extern uint64_t SavedSystemCallUserRBX;
+    extern uint64_t SavedSystemCallUserRBP;
+    extern uint64_t SavedSystemCallUserRSI;
+    extern uint64_t SavedSystemCallUserRDI;
+    extern uint64_t SavedSystemCallUserR8;
+    extern uint64_t SavedSystemCallUserR9;
+    extern uint64_t SavedSystemCallUserR10;
+    extern uint64_t SavedSystemCallUserR12;
+    extern uint64_t SavedSystemCallUserR13;
+    extern uint64_t SavedSystemCallUserR14;
+    extern uint64_t SavedSystemCallUserR15;
 }
 
 static Process* GetCurrentProcessForSystemCallFrame()
@@ -295,12 +295,11 @@ extern "C" void ISRHANDLER(Registers* reg)
             uint64_t FaultAddress = 0;
             __asm__ __volatile__("mov %%cr2, %0" : "=r"(FaultAddress));
 
-            Dispatcher*        ActiveDispatcher = Dispatcher::GetActive();
+            Dispatcher* ActiveDispatcher = Dispatcher::GetActive();
             if (ActiveDispatcher != nullptr)
             {
-
-        
-                ActiveDispatcher->GetResourceLayer()->GetTTY()->printf_("Page fault: cr2=%p rip=%p err=%p cs=%p rsp=%p\n", (void*) FaultAddress, (void*) reg->rip, (void*) reg->error_code, (void*) reg->cs, (void*) reg->rsp);
+                ActiveDispatcher->GetResourceLayer()->GetTTY()->printf_("Page fault: cr2=%p rip=%p err=%p cs=%p rsp=%p\n", (void*) FaultAddress, (void*) reg->rip, (void*) reg->error_code,
+                                                                        (void*) reg->cs, (void*) reg->rsp);
             }
 
             while (1)

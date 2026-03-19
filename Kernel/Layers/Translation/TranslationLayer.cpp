@@ -21,7 +21,7 @@ constexpr int64_t LINUX_ERR_ENOSYS = -38;
 constexpr int64_t LINUX_ERR_ECHILD = -10;
 
 constexpr uint64_t SYSCALL_COPY_CHUNK_SIZE = 4096;
-constexpr uint64_t SYSCALL_PATH_MAX         = 4096;
+constexpr uint64_t SYSCALL_PATH_MAX        = 4096;
 
 constexpr uint64_t LINUX_O_ACCMODE = 0x3;
 
@@ -51,7 +51,7 @@ bool CopyUserCString(LogicLayer* Logic, const char* UserString, char* KernelBuff
 
     for (uint64_t Index = 0; Index < KernelBufferSize; ++Index)
     {
-        char Character = 0;
+        char        Character            = 0;
         const void* UserCharacterAddress = reinterpret_cast<const void*>(reinterpret_cast<uint64_t>(UserString) + Index);
         if (!Logic->CopyFromUserToKernel(UserCharacterAddress, &Character, sizeof(Character)))
         {
@@ -179,7 +179,7 @@ int64_t TranslationLayer::HandleReadSystemCall(uint64_t FileDescriptor, void* Bu
         return 0;
     }
 
-    uint8_t KernelBuffer[SYSCALL_COPY_CHUNK_SIZE];
+    uint8_t  KernelBuffer[SYSCALL_COPY_CHUNK_SIZE];
     uint64_t TotalCopied = 0;
 
     while (TotalCopied < Count)
@@ -260,7 +260,7 @@ int64_t TranslationLayer::HandleWriteSystemCall(uint64_t FileDescriptor, const v
         return 0;
     }
 
-    uint8_t KernelBuffer[SYSCALL_COPY_CHUNK_SIZE];
+    uint8_t  KernelBuffer[SYSCALL_COPY_CHUNK_SIZE];
     uint64_t TotalCopied = 0;
 
     while (TotalCopied < Count)
@@ -410,7 +410,33 @@ int64_t TranslationLayer::HandleForkSystemCall()
         return LINUX_ERR_EFAULT;
     }
 
-    LoadSavedSystemCallCpuState(&ChildProcess->State);
+    if (!CurrentProcess->HasSavedSystemCallFrame)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    const ProcessSavedSystemCallFrame& SavedFrame = CurrentProcess->SavedSystemCallFrame;
+
+    ChildProcess->State.rax    = SavedFrame.UserRAX;
+    ChildProcess->State.rcx    = 0;
+    ChildProcess->State.rdx    = SavedFrame.UserRDX;
+    ChildProcess->State.rbx    = SavedFrame.UserRBX;
+    ChildProcess->State.rbp    = SavedFrame.UserRBP;
+    ChildProcess->State.rsi    = SavedFrame.UserRSI;
+    ChildProcess->State.rdi    = SavedFrame.UserRDI;
+    ChildProcess->State.r8     = SavedFrame.UserR8;
+    ChildProcess->State.r9     = SavedFrame.UserR9;
+    ChildProcess->State.r10    = SavedFrame.UserR10;
+    ChildProcess->State.r11    = 0;
+    ChildProcess->State.r12    = SavedFrame.UserR12;
+    ChildProcess->State.r13    = SavedFrame.UserR13;
+    ChildProcess->State.r14    = SavedFrame.UserR14;
+    ChildProcess->State.r15    = SavedFrame.UserR15;
+    ChildProcess->State.rip    = SavedFrame.UserRIP;
+    ChildProcess->State.rflags = SavedFrame.UserRFLAGS;
+    ChildProcess->State.rsp    = SavedFrame.UserRSP;
+    ChildProcess->State.cs     = USER_CS;
+    ChildProcess->State.ss     = USER_SS;
     ChildProcess->State.rax = 0;
 
     return static_cast<int64_t>(ChildId);
@@ -480,7 +506,8 @@ int64_t TranslationLayer::HandleWaitSystemCall(int* Status)
         return LINUX_ERR_EFAULT;
     }
 
-    auto ConsumePendingChild = [&]() -> int64_t {
+    auto ConsumePendingChild = [&]() -> int64_t
+    {
         if (!CurrentProcess->HasPendingChildExit)
         {
             return PROCESS_ID_INVALID;

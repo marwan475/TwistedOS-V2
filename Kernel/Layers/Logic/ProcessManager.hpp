@@ -8,16 +8,15 @@
 
 #include "VirtualFileSystem.hpp"
 
-#include <KernelParameters.hpp>
-
 #include <Arch/x86.hpp>
+#include <KernelParameters.hpp>
 #include <Layers/Resource/VirtualAddressSpace.hpp>
 #include <stddef.h>
 #include <stdint.h>
 
-static constexpr size_t   MAX_PROCESSES                  = 32;
-static constexpr uint8_t  PROCESS_ID_INVALID             = 0xFF;
-static constexpr size_t   MAX_OPEN_FILES_PER_PROCESS     = 16;
+static constexpr size_t  MAX_PROCESSES              = 32;
+static constexpr uint8_t PROCESS_ID_INVALID         = 0xFF;
+static constexpr size_t  MAX_OPEN_FILES_PER_PROCESS = 16;
 
 enum ProcessState
 {
@@ -61,23 +60,23 @@ struct ProcessSavedSystemCallFrame
 
 struct Process
 {
-    uint8_t              Id;
-    uint8_t              ParrentId;
-    bool                 WaitingForChild = false;
-    bool                 WaitingForSystemCallReturn = false;
-    bool                 HasSavedSystemCallFrame = false;
-    bool                 HasPendingChildExit = false;
-    uint8_t              PendingChildId = PROCESS_ID_INVALID;
-    int32_t              PendingChildStatus = 0;
-    ProcessSavedSystemCallFrame SavedSystemCallFrame = {};
-    CpuState             State;
-    ProcessState         Status;
-    ProcessLevel         Level;
-    FILE_TYPE            FileType;
-    void*                StackPointer;
-    VirtualAddressSpace* AddressSpace              = nullptr;
-    Dentry*              CurrentFileSystemLocation = nullptr;
-    File*                FileTable[MAX_OPEN_FILES_PER_PROCESS];
+    uint8_t                     Id;
+    uint8_t                     ParrentId;
+    bool                        WaitingForChild            = false;
+    bool                        WaitingForSystemCallReturn = false;
+    bool                        HasSavedSystemCallFrame    = false;
+    bool                        HasPendingChildExit        = false;
+    uint8_t                     PendingChildId             = PROCESS_ID_INVALID;
+    int32_t                     PendingChildStatus         = 0;
+    ProcessSavedSystemCallFrame SavedSystemCallFrame       = {};
+    CpuState                    State;
+    ProcessState                Status;
+    ProcessLevel                Level;
+    FILE_TYPE                   FileType;
+    void*                       StackPointer;
+    VirtualAddressSpace*        AddressSpace              = nullptr;
+    Dentry*                     CurrentFileSystemLocation = nullptr;
+    File*                       FileTable[MAX_OPEN_FILES_PER_PROCESS];
 };
 
 class ProcessManager

@@ -104,8 +104,8 @@ extern "C"
 
         kmemset((void*) KernelHeapVirtualAddrStart, 0, KERNEL_HEAP_PAGES * PAGE_SIZE);
 
-        DispatcherParameters Params = {&PMM, &VMM, &Console, (uint64_t) KernelHeapVirtualAddrStart, (uint64_t) KernelHeapVirtualAddrEnd,
-                                       KernelArgs.GopMode, KernelArgs.InitramfsAddress, KernelArgs.InitramfsSize};
+        DispatcherParameters Params
+                = {&PMM, &VMM, &Console, (uint64_t) KernelHeapVirtualAddrStart, (uint64_t) KernelHeapVirtualAddrEnd, KernelArgs.GopMode, KernelArgs.InitramfsAddress, KernelArgs.InitramfsSize};
         DispatcherEntry(Params);
     }
 
@@ -137,8 +137,8 @@ extern "C"
 
         ActiveDispatcher->GetLogicLayer()->GetVirtualFileSystem()->MountInitRamFileSystem(ActiveDispatcher->GetResourceLayer()->GetRamFileSystemManager());
 
-        TTY* Terminal = ActiveDispatcher->GetResourceLayer()->GetTTY();
-        FrameBuffer* FB = ActiveDispatcher->GetResourceLayer()->GetFrameBuffer();
+        TTY*         Terminal = ActiveDispatcher->GetResourceLayer()->GetTTY();
+        FrameBuffer* FB       = ActiveDispatcher->GetResourceLayer()->GetFrameBuffer();
         if (Terminal != nullptr)
         {
             ActiveDispatcher->GetLogicLayer()->GetVirtualFileSystem()->RegisterDevice("/dev/tty", Terminal, Terminal->GetFileOperations());

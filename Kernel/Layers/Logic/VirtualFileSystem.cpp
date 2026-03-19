@@ -137,10 +137,10 @@ int64_t DefaultMemoryMapFileOperation(File* OpenFile, uint64_t Length, uint64_t 
 }
 
 FileOperations DefaultFileOperations = {
-    &DefaultReadFileOperation,
-    &DefaultWriteFileOperation,
-    &DefaultSeekFileOperation,
-    &DefaultMemoryMapFileOperation,
+        &DefaultReadFileOperation,
+        &DefaultWriteFileOperation,
+        &DefaultSeekFileOperation,
+        &DefaultMemoryMapFileOperation,
 };
 
 /**
