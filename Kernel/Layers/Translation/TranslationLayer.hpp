@@ -26,6 +26,7 @@ public:
     int64_t HandleWritevSystemCall(uint64_t FileDescriptor, const void* Iov, uint64_t IovCount);
     int64_t HandleIoctlSystemCall(uint64_t FileDescriptor, uint64_t Request, uint64_t Argument);
     int64_t HandleOpenSystemCall(const char* Path, uint64_t Flags);
+    int64_t HandleStatSystemCall(const char* Path, void* Buffer);
     int64_t HandleCloseSystemCall(uint64_t FileDescriptor);
     int64_t HandleGetcwdSystemCall(char* Buffer, uint64_t Size);
     int64_t HandleMprotectSystemCall(void* Address, uint64_t Length, int64_t Protection);

@@ -43,6 +43,38 @@ struct LinuxIOVec
     uint64_t Length;
 };
 
+struct LinuxStat
+{
+    uint64_t Device;
+    uint64_t Inode;
+    uint64_t HardLinkCount;
+    uint32_t Mode;
+    uint32_t UserId;
+    uint32_t GroupId;
+    uint32_t Padding0;
+    uint64_t SpecialDevice;
+    int64_t  Size;
+    int64_t  BlockSize;
+    int64_t  Blocks;
+    uint64_t AccessTimeSeconds;
+    uint64_t AccessTimeNanoseconds;
+    uint64_t ModifyTimeSeconds;
+    uint64_t ModifyTimeNanoseconds;
+    uint64_t ChangeTimeSeconds;
+    uint64_t ChangeTimeNanoseconds;
+    int64_t  Reserved[3];
+};
+
+constexpr uint32_t LINUX_S_IFREG = 0100000;
+constexpr uint32_t LINUX_S_IFDIR = 0040000;
+constexpr uint32_t LINUX_S_IFLNK = 0120000;
+constexpr uint32_t LINUX_S_IFCHR = 0020000;
+
+constexpr uint32_t LINUX_DEFAULT_FILE_PERMISSIONS = 0644;
+constexpr uint32_t LINUX_DEFAULT_DIR_PERMISSIONS  = 0755;
+constexpr uint32_t LINUX_DEFAULT_LINK_PERMISSIONS = 0777;
+constexpr uint32_t LINUX_DEFAULT_CHAR_PERMISSIONS = 0666;
+
 constexpr int64_t LINUX_MAP_SHARED    = 0x01;
 constexpr int64_t LINUX_MAP_PRIVATE   = 0x02;
 constexpr int64_t LINUX_MAP_FIXED     = 0x10;
@@ -135,6 +167,27 @@ bool CopyUserCString(LogicLayer* Logic, const char* UserString, char* KernelBuff
 
     KernelBuffer[KernelBufferSize - 1] = '\0';
     return false;
+}
+
+uint32_t BuildLinuxModeFromNode(const INode* Node)
+{
+    if (Node == nullptr)
+    {
+        return 0;
+    }
+
+    switch (Node->NodeType)
+    {
+        case INODE_DIR:
+            return (LINUX_S_IFDIR | LINUX_DEFAULT_DIR_PERMISSIONS);
+        case INODE_SYMLINK:
+            return (LINUX_S_IFLNK | LINUX_DEFAULT_LINK_PERMISSIONS);
+        case INODE_DEV:
+            return (LINUX_S_IFCHR | LINUX_DEFAULT_CHAR_PERMISSIONS);
+        case INODE_FILE:
+        default:
+            return (LINUX_S_IFREG | LINUX_DEFAULT_FILE_PERMISSIONS);
+    }
 }
 
 uint64_t CStrLength(const char* String)
@@ -1028,6 +1081,60 @@ int64_t TranslationLayer::HandleOpenSystemCall(const char* Path, uint64_t Flags)
     }
 
     return LINUX_ERR_EMFILE;
+}
+
+int64_t TranslationLayer::HandleStatSystemCall(const char* Path, void* Buffer)
+{
+    if (Logic == nullptr || Path == nullptr || Buffer == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    VirtualFileSystem* VFS = Logic->GetVirtualFileSystem();
+    if (VFS == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    char KernelPath[SYSCALL_PATH_MAX] = {};
+    if (!CopyUserCString(Logic, Path, KernelPath, sizeof(KernelPath)))
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    Dentry* NodeDentry = VFS->Lookup(KernelPath);
+    if (NodeDentry == nullptr || NodeDentry->inode == nullptr)
+    {
+        return LINUX_ERR_ENOENT;
+    }
+
+    const INode* Node = NodeDentry->inode;
+
+    LinuxStat KernelStat           = {};
+    KernelStat.Device             = 1;
+    KernelStat.Inode              = reinterpret_cast<uint64_t>(Node);
+    KernelStat.HardLinkCount      = (Node->NodeType == INODE_DIR) ? 2 : 1;
+    KernelStat.Mode               = BuildLinuxModeFromNode(Node);
+    KernelStat.UserId             = 0;
+    KernelStat.GroupId            = 0;
+    KernelStat.Padding0           = 0;
+    KernelStat.SpecialDevice      = (Node->NodeType == INODE_DEV) ? KernelStat.Inode : 0;
+    KernelStat.Size               = static_cast<int64_t>(Node->NodeSize);
+    KernelStat.BlockSize          = static_cast<int64_t>(PAGE_SIZE);
+    KernelStat.Blocks             = static_cast<int64_t>((Node->NodeSize + 511) / 512);
+    KernelStat.AccessTimeSeconds  = 0;
+    KernelStat.AccessTimeNanoseconds = 0;
+    KernelStat.ModifyTimeSeconds  = 0;
+    KernelStat.ModifyTimeNanoseconds = 0;
+    KernelStat.ChangeTimeSeconds  = 0;
+    KernelStat.ChangeTimeNanoseconds = 0;
+
+    if (!Logic->CopyFromKernelToUser(&KernelStat, Buffer, sizeof(KernelStat)))
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    return 0;
 }
 
 int64_t TranslationLayer::HandleCloseSystemCall(uint64_t FileDescriptor)
