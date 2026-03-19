@@ -206,8 +206,6 @@ ResourceLayerTaskSwitchUserAsm:
     mov ax, USER_SS
     mov ds, ax
     mov es, ax
-    mov fs, ax
-    mov gs, ax
     pop rax
 
     push qword [r11 + CPUSTATE_SS]
