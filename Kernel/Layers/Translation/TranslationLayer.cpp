@@ -1065,6 +1065,26 @@ int64_t TranslationLayer::HandleGetpidSystemCall()
     return static_cast<int64_t>(CurrentProcess->Id);
 }
 
+int64_t TranslationLayer::HandleGetuidSystemCall()
+{
+    return 0;
+}
+
+int64_t TranslationLayer::HandleGetgidSystemCall()
+{
+    return 0;
+}
+
+int64_t TranslationLayer::HandleGeteuidSystemCall()
+{
+    return 0;
+}
+
+int64_t TranslationLayer::HandleGetegidSystemCall()
+{
+    return 0;
+}
+
 int64_t TranslationLayer::HandleDup2SystemCall(uint64_t OldFileDescriptor, uint64_t NewFileDescriptor)
 {
     if (Logic == nullptr)
