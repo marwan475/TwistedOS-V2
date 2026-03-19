@@ -1535,6 +1535,34 @@ int64_t TranslationLayer::HandleForkSystemCall()
     return static_cast<int64_t>(ChildId);
 }
 
+int64_t TranslationLayer::HandleExitGroupSystemCall(int64_t Status)
+{
+    if (Logic == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    ProcessManager* PM = Logic->GetProcessManager();
+    if (PM == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    Process* CurrentProcess = PM->GetRunningProcess();
+    if (CurrentProcess == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    int32_t WaitStatus = static_cast<int32_t>((static_cast<uint64_t>(Status) & 0xFFULL) << 8);
+    uint8_t CurrentProcessId = CurrentProcess->Id;
+
+    Logic->KillProcess(CurrentProcessId, WaitStatus);
+    Logic->Schedule();
+
+    return 0;
+}
+
 int64_t TranslationLayer::HandleExecveSystemCall(const char* Path, const char* const* Argv, const char* const* Envp)
 {
     if (Logic == nullptr || Path == nullptr)

@@ -61,6 +61,7 @@ public:
     void                   kfree(void* Ptr);
     uint64_t               ReadCurrentPageTable() const;
     void                   LoadPageTable(uint64_t PageMapL4TableAddr);
+    void                   LoadKernelPageTable();
     void*                  LoadFileFromInitramfs(const char* Path, uint64_t* Size);
     void                   TaskSwitchKernel(CpuState* OldState, const CpuState& NewState);
     void                   TaskSwitchUser(CpuState* OldState, const CpuState& NewState, const VirtualAddressSpace* NewAddressSpace);

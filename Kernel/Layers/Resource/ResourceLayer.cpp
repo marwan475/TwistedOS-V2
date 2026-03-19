@@ -268,6 +268,16 @@ void ResourceLayer::LoadPageTable(uint64_t PageMapL4TableAddr)
     __asm__ __volatile__("mov %0, %%cr3" : : "r"(PageMapL4TableAddr) : "memory");
 }
 
+void ResourceLayer::LoadKernelPageTable()
+{
+    if (KernelPageMapL4TableAddr == 0)
+    {
+        return;
+    }
+
+    LoadPageTable(KernelPageMapL4TableAddr);
+}
+
 // Loads file from initramfs into PMM-allocated physical pages
 /**
  * Function: ResourceLayer::LoadFileFromInitramfs

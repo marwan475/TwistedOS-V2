@@ -105,6 +105,9 @@ int64_t TranslationLayer::HandlePosixSystemCallNumber(uint64_t SystemCallNumber,
         case 218: // set_tid_address
             return HandleSetTidAddressSystemCall(reinterpret_cast<int*>(Arg1));
             break;
+        case 231: // exit_group
+            return HandleExitGroupSystemCall(static_cast<int64_t>(Arg1));
+            break;
             /*
                     case 4: // stat
                         break;

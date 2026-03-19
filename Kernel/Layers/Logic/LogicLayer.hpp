@@ -60,7 +60,7 @@ public:
     bool               RunProcess(uint8_t Id);
     bool               CopyFromUserToKernel(const void* UserSource, void* KernelDestination, uint64_t Count);
     bool               CopyFromKernelToUser(const void* KernelSource, void* UserDestination, uint64_t Count);
-    void               KillProcess(uint8_t Id);
+    void               KillProcess(uint8_t Id, int32_t ExitStatus = 0);
     void               SleepProcess(uint8_t Id, uint64_t WaitTicks);
     void               WakeProcess(uint8_t Id);
     void               BlockProcess(uint8_t Id);

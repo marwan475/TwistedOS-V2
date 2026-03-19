@@ -1714,12 +1714,14 @@ void LogicLayer::CleanUpELF(VirtualAddressSpace* AddressSpace)
  * Description: Terminates a process and releases its resources based on process type.
  * Parameters:
  *   uint8_t Id - Process ID to terminate.
+ *   int32_t ExitStatus - Linux wait-style child exit status.
  * Returns:
  *   void - No return value.
  */
-void LogicLayer::KillProcess(uint8_t Id)
+void LogicLayer::KillProcess(uint8_t Id, int32_t ExitStatus)
 {
     Process* TargetProcess = PM->GetProcessById(Id);
+    Process* RunningProcess = PM->GetRunningProcess();
     uint8_t  ParentId      = PROCESS_ID_INVALID;
 
     if (TargetProcess != nullptr)
@@ -1729,6 +1731,11 @@ void LogicLayer::KillProcess(uint8_t Id)
 
     if (TargetProcess != nullptr && TargetProcess->Level == PROCESS_LEVEL_USER && TargetProcess->AddressSpace != nullptr)
     {
+        if (RunningProcess != nullptr && RunningProcess->Id == Id && Resource != nullptr)
+        {
+            Resource->LoadKernelPageTable();
+        }
+
         VirtualAddressSpace* AddressSpace = TargetProcess->AddressSpace;
 
         bool IsELFProcess = TargetProcess->FileType == FILE_TYPE_ELF;
@@ -1770,7 +1777,7 @@ void LogicLayer::KillProcess(uint8_t Id)
     {
         ParentProcess->HasPendingChildExit = true;
         ParentProcess->PendingChildId      = Id;
-        ParentProcess->PendingChildStatus  = 0;
+        ParentProcess->PendingChildStatus  = ExitStatus;
 
         if (ParentProcess->WaitingForChild)
         {
@@ -1900,7 +1907,24 @@ bool LogicLayer::RunProcess(uint8_t Id)
     Process* CurrentProcess = PM->GetRunningProcess();
     if (CurrentProcess == nullptr)
     {
-        return false;
+        TargetProcess->Status = PROCESS_RUNNING;
+        PM->UpdateCurrentProcessId(TargetProcess->Id);
+
+        CpuState BootstrapState = {};
+        BootstrapState.cs       = KERNEL_CS;
+        BootstrapState.ss       = KERNEL_SS;
+
+        if (TargetProcess->Level == PROCESS_LEVEL_USER)
+        {
+            SetUserFSBase(TargetProcess->UserFSBase);
+            Resource->TaskSwitchUser(&BootstrapState, TargetProcess->State, TargetProcess->AddressSpace);
+        }
+        else
+        {
+            Resource->TaskSwitchKernel(&BootstrapState, TargetProcess->State);
+        }
+
+        return true;
     }
 
     if (CurrentProcess == TargetProcess)
