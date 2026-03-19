@@ -643,6 +643,155 @@ uint8_t LogicLayer::ChangeProcessExecution(uint8_t Id, const char* FilePath)
     return Id;
 }
 
+/**
+ * Function: LogicLayer::CopyProcess
+ * Description: Creates a fork-like copy of an existing user process and records the parent process ID.
+ * Parameters:
+ *   uint8_t Id - Source process ID to clone.
+ * Returns:
+ *   uint8_t - New child process ID or 0xFF on failure.
+ */
+uint8_t LogicLayer::CopyProcess(uint8_t Id)
+{
+    if (PM == nullptr || Sched == nullptr || Resource == nullptr)
+    {
+        return PROCESS_ID_INVALID;
+    }
+
+    Process* SourceProcess = PM->GetProcessById(Id);
+    if (SourceProcess == nullptr || SourceProcess->Status == PROCESS_TERMINATED || SourceProcess->Level != PROCESS_LEVEL_USER || SourceProcess->AddressSpace == nullptr)
+    {
+        return PROCESS_ID_INVALID;
+    }
+
+    PhysicalMemoryManager* PMM = Resource->GetPMM();
+    if (PMM == nullptr)
+    {
+        return PROCESS_ID_INVALID;
+    }
+
+    VirtualAddressSpace* SourceAddressSpace = SourceProcess->AddressSpace;
+    uint64_t             SourceCodeSize      = SourceAddressSpace->GetCodeSize();
+    uint64_t             SourceCodePhysAddr  = SourceAddressSpace->GetCodePhysicalAddress();
+
+    if (SourceCodeSize == 0 || SourceCodePhysAddr == 0)
+    {
+        return PROCESS_ID_INVALID;
+    }
+
+    uint64_t SourceCodePages = (SourceCodeSize + PAGE_SIZE - 1) / PAGE_SIZE;
+    void*    CopiedImage     = PMM->AllocatePagesFromDescriptor(SourceCodePages);
+    if (CopiedImage == nullptr)
+    {
+        return PROCESS_ID_INVALID;
+    }
+
+    kmemset(CopiedImage, 0, SourceCodePages * PAGE_SIZE);
+    memcpy(CopiedImage, reinterpret_cast<void*>(SourceCodePhysAddr), static_cast<size_t>(SourceCodeSize));
+
+    VirtualAddressSpace* NewAddressSpace = nullptr;
+
+    if (SourceProcess->FileType == FILE_TYPE_ELF)
+    {
+        if (ELF == nullptr)
+        {
+            PMM->FreePagesFromDescriptor(CopiedImage, SourceCodePages);
+            return PROCESS_ID_INVALID;
+        }
+
+        ELFHeader Header = ELF->ParseELF(reinterpret_cast<uint64_t>(CopiedImage));
+        if (!ELF->ValidateELF(Header))
+        {
+            PMM->FreePagesFromDescriptor(CopiedImage, SourceCodePages);
+            return PROCESS_ID_INVALID;
+        }
+
+        NewAddressSpace = MapELF(reinterpret_cast<uint64_t>(CopiedImage), SourceCodeSize, Header);
+    }
+    else
+    {
+        NewAddressSpace = MapRawBinary(reinterpret_cast<uint64_t>(CopiedImage), SourceCodeSize);
+    }
+
+    if (NewAddressSpace == nullptr)
+    {
+        PMM->FreePagesFromDescriptor(CopiedImage, SourceCodePages);
+        return PROCESS_ID_INVALID;
+    }
+
+    uint64_t SourceHeapPhysAddr = SourceAddressSpace->GetHeapPhysicalAddress();
+    uint64_t SourceHeapSize     = SourceAddressSpace->GetHeapSize();
+    uint64_t ChildHeapPhysAddr  = NewAddressSpace->GetHeapPhysicalAddress();
+    uint64_t ChildHeapSize      = NewAddressSpace->GetHeapSize();
+
+    uint64_t HeapBytesToCopy = (SourceHeapSize < ChildHeapSize) ? SourceHeapSize : ChildHeapSize;
+    if (SourceHeapPhysAddr != 0 && ChildHeapPhysAddr != 0 && HeapBytesToCopy != 0)
+    {
+        memcpy(reinterpret_cast<void*>(ChildHeapPhysAddr), reinterpret_cast<void*>(SourceHeapPhysAddr), static_cast<size_t>(HeapBytesToCopy));
+    }
+
+    uint64_t SourceStackPhysAddr = SourceAddressSpace->GetStackPhysicalAddress();
+    uint64_t SourceStackSize     = SourceAddressSpace->GetStackSize();
+    uint64_t ChildStackPhysAddr  = NewAddressSpace->GetStackPhysicalAddress();
+    uint64_t ChildStackSize      = NewAddressSpace->GetStackSize();
+
+    uint64_t StackBytesToCopy = (SourceStackSize < ChildStackSize) ? SourceStackSize : ChildStackSize;
+    if (SourceStackPhysAddr != 0 && ChildStackPhysAddr != 0 && StackBytesToCopy != 0)
+    {
+        memcpy(reinterpret_cast<void*>(ChildStackPhysAddr), reinterpret_cast<void*>(SourceStackPhysAddr), static_cast<size_t>(StackBytesToCopy));
+    }
+
+    CpuState ChildState = SourceProcess->State;
+    ChildState.rax      = 0;
+
+    uint8_t ChildId = PM->CreateUserProcess(reinterpret_cast<void*>(NewAddressSpace->GetStackVirtualAddressStart()), ChildState, NewAddressSpace, SourceProcess->FileType);
+    if (ChildId == PROCESS_ID_INVALID)
+    {
+        if (SourceProcess->FileType == FILE_TYPE_ELF)
+        {
+            CleanUpELF(NewAddressSpace);
+        }
+        else
+        {
+            CleanUpRawBinary(NewAddressSpace);
+        }
+
+        delete NewAddressSpace;
+        return PROCESS_ID_INVALID;
+    }
+
+    Process* ChildProcess = PM->GetProcessById(ChildId);
+    if (ChildProcess == nullptr)
+    {
+        KillProcess(ChildId);
+        return PROCESS_ID_INVALID;
+    }
+
+    ChildProcess->ParrentId                = SourceProcess->Id;
+    ChildProcess->CurrentFileSystemLocation = SourceProcess->CurrentFileSystemLocation;
+
+    for (size_t FileIndex = 0; FileIndex < MAX_OPEN_FILES_PER_PROCESS; ++FileIndex)
+    {
+        if (SourceProcess->FileTable[FileIndex] == nullptr)
+        {
+            continue;
+        }
+
+        File* CopiedFile = new File;
+        if (CopiedFile == nullptr)
+        {
+            KillProcess(ChildId);
+            return PROCESS_ID_INVALID;
+        }
+
+        *CopiedFile                    = *SourceProcess->FileTable[FileIndex];
+        ChildProcess->FileTable[FileIndex] = CopiedFile;
+    }
+
+    Sched->AddToReadyQueue(ChildId);
+    return ChildId;
+}
+
 
 /**
  * Function: LogicLayer::CreateUserProcessFromVFS

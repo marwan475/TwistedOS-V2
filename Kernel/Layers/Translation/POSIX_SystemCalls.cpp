@@ -45,6 +45,9 @@ int64_t TranslationLayer::HandlePosixSystemCallNumber(uint64_t SystemCallNumber,
         case 3: // close
             return HandleCloseSystemCall(Arg1);
             break;
+        case 57: // fork
+            return HandleForkSystemCall();
+            break;
         case 59: // execve
             return HandleExecveSystemCall(reinterpret_cast<const char*>(Arg1), reinterpret_cast<const char* const*>(Arg2), reinterpret_cast<const char* const*>(Arg3));
             break;

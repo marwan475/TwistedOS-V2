@@ -39,10 +39,14 @@ ProcessManager::ProcessManager() : CurrentProcessId(PROCESS_ID_INVALID)
     for (size_t index = 0; index < MaxProcesses; ++index)
     {
         Processes[index].Id           = static_cast<uint8_t>(index);
+        Processes[index].ParrentId    = PROCESS_ID_INVALID;
+        Processes[index].WaitingForChild = false;
         Processes[index].Status       = PROCESS_TERMINATED;
         Processes[index].Level        = PROCESS_LEVEL_KERNEL;
         Processes[index].FileType     = FILE_TYPE_RAW_BINARY;
         Processes[index].StackPointer = nullptr;
+        Processes[index].AddressSpace = nullptr;
+        Processes[index].CurrentFileSystemLocation = nullptr;
         Processes[index].State        = {};
         ResetProcessFileTable(Processes[index]);
     }
@@ -138,11 +142,14 @@ uint8_t ProcessManager::CreateKernelProcess(void* StackPointer, CpuState Initial
     {
         if (Processes[index].Status == PROCESS_TERMINATED)
         {
+            Processes[index].ParrentId    = PROCESS_ID_INVALID;
+            Processes[index].WaitingForChild = false;
             Processes[index].Status       = PROCESS_READY;
             Processes[index].Level        = PROCESS_LEVEL_KERNEL;
             Processes[index].FileType     = FILE_TYPE_RAW_BINARY;
             Processes[index].StackPointer = StackPointer;
             Processes[index].AddressSpace = nullptr;
+            Processes[index].CurrentFileSystemLocation = nullptr;
             Processes[index].State        = InitialState;
             ResetProcessFileTable(Processes[index]);
             return Processes[index].Id;
@@ -168,11 +175,14 @@ uint8_t ProcessManager::CreateUserProcess(void* StackPointer, CpuState InitialSt
     {
         if (Processes[index].Status == PROCESS_TERMINATED)
         {
+            Processes[index].ParrentId    = PROCESS_ID_INVALID;
+            Processes[index].WaitingForChild = false;
             Processes[index].Status       = PROCESS_READY;
             Processes[index].Level        = PROCESS_LEVEL_USER;
             Processes[index].FileType     = FileType;
             Processes[index].StackPointer = StackPointer;
             Processes[index].AddressSpace = AddressSpace;
+            Processes[index].CurrentFileSystemLocation = nullptr;
             Processes[index].State        = InitialState;
             ResetProcessFileTable(Processes[index]);
             return Processes[index].Id;
@@ -196,8 +206,16 @@ void* ProcessManager::KillProcess(uint8_t Id)
     {
         return nullptr; // Invalid process ID
     }
+    void* StackPointer = Processes[Id].StackPointer;
+
     ReleaseProcessFileTable(Processes[Id]);
-    Processes[Id].Status   = PROCESS_TERMINATED;
-    Processes[Id].FileType = FILE_TYPE_RAW_BINARY;
-    return Processes[Id].StackPointer;
+    Processes[Id].ParrentId = PROCESS_ID_INVALID;
+    Processes[Id].WaitingForChild = false;
+    Processes[Id].Status    = PROCESS_TERMINATED;
+    Processes[Id].FileType  = FILE_TYPE_RAW_BINARY;
+    Processes[Id].StackPointer = nullptr;
+    Processes[Id].AddressSpace = nullptr;
+    Processes[Id].CurrentFileSystemLocation = nullptr;
+    Processes[Id].State = {};
+    return StackPointer;
 }

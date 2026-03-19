@@ -45,6 +45,8 @@ enum FILE_TYPE
 struct Process
 {
     uint8_t              Id;
+    uint8_t              ParrentId;
+    bool                 WaitingForChild = false;
     CpuState             State;
     ProcessState         Status;
     ProcessLevel         Level;
