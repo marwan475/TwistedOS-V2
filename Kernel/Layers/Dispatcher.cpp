@@ -210,7 +210,16 @@ int64_t Dispatcher::HandleSystemCall(uint64_t SystemCallNumber, uint64_t Arg1, u
     }
 #endif
 
-    return Translation.HandlePosixSystemCallNumber(SystemCallNumber, Arg1, Arg2, Arg3, Arg4, Arg5, Arg6);
+    int64_t Result = Translation.HandlePosixSystemCallNumber(SystemCallNumber, Arg1, Arg2, Arg3, Arg4, Arg5, Arg6);
+
+#ifdef DEBUG_BUILD
+    if (Terminal != nullptr)
+    {
+        Terminal->printf_("syscall_ret: n=%lu r=%lld\n", SystemCallNumber, static_cast<long long>(Result));
+    }
+#endif
+
+    return Result;
 }
 
 /**

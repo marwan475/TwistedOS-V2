@@ -29,6 +29,7 @@ enum FileFlags
 };
 
 struct File;
+struct Dentry;
 
 struct FileOperations
 {
@@ -58,6 +59,9 @@ struct File
     INode*    Node;
     uint64_t  CurrentOffset;
     FileFlags AccessFlags;
+    uint64_t  OpenFlags;
+    uint64_t  DescriptorFlags;
+    Dentry*   DirectoryEntry;
 };
 
 struct Dentry

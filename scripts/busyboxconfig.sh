@@ -174,6 +174,52 @@ else
 	make oldconfig < "${answers_file}"
 	rm -f "${answers_file}"
 fi
+
+set_config_y() {
+	local sym="$1"
+	if grep -q "^# ${sym} is not set$" .config; then
+		sed -i "s/^# ${sym} is not set$/${sym}=y/" .config
+	elif grep -q "^${sym}=" .config; then
+		sed -i "s/^${sym}=.*/${sym}=y/" .config
+	else
+		echo "${sym}=y" >> .config
+	fi
+}
+
+set_config_n() {
+	local sym="$1"
+	if grep -q "^${sym}=" .config; then
+		sed -i "s/^${sym}=.*/# ${sym} is not set/" .config
+	elif ! grep -q "^# ${sym} is not set$" .config; then
+		echo "# ${sym} is not set" >> .config
+	fi
+}
+
+# Force required applets/modes regardless of Kconfig defaults.
+set_config_y CONFIG_STATIC
+set_config_y CONFIG_LS
+set_config_y CONFIG_CAT
+set_config_y CONFIG_ECHO
+set_config_y CONFIG_SH_IS_ASH
+set_config_y CONFIG_SHELL_ASH
+set_config_n CONFIG_HUSH
+set_config_n CONFIG_SHELL_HUSH
+set_config_n CONFIG_FEATURE_SH_STANDALONE
+
+if make -n olddefconfig >/dev/null 2>&1; then
+	make olddefconfig
+fi
+
+if ! grep -q '^CONFIG_LS=y$' .config; then
+	echo "Error: BusyBox configuration did not enable CONFIG_LS=y" >&2
+	exit 1
+fi
+
+if ! grep -q '^CONFIG_SHELL_ASH=y$' .config; then
+	echo "Error: BusyBox configuration did not enable CONFIG_SHELL_ASH=y" >&2
+	exit 1
+fi
+
 echo "BusyBox minimal musl config written."
 
 make \

@@ -12,6 +12,7 @@
 #include <CommonUtils.hpp>
 #include <Layers/Dispatcher.hpp>
 #include <Layers/Resource/ResourceLayer.hpp>
+#include <Layers/Resource/TTY.hpp>
 #include <Layers/Resource/VirtualAddressSpace.hpp>
 #include <Memory/VirtualMemoryManager.hpp>
 
@@ -28,6 +29,7 @@ constexpr int64_t LINUX_ERR_ENOSYS = -38;
 constexpr int64_t LINUX_ERR_ENOTTY = -25;
 constexpr int64_t LINUX_ERR_ECHILD = -10;
 constexpr int64_t LINUX_ERR_ENODEV = -19;
+constexpr int64_t LINUX_ERR_ENOTDIR = -20;
 constexpr int64_t LINUX_ERR_EPERM  = -1;
 constexpr int64_t LINUX_ERR_ERANGE = -34;
 
@@ -88,6 +90,33 @@ constexpr int64_t LINUX_PROT_NONE  = 0x0;
 constexpr uint64_t MMAP_DEFAULT_BASE = 0x0000000001000000;
 
 constexpr uint64_t LINUX_O_ACCMODE = 0x3;
+constexpr uint64_t LINUX_O_APPEND  = 0x400;
+constexpr uint64_t LINUX_O_NONBLOCK = 0x800;
+constexpr uint64_t LINUX_O_ASYNC   = 0x2000;
+constexpr uint64_t LINUX_O_DIRECT  = 0x4000;
+constexpr uint64_t LINUX_O_NOATIME = 0x40000;
+constexpr uint64_t LINUX_O_CLOEXEC = 0x80000;
+
+constexpr uint64_t LINUX_F_DUPFD          = 0;
+constexpr uint64_t LINUX_F_GETFD          = 1;
+constexpr uint64_t LINUX_F_SETFD          = 2;
+constexpr uint64_t LINUX_F_GETFL          = 3;
+constexpr uint64_t LINUX_F_SETFL          = 4;
+constexpr uint64_t LINUX_F_DUPFD_CLOEXEC  = 1030;
+constexpr uint64_t LINUX_FD_CLOEXEC       = 0x1;
+
+constexpr uint64_t LINUX_FCNTL_SETFL_ALLOWED = (LINUX_O_APPEND | LINUX_O_NONBLOCK | LINUX_O_ASYNC | LINUX_O_DIRECT | LINUX_O_NOATIME);
+
+constexpr int64_t LINUX_AT_FDCWD          = -100;
+constexpr int64_t LINUX_AT_SYMLINK_NOFOLLOW = 0x100;
+constexpr int64_t LINUX_AT_NO_AUTOMOUNT     = 0x800;
+constexpr int64_t LINUX_AT_EMPTY_PATH       = 0x1000;
+
+constexpr uint8_t LINUX_DT_UNKNOWN = 0;
+constexpr uint8_t LINUX_DT_CHR     = 2;
+constexpr uint8_t LINUX_DT_DIR     = 4;
+constexpr uint8_t LINUX_DT_REG     = 8;
+constexpr uint8_t LINUX_DT_LNK     = 10;
 
 constexpr uint64_t LINUX_ARCH_SET_FS = 0x1002;
 
@@ -124,6 +153,14 @@ bool IsCanonicalX86_64Address(uint64_t Address)
     constexpr uint64_t UPPER_CANONICAL_MIN = 0xFFFF800000000000ULL;
     return (Address <= LOWER_CANONICAL_MAX) || (Address >= UPPER_CANONICAL_MIN);
 }
+
+struct __attribute__((packed)) LinuxDirent64Header
+{
+    uint64_t Inode;
+    uint64_t Offset;
+    uint16_t RecordLength;
+    uint8_t  Type;
+};
 
 FileFlags DecodeAccessFlags(uint64_t Flags)
 {
@@ -204,6 +241,108 @@ uint64_t CStrLength(const char* String)
     }
 
     return Length;
+}
+
+uint64_t AlignUpValue(uint64_t Value, uint64_t Alignment)
+{
+    if (Alignment == 0)
+    {
+        return Value;
+    }
+
+    uint64_t Remainder = Value % Alignment;
+    if (Remainder == 0)
+    {
+        return Value;
+    }
+
+    return Value + (Alignment - Remainder);
+}
+
+uint8_t BuildLinuxDirentTypeFromNode(const INode* Node)
+{
+    if (Node == nullptr)
+    {
+        return LINUX_DT_UNKNOWN;
+    }
+
+    switch (Node->NodeType)
+    {
+        case INODE_DIR:
+            return LINUX_DT_DIR;
+        case INODE_SYMLINK:
+            return LINUX_DT_LNK;
+        case INODE_DEV:
+            return LINUX_DT_CHR;
+        case INODE_FILE:
+        default:
+            return LINUX_DT_REG;
+    }
+}
+
+void PopulateLinuxStatFromNode(const INode* Node, LinuxStat* KernelStat)
+{
+    if (Node == nullptr || KernelStat == nullptr)
+    {
+        return;
+    }
+
+    *KernelStat                        = {};
+    KernelStat->Device                = 1;
+    KernelStat->Inode                 = reinterpret_cast<uint64_t>(Node);
+    KernelStat->HardLinkCount         = (Node->NodeType == INODE_DIR) ? 2 : 1;
+    KernelStat->Mode                  = BuildLinuxModeFromNode(Node);
+    KernelStat->UserId                = 0;
+    KernelStat->GroupId               = 0;
+    KernelStat->Padding0              = 0;
+    KernelStat->SpecialDevice         = (Node->NodeType == INODE_DEV) ? KernelStat->Inode : 0;
+    KernelStat->Size                  = static_cast<int64_t>(Node->NodeSize);
+    KernelStat->BlockSize             = static_cast<int64_t>(PAGE_SIZE);
+    KernelStat->Blocks                = static_cast<int64_t>((Node->NodeSize + 511) / 512);
+    KernelStat->AccessTimeSeconds     = 0;
+    KernelStat->AccessTimeNanoseconds = 0;
+    KernelStat->ModifyTimeSeconds     = 0;
+    KernelStat->ModifyTimeNanoseconds = 0;
+    KernelStat->ChangeTimeSeconds     = 0;
+    KernelStat->ChangeTimeNanoseconds = 0;
+}
+
+int64_t AllocateProcessFileDescriptor(Process* CurrentProcess, Dentry* NodeDentry, uint64_t Flags)
+{
+    if (CurrentProcess == nullptr || NodeDentry == nullptr || NodeDentry->inode == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    if ((Flags & LINUX_O_ACCMODE) == LINUX_O_ACCMODE)
+    {
+        return LINUX_ERR_EINVAL;
+    }
+
+    for (size_t FileDescriptor = 0; FileDescriptor < MAX_OPEN_FILES_PER_PROCESS; ++FileDescriptor)
+    {
+        if (CurrentProcess->FileTable[FileDescriptor] == nullptr)
+        {
+            File* NewFile = new File;
+            if (NewFile == nullptr)
+            {
+                return LINUX_ERR_ENOMEM;
+            }
+
+            NewFile->FileDescriptor = FileDescriptor;
+            NewFile->Node           = NodeDentry->inode;
+            NewFile->CurrentOffset  = 0;
+            NewFile->AccessFlags    = DecodeAccessFlags(Flags);
+            NewFile->OpenFlags      = Flags;
+            NewFile->DescriptorFlags = ((Flags & LINUX_O_CLOEXEC) != 0) ? LINUX_FD_CLOEXEC : 0;
+            NewFile->DirectoryEntry = NodeDentry;
+
+            CurrentProcess->FileTable[FileDescriptor] = NewFile;
+            return static_cast<int64_t>(FileDescriptor);
+        }
+    }
+
+    return LINUX_ERR_EMFILE;
 }
 
 void FreeKernelStringVector(LogicLayer* Logic, char** KernelVector, uint64_t Count)
@@ -1083,15 +1222,10 @@ int64_t TranslationLayer::HandleOpenSystemCall(const char* Path, uint64_t Flags)
         return LINUX_ERR_EFAULT;
     }
 
-    Dentry* NodeDentry = VFS->Lookup(Path);
-    if (NodeDentry == nullptr || NodeDentry->inode == nullptr)
+    char KernelPath[SYSCALL_PATH_MAX] = {};
+    if (!CopyUserCString(Logic, Path, KernelPath, sizeof(KernelPath)))
     {
-        return LINUX_ERR_ENOENT;
-    }
-
-    if ((Flags & LINUX_O_ACCMODE) == LINUX_O_ACCMODE)
-    {
-        return LINUX_ERR_EINVAL;
+        return LINUX_ERR_EFAULT;
     }
 
     Process* CurrentProcess = PM->GetRunningProcess();
@@ -1100,21 +1234,162 @@ int64_t TranslationLayer::HandleOpenSystemCall(const char* Path, uint64_t Flags)
         return LINUX_ERR_EFAULT;
     }
 
-    for (size_t FileDescriptor = 0; FileDescriptor < MAX_OPEN_FILES_PER_PROCESS; ++FileDescriptor)
+    char EffectivePath[SYSCALL_PATH_MAX] = {};
+    const char* LookupPath               = KernelPath;
+
+    if (KernelPath[0] != '/')
     {
-        if (CurrentProcess->FileTable[FileDescriptor] == nullptr)
+        Dentry* BaseDirectory = CurrentProcess->CurrentFileSystemLocation;
+        if (BaseDirectory == nullptr)
         {
-            File* NewFile                             = new File;
-            NewFile->FileDescriptor                   = FileDescriptor;
-            NewFile->Node                             = NodeDentry->inode;
-            NewFile->CurrentOffset                    = 0;
-            NewFile->AccessFlags                      = DecodeAccessFlags(Flags);
-            CurrentProcess->FileTable[FileDescriptor] = NewFile;
-            return static_cast<int64_t>(FileDescriptor);
+            return LINUX_ERR_ENOENT;
         }
+
+        char BasePath[SYSCALL_PATH_MAX] = {};
+        if (!BuildAbsolutePathFromDentry(BaseDirectory, BasePath, sizeof(BasePath)))
+        {
+            return LINUX_ERR_EFAULT;
+        }
+
+        uint64_t BasePathLength = CStrLength(BasePath);
+        uint64_t RelativeLength = CStrLength(KernelPath);
+        uint64_t NeedsSeparator = (BasePathLength > 1) ? 1 : 0;
+        uint64_t RequiredBytes  = BasePathLength + NeedsSeparator + RelativeLength + 1;
+        if (RequiredBytes > sizeof(EffectivePath))
+        {
+            return LINUX_ERR_EINVAL;
+        }
+
+        memcpy(EffectivePath, BasePath, static_cast<size_t>(BasePathLength));
+        uint64_t Cursor = BasePathLength;
+        if (NeedsSeparator != 0)
+        {
+            EffectivePath[Cursor++] = '/';
+        }
+
+        memcpy(EffectivePath + Cursor, KernelPath, static_cast<size_t>(RelativeLength));
+        EffectivePath[Cursor + RelativeLength] = '\0';
+        LookupPath = EffectivePath;
     }
 
-    return LINUX_ERR_EMFILE;
+    Dentry* NodeDentry = VFS->Lookup(LookupPath);
+    if (NodeDentry == nullptr || NodeDentry->inode == nullptr)
+    {
+        return LINUX_ERR_ENOENT;
+    }
+
+    return AllocateProcessFileDescriptor(CurrentProcess, NodeDentry, Flags);
+}
+
+int64_t TranslationLayer::HandleOpenAtSystemCall(int64_t DirectoryFileDescriptor, const char* Path, uint64_t Flags, uint64_t Mode)
+{
+    (void) Mode;
+
+    if (Logic == nullptr || Path == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    VirtualFileSystem* VFS = Logic->GetVirtualFileSystem();
+    ProcessManager*    PM  = Logic->GetProcessManager();
+    if (VFS == nullptr || PM == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    Process* CurrentProcess = PM->GetRunningProcess();
+    if (CurrentProcess == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    char KernelPath[SYSCALL_PATH_MAX] = {};
+    if (!CopyUserCString(Logic, Path, KernelPath, sizeof(KernelPath)))
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    if (KernelPath[0] == '\0')
+    {
+        return LINUX_ERR_ENOENT;
+    }
+
+    Dentry* NodeDentry = nullptr;
+
+    if (KernelPath[0] == '/')
+    {
+        NodeDentry = VFS->Lookup(KernelPath);
+    }
+    else
+    {
+        Dentry* BaseDirectory = nullptr;
+
+        if (DirectoryFileDescriptor == LINUX_AT_FDCWD)
+        {
+            BaseDirectory = CurrentProcess->CurrentFileSystemLocation;
+        }
+        else
+        {
+            if (DirectoryFileDescriptor < 0 || static_cast<uint64_t>(DirectoryFileDescriptor) >= MAX_OPEN_FILES_PER_PROCESS)
+            {
+                return LINUX_ERR_EBADF;
+            }
+
+            File* DirectoryFile = CurrentProcess->FileTable[static_cast<size_t>(DirectoryFileDescriptor)];
+            if (DirectoryFile == nullptr || DirectoryFile->Node == nullptr)
+            {
+                return LINUX_ERR_EBADF;
+            }
+
+            if (DirectoryFile->Node->NodeType != INODE_DIR)
+            {
+                return LINUX_ERR_ENOTDIR;
+            }
+
+            BaseDirectory = DirectoryFile->DirectoryEntry;
+        }
+
+        if (BaseDirectory == nullptr)
+        {
+            return LINUX_ERR_ENOENT;
+        }
+
+        char BasePath[SYSCALL_PATH_MAX] = {};
+        if (!BuildAbsolutePathFromDentry(BaseDirectory, BasePath, sizeof(BasePath)))
+        {
+            return LINUX_ERR_EFAULT;
+        }
+
+        char AbsolutePath[SYSCALL_PATH_MAX] = {};
+        uint64_t BasePathLength  = CStrLength(BasePath);
+        uint64_t RelativeLength  = CStrLength(KernelPath);
+        uint64_t NeedsSeparator  = (BasePathLength > 1) ? 1 : 0;
+        uint64_t RequiredBytes   = BasePathLength + NeedsSeparator + RelativeLength + 1;
+
+        if (RequiredBytes > sizeof(AbsolutePath))
+        {
+            return LINUX_ERR_EINVAL;
+        }
+
+        memcpy(AbsolutePath, BasePath, static_cast<size_t>(BasePathLength));
+        uint64_t Cursor = BasePathLength;
+        if (NeedsSeparator != 0)
+        {
+            AbsolutePath[Cursor++] = '/';
+        }
+
+        memcpy(AbsolutePath + Cursor, KernelPath, static_cast<size_t>(RelativeLength));
+        AbsolutePath[Cursor + RelativeLength] = '\0';
+
+        NodeDentry = VFS->Lookup(AbsolutePath);
+    }
+
+    if (NodeDentry == nullptr || NodeDentry->inode == nullptr)
+    {
+        return LINUX_ERR_ENOENT;
+    }
+
+    return AllocateProcessFileDescriptor(CurrentProcess, NodeDentry, Flags);
 }
 
 int64_t TranslationLayer::HandleStatSystemCall(const char* Path, void* Buffer)
@@ -1136,32 +1411,64 @@ int64_t TranslationLayer::HandleStatSystemCall(const char* Path, void* Buffer)
         return LINUX_ERR_EFAULT;
     }
 
-    Dentry* NodeDentry = VFS->Lookup(KernelPath);
+    ProcessManager* PM = Logic->GetProcessManager();
+    if (PM == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    Process* CurrentProcess = PM->GetRunningProcess();
+    if (CurrentProcess == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    char EffectivePath[SYSCALL_PATH_MAX] = {};
+    const char* LookupPath               = KernelPath;
+
+    if (KernelPath[0] != '/')
+    {
+        Dentry* BaseDirectory = CurrentProcess->CurrentFileSystemLocation;
+        if (BaseDirectory == nullptr)
+        {
+            return LINUX_ERR_ENOENT;
+        }
+
+        char BasePath[SYSCALL_PATH_MAX] = {};
+        if (!BuildAbsolutePathFromDentry(BaseDirectory, BasePath, sizeof(BasePath)))
+        {
+            return LINUX_ERR_EFAULT;
+        }
+
+        uint64_t BasePathLength = CStrLength(BasePath);
+        uint64_t RelativeLength = CStrLength(KernelPath);
+        uint64_t NeedsSeparator = (BasePathLength > 1) ? 1 : 0;
+        uint64_t RequiredBytes  = BasePathLength + NeedsSeparator + RelativeLength + 1;
+        if (RequiredBytes > sizeof(EffectivePath))
+        {
+            return LINUX_ERR_EINVAL;
+        }
+
+        memcpy(EffectivePath, BasePath, static_cast<size_t>(BasePathLength));
+        uint64_t Cursor = BasePathLength;
+        if (NeedsSeparator != 0)
+        {
+            EffectivePath[Cursor++] = '/';
+        }
+
+        memcpy(EffectivePath + Cursor, KernelPath, static_cast<size_t>(RelativeLength));
+        EffectivePath[Cursor + RelativeLength] = '\0';
+        LookupPath = EffectivePath;
+    }
+
+    Dentry* NodeDentry = VFS->Lookup(LookupPath);
     if (NodeDentry == nullptr || NodeDentry->inode == nullptr)
     {
         return LINUX_ERR_ENOENT;
     }
 
-    const INode* Node = NodeDentry->inode;
-
-    LinuxStat KernelStat           = {};
-    KernelStat.Device             = 1;
-    KernelStat.Inode              = reinterpret_cast<uint64_t>(Node);
-    KernelStat.HardLinkCount      = (Node->NodeType == INODE_DIR) ? 2 : 1;
-    KernelStat.Mode               = BuildLinuxModeFromNode(Node);
-    KernelStat.UserId             = 0;
-    KernelStat.GroupId            = 0;
-    KernelStat.Padding0           = 0;
-    KernelStat.SpecialDevice      = (Node->NodeType == INODE_DEV) ? KernelStat.Inode : 0;
-    KernelStat.Size               = static_cast<int64_t>(Node->NodeSize);
-    KernelStat.BlockSize          = static_cast<int64_t>(PAGE_SIZE);
-    KernelStat.Blocks             = static_cast<int64_t>((Node->NodeSize + 511) / 512);
-    KernelStat.AccessTimeSeconds  = 0;
-    KernelStat.AccessTimeNanoseconds = 0;
-    KernelStat.ModifyTimeSeconds  = 0;
-    KernelStat.ModifyTimeNanoseconds = 0;
-    KernelStat.ChangeTimeSeconds  = 0;
-    KernelStat.ChangeTimeNanoseconds = 0;
+    LinuxStat KernelStat = {};
+    PopulateLinuxStatFromNode(NodeDentry->inode, &KernelStat);
 
     if (!Logic->CopyFromKernelToUser(&KernelStat, Buffer, sizeof(KernelStat)))
     {
@@ -1169,6 +1476,431 @@ int64_t TranslationLayer::HandleStatSystemCall(const char* Path, void* Buffer)
     }
 
     return 0;
+}
+
+int64_t TranslationLayer::HandleNewFstatatSystemCall(int64_t DirectoryFileDescriptor, const char* Path, void* Buffer, int64_t Flags)
+{
+    if (Logic == nullptr || Buffer == nullptr || Path == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    int64_t AllowedFlags = LINUX_AT_SYMLINK_NOFOLLOW | LINUX_AT_NO_AUTOMOUNT | LINUX_AT_EMPTY_PATH;
+    if ((Flags & ~AllowedFlags) != 0)
+    {
+        return LINUX_ERR_EINVAL;
+    }
+
+    VirtualFileSystem* VFS = Logic->GetVirtualFileSystem();
+    ProcessManager*    PM  = Logic->GetProcessManager();
+    if (VFS == nullptr || PM == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    Process* CurrentProcess = PM->GetRunningProcess();
+    if (CurrentProcess == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    char KernelPath[SYSCALL_PATH_MAX] = {};
+    if (!CopyUserCString(Logic, Path, KernelPath, sizeof(KernelPath)))
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    Dentry* NodeDentry = nullptr;
+
+    if (KernelPath[0] == '\0' && (Flags & LINUX_AT_EMPTY_PATH) != 0)
+    {
+        if (DirectoryFileDescriptor == LINUX_AT_FDCWD)
+        {
+            NodeDentry = CurrentProcess->CurrentFileSystemLocation;
+        }
+        else
+        {
+            if (DirectoryFileDescriptor < 0 || static_cast<uint64_t>(DirectoryFileDescriptor) >= MAX_OPEN_FILES_PER_PROCESS)
+            {
+                return LINUX_ERR_EBADF;
+            }
+
+            File* ExistingFile = CurrentProcess->FileTable[static_cast<size_t>(DirectoryFileDescriptor)];
+            if (ExistingFile == nullptr || ExistingFile->Node == nullptr)
+            {
+                return LINUX_ERR_EBADF;
+            }
+
+            NodeDentry = ExistingFile->DirectoryEntry;
+            if (NodeDentry == nullptr)
+            {
+                return LINUX_ERR_EFAULT;
+            }
+        }
+    }
+    else
+    {
+        if (KernelPath[0] == '\0')
+        {
+            return LINUX_ERR_ENOENT;
+        }
+
+        if (KernelPath[0] == '/')
+        {
+            NodeDentry = VFS->Lookup(KernelPath);
+        }
+        else
+        {
+            Dentry* BaseDirectory = nullptr;
+
+            if (DirectoryFileDescriptor == LINUX_AT_FDCWD)
+            {
+                BaseDirectory = CurrentProcess->CurrentFileSystemLocation;
+            }
+            else
+            {
+                if (DirectoryFileDescriptor < 0 || static_cast<uint64_t>(DirectoryFileDescriptor) >= MAX_OPEN_FILES_PER_PROCESS)
+                {
+                    return LINUX_ERR_EBADF;
+                }
+
+                File* DirectoryFile = CurrentProcess->FileTable[static_cast<size_t>(DirectoryFileDescriptor)];
+                if (DirectoryFile == nullptr || DirectoryFile->Node == nullptr)
+                {
+                    return LINUX_ERR_EBADF;
+                }
+
+                if (DirectoryFile->Node->NodeType != INODE_DIR)
+                {
+                    return LINUX_ERR_ENOTDIR;
+                }
+
+                BaseDirectory = DirectoryFile->DirectoryEntry;
+            }
+
+            if (BaseDirectory == nullptr)
+            {
+                return LINUX_ERR_ENOENT;
+            }
+
+            char BasePath[SYSCALL_PATH_MAX] = {};
+            if (!BuildAbsolutePathFromDentry(BaseDirectory, BasePath, sizeof(BasePath)))
+            {
+                return LINUX_ERR_EFAULT;
+            }
+
+            char AbsolutePath[SYSCALL_PATH_MAX] = {};
+            uint64_t BasePathLength = CStrLength(BasePath);
+            uint64_t RelativeLength = CStrLength(KernelPath);
+            uint64_t NeedsSeparator = (BasePathLength > 1) ? 1 : 0;
+            uint64_t RequiredBytes  = BasePathLength + NeedsSeparator + RelativeLength + 1;
+
+            if (RequiredBytes > sizeof(AbsolutePath))
+            {
+                return LINUX_ERR_EINVAL;
+            }
+
+            memcpy(AbsolutePath, BasePath, static_cast<size_t>(BasePathLength));
+            uint64_t Cursor = BasePathLength;
+            if (NeedsSeparator != 0)
+            {
+                AbsolutePath[Cursor++] = '/';
+            }
+
+            memcpy(AbsolutePath + Cursor, KernelPath, static_cast<size_t>(RelativeLength));
+            AbsolutePath[Cursor + RelativeLength] = '\0';
+
+            NodeDentry = VFS->Lookup(AbsolutePath);
+        }
+    }
+
+    if (NodeDentry == nullptr || NodeDentry->inode == nullptr)
+    {
+        return LINUX_ERR_ENOENT;
+    }
+
+    LinuxStat KernelStat = {};
+    PopulateLinuxStatFromNode(NodeDentry->inode, &KernelStat);
+    if (!Logic->CopyFromKernelToUser(&KernelStat, Buffer, sizeof(KernelStat)))
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    return 0;
+}
+
+int64_t TranslationLayer::HandleGetdents64SystemCall(uint64_t FileDescriptor, void* Buffer, uint64_t BufferSize)
+{
+    if (Logic == nullptr || (Buffer == nullptr && BufferSize != 0))
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    if (BufferSize == 0)
+    {
+        return 0;
+    }
+
+    ProcessManager* PM = Logic->GetProcessManager();
+    if (PM == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    Process* CurrentProcess = PM->GetRunningProcess();
+    if (CurrentProcess == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    if (FileDescriptor >= MAX_OPEN_FILES_PER_PROCESS)
+    {
+        return LINUX_ERR_EBADF;
+    }
+
+    File* OpenFile = CurrentProcess->FileTable[FileDescriptor];
+    if (OpenFile == nullptr || OpenFile->Node == nullptr)
+    {
+        return LINUX_ERR_EBADF;
+    }
+
+    if (OpenFile->AccessFlags == WRITE)
+    {
+        return LINUX_ERR_EBADF;
+    }
+
+    if (OpenFile->Node->NodeType != INODE_DIR || OpenFile->DirectoryEntry == nullptr)
+    {
+        return LINUX_ERR_ENOTDIR;
+    }
+
+    uint8_t* KernelBuffer = reinterpret_cast<uint8_t*>(Logic->kmalloc(BufferSize));
+    if (KernelBuffer == nullptr)
+    {
+        return LINUX_ERR_ENOMEM;
+    }
+
+    uint64_t Cursor          = 0;
+    uint64_t EntryIndex      = OpenFile->CurrentOffset;
+    Dentry*  DirectoryDentry = OpenFile->DirectoryEntry;
+    uint64_t TotalEntries    = DirectoryDentry->child_count + 2;
+
+    while (EntryIndex < TotalEntries)
+    {
+        const char* EntryName = nullptr;
+        INode*      EntryNode = nullptr;
+
+        if (EntryIndex == 0)
+        {
+            EntryName = ".";
+            EntryNode = DirectoryDentry->inode;
+        }
+        else if (EntryIndex == 1)
+        {
+            EntryName = "..";
+            EntryNode = (DirectoryDentry->parent != nullptr && DirectoryDentry->parent->inode != nullptr) ? DirectoryDentry->parent->inode : DirectoryDentry->inode;
+        }
+        else
+        {
+            uint64_t ChildIndex = EntryIndex - 2;
+            Dentry*  Child      = DirectoryDentry->children[ChildIndex];
+            if (Child == nullptr || Child->inode == nullptr || Child->name == nullptr)
+            {
+                ++EntryIndex;
+                continue;
+            }
+
+            EntryName = Child->name;
+            EntryNode = Child->inode;
+        }
+
+        uint64_t NameLength    = CStrLength(EntryName);
+        uint64_t MinimumRecord = sizeof(LinuxDirent64Header) + NameLength + 1;
+        uint64_t RecordLength  = AlignUpValue(MinimumRecord, 8);
+
+        if (RecordLength > BufferSize)
+        {
+            Logic->kfree(KernelBuffer);
+            return LINUX_ERR_EINVAL;
+        }
+
+        if ((Cursor + RecordLength) > BufferSize)
+        {
+            break;
+        }
+
+        LinuxDirent64Header Header = {};
+        Header.Inode       = reinterpret_cast<uint64_t>(EntryNode);
+        Header.Offset      = EntryIndex + 1;
+        Header.RecordLength = static_cast<uint16_t>(RecordLength);
+        Header.Type        = BuildLinuxDirentTypeFromNode(EntryNode);
+
+        memcpy(KernelBuffer + Cursor, &Header, sizeof(Header));
+        memcpy(KernelBuffer + Cursor + sizeof(Header), EntryName, static_cast<size_t>(NameLength));
+        KernelBuffer[Cursor + sizeof(Header) + NameLength] = '\0';
+
+        uint64_t PaddingStart = Cursor + sizeof(Header) + NameLength + 1;
+        for (uint64_t PaddingIndex = PaddingStart; PaddingIndex < (Cursor + RecordLength); ++PaddingIndex)
+        {
+            KernelBuffer[PaddingIndex] = 0;
+        }
+
+        Cursor += RecordLength;
+        ++EntryIndex;
+    }
+
+    if (Cursor == 0)
+    {
+        Logic->kfree(KernelBuffer);
+        return 0;
+    }
+
+    if (!Logic->CopyFromKernelToUser(KernelBuffer, Buffer, Cursor))
+    {
+        Logic->kfree(KernelBuffer);
+        return LINUX_ERR_EFAULT;
+    }
+
+    OpenFile->CurrentOffset = EntryIndex;
+
+    Logic->kfree(KernelBuffer);
+    return static_cast<int64_t>(Cursor);
+}
+
+int64_t TranslationLayer::HandleFcntlSystemCall(uint64_t FileDescriptor, uint64_t Command, uint64_t Argument)
+{
+    if (Logic == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    ProcessManager* PM = Logic->GetProcessManager();
+    if (PM == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    Process* CurrentProcess = PM->GetRunningProcess();
+    if (CurrentProcess == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    auto DuplicateFromMinimum = [&](uint64_t MinimumFileDescriptor, bool SetCloseOnExec) -> int64_t
+    {
+        if (FileDescriptor >= MAX_OPEN_FILES_PER_PROCESS)
+        {
+            return LINUX_ERR_EBADF;
+        }
+
+        File* SourceFile = CurrentProcess->FileTable[FileDescriptor];
+        if (SourceFile == nullptr)
+        {
+            return LINUX_ERR_EBADF;
+        }
+
+        if (MinimumFileDescriptor >= MAX_OPEN_FILES_PER_PROCESS)
+        {
+            return LINUX_ERR_EINVAL;
+        }
+
+        for (size_t CandidateDescriptor = static_cast<size_t>(MinimumFileDescriptor); CandidateDescriptor < MAX_OPEN_FILES_PER_PROCESS; ++CandidateDescriptor)
+        {
+            if (CurrentProcess->FileTable[CandidateDescriptor] != nullptr)
+            {
+                continue;
+            }
+
+            File* DuplicatedFile = new File;
+            if (DuplicatedFile == nullptr)
+            {
+                return LINUX_ERR_ENOMEM;
+            }
+
+            *DuplicatedFile                  = *SourceFile;
+            DuplicatedFile->FileDescriptor   = CandidateDescriptor;
+            DuplicatedFile->DescriptorFlags = SetCloseOnExec ? LINUX_FD_CLOEXEC : 0;
+
+            CurrentProcess->FileTable[CandidateDescriptor] = DuplicatedFile;
+            return static_cast<int64_t>(CandidateDescriptor);
+        }
+
+        return LINUX_ERR_EMFILE;
+    };
+
+    switch (Command)
+    {
+        case LINUX_F_DUPFD:
+            return DuplicateFromMinimum(Argument, false);
+        case LINUX_F_DUPFD_CLOEXEC:
+            return DuplicateFromMinimum(Argument, true);
+        case LINUX_F_GETFD:
+            {
+                    if (FileDescriptor >= MAX_OPEN_FILES_PER_PROCESS)
+                    {
+                        return LINUX_ERR_EBADF;
+                    }
+
+                    File* OpenFile = CurrentProcess->FileTable[FileDescriptor];
+                    if (OpenFile == nullptr)
+                    {
+                        return LINUX_ERR_EBADF;
+                    }
+
+                    return static_cast<int64_t>(OpenFile->DescriptorFlags & LINUX_FD_CLOEXEC);
+            }
+        case LINUX_F_SETFD:
+            {
+                    if (FileDescriptor >= MAX_OPEN_FILES_PER_PROCESS)
+                    {
+                        return LINUX_ERR_EBADF;
+                    }
+
+                    File* OpenFile = CurrentProcess->FileTable[FileDescriptor];
+                    if (OpenFile == nullptr)
+                    {
+                        return LINUX_ERR_EBADF;
+                    }
+
+                    OpenFile->DescriptorFlags = (Argument & LINUX_FD_CLOEXEC);
+                    return 0;
+            }
+        case LINUX_F_GETFL:
+            {
+                    if (FileDescriptor >= MAX_OPEN_FILES_PER_PROCESS)
+                    {
+                        return LINUX_ERR_EBADF;
+                    }
+
+                    File* OpenFile = CurrentProcess->FileTable[FileDescriptor];
+                    if (OpenFile == nullptr)
+                    {
+                        return LINUX_ERR_EBADF;
+                    }
+
+                    return static_cast<int64_t>(OpenFile->OpenFlags);
+            }
+        case LINUX_F_SETFL:
+            {
+                    if (FileDescriptor >= MAX_OPEN_FILES_PER_PROCESS)
+                    {
+                        return LINUX_ERR_EBADF;
+                    }
+
+                    File* OpenFile = CurrentProcess->FileTable[FileDescriptor];
+                    if (OpenFile == nullptr)
+                    {
+                        return LINUX_ERR_EBADF;
+                    }
+
+                    uint64_t PreservedFlags = OpenFile->OpenFlags & ~LINUX_FCNTL_SETFL_ALLOWED;
+                    uint64_t RequestedFlags = Argument & LINUX_FCNTL_SETFL_ALLOWED;
+                    OpenFile->OpenFlags     = (PreservedFlags | RequestedFlags);
+                    return 0;
+            }
+        default:
+            return LINUX_ERR_ENOSYS;
+    }
 }
 
 int64_t TranslationLayer::HandleCloseSystemCall(uint64_t FileDescriptor)
@@ -1608,6 +2340,7 @@ int64_t TranslationLayer::HandleDup2SystemCall(uint64_t OldFileDescriptor, uint6
 
     *DuplicatedFile              = *SourceFile;
     DuplicatedFile->FileDescriptor = NewFileDescriptor;
+    DuplicatedFile->DescriptorFlags = 0;
     CurrentProcess->FileTable[NewFileDescriptor] = DuplicatedFile;
 
     return static_cast<int64_t>(NewFileDescriptor);
@@ -1886,6 +2619,22 @@ int64_t TranslationLayer::HandleExecveSystemCall(const char* Path, const char* c
     bool     IsArgvValid = CopyUserStringVector(Logic, Argv, &KernelArgv, &KernelArgc);
     bool     IsEnvpValid = IsArgvValid && CopyUserStringVector(Logic, Envp, &KernelEnvp, &KernelEnvc);
 
+#ifdef DEBUG_BUILD
+    {
+        Dispatcher* ActiveDispatcher = Dispatcher::GetActive();
+        if (ActiveDispatcher != nullptr && ActiveDispatcher->GetResourceLayer() != nullptr)
+        {
+            TTY* Terminal = ActiveDispatcher->GetResourceLayer()->GetTTY();
+            if (Terminal != nullptr)
+            {
+                const char* Arg0 = (KernelArgv != nullptr && KernelArgc > 0 && KernelArgv[0] != nullptr) ? KernelArgv[0] : "<null>";
+                const char* Arg1 = (KernelArgv != nullptr && KernelArgc > 1 && KernelArgv[1] != nullptr) ? KernelArgv[1] : "<null>";
+                Terminal->printf_("execve_dbg: path='%s' argc=%lu argv0='%s' argv1='%s'\n", KernelPathBuffer, KernelArgc, Arg0, Arg1);
+            }
+        }
+    }
+#endif
+
     if (!IsEnvpValid)
     {
         if (KernelArgv != nullptr)
@@ -1919,6 +2668,23 @@ int64_t TranslationLayer::HandleExecveSystemCall(const char* Path, const char* c
     if (ChangedProcessId == PROCESS_ID_INVALID)
     {
         return LINUX_ERR_ENOENT;
+    }
+
+    for (size_t FileIndex = 0; FileIndex < MAX_OPEN_FILES_PER_PROCESS; ++FileIndex)
+    {
+        File* OpenFile = CurrentProcess->FileTable[FileIndex];
+        if (OpenFile == nullptr)
+        {
+            continue;
+        }
+
+        if ((OpenFile->DescriptorFlags & LINUX_FD_CLOEXEC) == 0)
+        {
+            continue;
+        }
+
+        delete OpenFile;
+        CurrentProcess->FileTable[FileIndex] = nullptr;
     }
 
     ReleaseVforkParentIfNeeded(Logic, CurrentProcess);

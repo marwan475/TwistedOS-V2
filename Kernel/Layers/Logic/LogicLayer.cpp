@@ -7,6 +7,7 @@
 #include "LogicLayer.hpp"
 
 #include "Layers/Resource/ResourceLayer.hpp"
+#include "Layers/Resource/TTY.hpp"
 
 #include <CommonUtils.hpp>
 
@@ -321,6 +322,39 @@ bool InitializeExecveUserEntry(ResourceLayer* Resource, VirtualAddressSpace* Add
         State->rdi = Argc;
         State->rsi = ArgvUserPointer;
         State->rdx = EnvpUserPointer;
+
+#ifdef DEBUG_BUILD
+        if (Resource->GetTTY() != nullptr)
+        {
+            uint64_t StackArgc = 0;
+            uint64_t StackArgv0Pointer = 0;
+            memcpy(&StackArgc, reinterpret_cast<const void*>(StackCursor), sizeof(StackArgc));
+            memcpy(&StackArgv0Pointer, reinterpret_cast<const void*>(StackCursor + sizeof(uint64_t)), sizeof(StackArgv0Pointer));
+
+            char StackArgv0[64] = {};
+            if (StackArgv0Pointer >= StackBottom && StackArgv0Pointer < StackTop)
+            {
+                uint64_t MaxReadable = StackTop - StackArgv0Pointer;
+                uint64_t Limit       = (MaxReadable < (sizeof(StackArgv0) - 1)) ? MaxReadable : (sizeof(StackArgv0) - 1);
+                for (uint64_t Index = 0; Index < Limit; ++Index)
+                {
+                    char CurrentChar = *(reinterpret_cast<const char*>(StackArgv0Pointer + Index));
+                    StackArgv0[Index] = CurrentChar;
+                    if (CurrentChar == '\0')
+                    {
+                        break;
+                    }
+                }
+                StackArgv0[sizeof(StackArgv0) - 1] = '\0';
+            }
+            else
+            {
+                memcpy(StackArgv0, "<out-of-stack>", sizeof("<out-of-stack>"));
+            }
+
+            Resource->GetTTY()->printf_("exec_stack_dbg: rsp=%p argc=%lu argv0_ptr=%p argv0='%s'\n", (void*) StackCursor, StackArgc, (void*) StackArgv0Pointer, StackArgv0);
+        }
+#endif
     } while (false);
 
     Resource->LoadPageTable(PreviousPageTable);
@@ -377,7 +411,20 @@ bool IsRangeWithinAnyELFRegion(const VirtualAddressSpaceELF* ELFAddressSpace, ui
 
     for (size_t RegionIndex = 0; RegionIndex < RegionCount; ++RegionIndex)
     {
-        if (IsRangeWithin(Regions[RegionIndex].VirtualAddress, Regions[RegionIndex].Size, Address, Count))
+        const ELFMemoryRegion& Region = Regions[RegionIndex];
+        if (Region.Size == 0)
+        {
+            continue;
+        }
+
+        uint64_t RegionStart = AlignDownToPage(Region.VirtualAddress);
+        uint64_t RegionEnd   = AlignUpToPage(Region.VirtualAddress + Region.Size);
+        if (RegionEnd <= RegionStart)
+        {
+            continue;
+        }
+
+        if (IsRangeWithin(RegionStart, RegionEnd - RegionStart, Address, Count))
         {
             return true;
         }

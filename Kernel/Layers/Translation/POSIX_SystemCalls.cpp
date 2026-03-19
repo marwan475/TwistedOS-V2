@@ -87,6 +87,12 @@ int64_t TranslationLayer::HandlePosixSystemCallNumber(uint64_t SystemCallNumber,
         case 61: // wait
             return HandleWaitSystemCall(reinterpret_cast<int*>(Arg1));
             break;
+        case 72: // fcntl
+            return HandleFcntlSystemCall(Arg1, Arg2, Arg3);
+            break;
+        case 78: // getdents
+            return HandleGetdents64SystemCall(Arg1, reinterpret_cast<void*>(Arg2), Arg3);
+            break;
         case 79: // getcwd
             return HandleGetcwdSystemCall(reinterpret_cast<char*>(Arg1), Arg2);
             break;
@@ -108,11 +114,20 @@ int64_t TranslationLayer::HandlePosixSystemCallNumber(uint64_t SystemCallNumber,
         case 158: // arch_prctl
             return HandleArchPrctlSystemCall(Arg1, Arg2);
             break;
+        case 217: // getdents64
+            return HandleGetdents64SystemCall(Arg1, reinterpret_cast<void*>(Arg2), Arg3);
+            break;
         case 218: // set_tid_address
             return HandleSetTidAddressSystemCall(reinterpret_cast<int*>(Arg1));
             break;
         case 231: // exit_group
             return HandleExitGroupSystemCall(static_cast<int64_t>(Arg1));
+            break;
+        case 257: // openat
+            return HandleOpenAtSystemCall(static_cast<int64_t>(Arg1), reinterpret_cast<const char*>(Arg2), Arg3, Arg4);
+            break;
+        case 262: // newfstatat
+            return HandleNewFstatatSystemCall(static_cast<int64_t>(Arg1), reinterpret_cast<const char*>(Arg2), reinterpret_cast<void*>(Arg3), static_cast<int64_t>(Arg4));
             break;
             /*
                     case 4: // stat
@@ -1018,10 +1033,7 @@ int64_t TranslationLayer::HandlePosixSystemCallNumber(uint64_t SystemCallNumber,
                     {
                         ActiveDispatcher->GetResourceLayer()->GetTTY()->printf_("Unknown system call: %d\n", (int) SystemCallNumber);
                     }
-                    while(1)
-                    {
-                        asm volatile("hlt");
-                    }
+                    return LINUX_ERR_ENOSYS;
             }
             break;
     }

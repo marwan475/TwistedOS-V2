@@ -67,6 +67,12 @@ INITRAMFS = initramfs.cpio
 IMG = $(OUTPUT)
 DRIVE = TwistedDrive.img
 ROOTFS_DIR = initramfs/rootfs
+ROOTFS_BIN_DIR = $(ROOTFS_DIR)/bin
+ROOTFS_BUSYBOX = $(ROOTFS_BIN_DIR)/busybox
+ROOTFS_SH = $(ROOTFS_BIN_DIR)/sh
+ROOTFS_LS = $(ROOTFS_BIN_DIR)/ls
+ROOTFS_CAT = $(ROOTFS_BIN_DIR)/cat
+ROOTFS_ECHO = $(ROOTFS_BIN_DIR)/echo
 INIT2_CC = gcc
 INIT_SRC = initramfs/init.c
 INIT_BIN = $(ROOTFS_DIR)/init
@@ -103,7 +109,8 @@ QEMU_FULL = \
 all: bin build $(EFI) $(KERNEL) $(INITRAMFS) $(IMG) $(DRIVE)
 
 clean:
-	rm -rf $(BIN) $(BUILD) $(OUTPUT) *.pcap $(INIT_BIN) $(TEST1_BIN) $(TEST2_BIN)
+	rm -rf $(BIN) $(BUILD) $(OUTPUT) *.pcap $(INIT_BIN) $(TEST1_BIN) $(TEST2_BIN) \
+		$(ROOTFS_BUSYBOX) $(ROOTFS_SH) $(ROOTFS_LS) $(ROOTFS_CAT) $(ROOTFS_ECHO)
 
 build:
 	mkdir $(BUILD)
@@ -157,7 +164,15 @@ $(TEST1_BIN): $(TEST1_SRC) | build
 $(TEST2_BIN): $(TEST2_SRC) | build
 	$(INIT2_CC) -static -nostdlib -fno-pie -no-pie -fno-stack-protector -fno-stack-clash-protection -Wl,-e,_start $(TEST2_SRC) -o $(TEST2_BIN)
 
-$(INITRAMFS): $(INIT_BIN) $(TEST1_BIN) $(TEST2_BIN)
+busybox-rootfs: scripts/busyboxconfig.sh
+	@if [ -x "$(ROOTFS_BUSYBOX)" ]; then \
+		echo "BusyBox already exists at $(ROOTFS_BUSYBOX), skipping build."; \
+	else \
+		echo "BusyBox not found at $(ROOTFS_BUSYBOX), building..."; \
+		BUSYBOX_DEBUG=$(DEBUG) bash ./scripts/busyboxconfig.sh; \
+	fi
+
+$(INITRAMFS): $(INIT_BIN) $(TEST1_BIN) $(TEST2_BIN) busybox-rootfs $(ROOTFS_BUSYBOX) $(ROOTFS_SH) $(ROOTFS_LS) $(ROOTFS_CAT) $(ROOTFS_ECHO)
 	chmod +x $(INIT_BIN) $(TEST1_BIN) $(TEST2_BIN)
 	(cd $(ROOTFS_DIR) && find . -print | cpio -o -H newc) > $(BIN)$@
 
@@ -226,7 +241,7 @@ debug:
 
 ALL_SOURCE_FILES := $(shell find . -type f \( -name '*.c' -o -name '*.cpp' -o -name '*.h' -o -name '*.hpp' \))
 
-.PHONY: format qemu qemu-basic qemu-debug qemu-basic-debug gdb-kernel debug
+.PHONY: format qemu qemu-basic qemu-debug qemu-basic-debug gdb-kernel debug busybox-rootfs
 
 format:
 	@echo "Formatting all C/C++ files in repository..."
