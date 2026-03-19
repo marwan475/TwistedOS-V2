@@ -17,10 +17,6 @@
 #include <Memory/VirtualMemoryManager.hpp>
 #include <stdint.h>
 
-#define KERNEL_HEAP_PAGES 32
-#define KERNEL_HEAP_START 0xFFFFFFFF82000000
-#define KERNEL_BASE 0xFFFFFFFF80000000
-
 extern "C" void DispatcherEntry(DispatcherParameters Params);
 
 extern "C" void EFIAPI KernelEntry(KernelParameters KernelArgs) __attribute__((section(".text.entry")));
@@ -47,7 +43,7 @@ extern "C"
         FrameBufferConsole::SetActive(&Console);
         Console.printf_("Framebuffer console Initialized\n");
 
-        Console.printf_("Kernel Loaded at %p to %p\n", KERNEL_BASE, KernelArgs.KernelEndVirtual);
+        Console.printf_("Kernel Loaded at %p to %p\n", KERNEL_BASE_VIRTUAL_ADDR, KernelArgs.KernelEndVirtual);
         Console.printf_("Initramfs loaded at %p (%llu bytes)\n", (void*) KernelArgs.InitramfsAddress, (unsigned long long) KernelArgs.InitramfsSize);
 
         // Initialize GDT and TSS
