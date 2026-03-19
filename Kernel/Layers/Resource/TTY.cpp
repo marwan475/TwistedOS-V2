@@ -293,27 +293,7 @@ int64_t TTY::Read(File* OpenFile, void* Buffer, uint64_t Count)
             return LINUX_ERR_EFAULT;
         }
 
-#ifdef DEBUG_BUILD
-        printf_("tty read: pid=%u entering wait (fd offset=%lu count=%lu buffered=%lu waiting_sysret=%u saved_syscall=%u rip=%p rsp=%p)\n", CurrentProcess->Id,
-                OpenFile->CurrentOffset, Count, BufferedBytes, CurrentProcess->WaitingForSystemCallReturn ? 1U : 0U, CurrentProcess->HasSavedSystemCallFrame ? 1U : 0U,
-                (void*) CurrentProcess->State.rip, (void*) CurrentProcess->State.rsp);
-#endif
-
         ActiveLogicLayer->BlockProcessForTTYInput(CurrentProcess->Id);
-
-#ifdef DEBUG_BUILD
-        Process* ResumedProcess = PM->GetRunningProcess();
-        if (ResumedProcess != nullptr)
-        {
-            printf_("tty read: resumed pid=%u after wait (buffered=%lu waiting_sysret=%u saved_syscall=%u rip=%p rsp=%p)\n", ResumedProcess->Id, BufferedBytes,
-                    ResumedProcess->WaitingForSystemCallReturn ? 1U : 0U, ResumedProcess->HasSavedSystemCallFrame ? 1U : 0U, (void*) ResumedProcess->State.rip,
-                    (void*) ResumedProcess->State.rsp);
-        }
-        else
-        {
-            printf_("tty read: resumed with no running process (buffered=%lu)\n", BufferedBytes);
-        }
-#endif
     }
 
     char*    OutBuffer   = reinterpret_cast<char*>(Buffer);
@@ -326,27 +306,6 @@ int64_t TTY::Read(File* OpenFile, void* Buffer, uint64_t Count)
         --BufferedBytes;
         ++BytesCopied;
     }
-
-#ifdef DEBUG_BUILD
-    Dispatcher* ActiveDispatcher = Dispatcher::GetActive();
-    if (ActiveDispatcher != nullptr)
-    {
-        LogicLayer* ActiveLogicLayer = ActiveDispatcher->GetLogicLayer();
-        if (ActiveLogicLayer != nullptr)
-        {
-            ProcessManager* PM = ActiveLogicLayer->GetProcessManager();
-            if (PM != nullptr)
-            {
-                Process* CurrentProcess = PM->GetRunningProcess();
-                if (CurrentProcess != nullptr)
-                {
-                    printf_("tty read: returning pid=%u bytes=%lu buffered_remaining=%lu waiting_sysret=%u saved_syscall=%u\n", CurrentProcess->Id, BytesCopied, BufferedBytes,
-                            CurrentProcess->WaitingForSystemCallReturn ? 1U : 0U, CurrentProcess->HasSavedSystemCallFrame ? 1U : 0U);
-                }
-            }
-        }
-    }
-#endif
 
     OpenFile->CurrentOffset += BytesCopied;
     return static_cast<int64_t>(BytesCopied);
@@ -492,7 +451,31 @@ uint64_t TTY::PushKeyboardInput(const char* Buffer, uint64_t Count)
 
 uint64_t TTY::PushKeyboardInputChar(char Character)
 {
-    return PushKeyboardInput(&Character, 1);
+    if (Character == '\r')
+    {
+        Character = '\n';
+    }
+
+    if (Character == '\b')
+    {
+        if (BufferedBytes > 0)
+        {
+            BufferHead = (BufferHead + KEYBOARD_BUFFER_CAPACITY - 1) % KEYBOARD_BUFFER_CAPACITY;
+            --BufferedBytes;
+        }
+
+        PutChar('\b');
+        return 1;
+    }
+
+    uint64_t BytesStored = PushKeyboardInput(&Character, 1);
+    if (BytesStored == 0)
+    {
+        return 0;
+    }
+
+    PutChar(Character);
+    return BytesStored;
 }
 
 uint64_t TTY::GetBufferedInputBytes() const

@@ -2064,15 +2064,6 @@ void LogicLayer::BlockProcessForTTYInput(uint8_t Id)
         return;
     }
 
-#ifdef DEBUG_BUILD
-    if (Resource != nullptr && Resource->GetTTY() != nullptr)
-    {
-        Resource->GetTTY()->printf_("logic tty wait: pid=%u status=%u waiting_sysret=%u saved_syscall=%u rip=%p rsp=%p\n", TargetProcess->Id,
-                                    static_cast<unsigned>(TargetProcess->Status), TargetProcess->WaitingForSystemCallReturn ? 1U : 0U,
-                                    TargetProcess->HasSavedSystemCallFrame ? 1U : 0U, (void*) TargetProcess->State.rip, (void*) TargetProcess->State.rsp);
-    }
-#endif
-
     if (TargetProcess->WaitingForSystemCallReturn && TargetProcess->HasSavedSystemCallFrame)
     {
         TargetProcess->State.cs = KERNEL_CS;
@@ -2085,17 +2076,6 @@ void LogicLayer::BlockProcessForTTYInput(uint8_t Id)
 
     Ticks = 0;
     Schedule();
-
-#ifdef DEBUG_BUILD
-    if (Resource != nullptr && Resource->GetTTY() != nullptr)
-    {
-        Process* RunningAfterSchedule = PM->GetRunningProcess();
-        if (RunningAfterSchedule != nullptr)
-        {
-            Resource->GetTTY()->printf_("logic tty wait: scheduled to pid=%u status=%u\n", RunningAfterSchedule->Id, static_cast<unsigned>(RunningAfterSchedule->Status));
-        }
-    }
-#endif
 }
 
 /**
@@ -2216,18 +2196,6 @@ void LogicLayer::Tick()
                 uint8_t TTYWaiterId = Sync->GetNextTTYInputWaiter();
                 if (TTYWaiterId != PROCESS_ID_INVALID)
                 {
-#ifdef DEBUG_BUILD
-                    Process* TTYWaiter = (PM != nullptr) ? PM->GetProcessById(TTYWaiterId) : nullptr;
-                    if (TTYWaiter != nullptr)
-                    {
-                        Terminal->printf_("logic tty wake: pid=%u buffered=%lu waiting_sysret=%u saved_syscall=%u\n", TTYWaiterId, Terminal->GetBufferedInputBytes(),
-                                          TTYWaiter->WaitingForSystemCallReturn ? 1U : 0U, TTYWaiter->HasSavedSystemCallFrame ? 1U : 0U);
-                    }
-                    else
-                    {
-                        Terminal->printf_("logic tty wake: pid=%u buffered=%lu (no process entry)\n", TTYWaiterId, Terminal->GetBufferedInputBytes());
-                    }
-#endif
                     Sync->RemoveFromTTYInputWaitQueue(TTYWaiterId);
                     UnblockProcess(TTYWaiterId);
                 }
