@@ -35,6 +35,13 @@ constexpr uint64_t SYSCALL_COPY_CHUNK_SIZE = 4096;
 constexpr uint64_t SYSCALL_PATH_MAX        = 4096;
 constexpr uint64_t SYSCALL_EXEC_MAX_VECTOR = 128;
 constexpr uint64_t SYSCALL_MAX_PATH_SEGMENTS = 256;
+constexpr uint64_t SYSCALL_IOV_MAX = 1024;
+
+struct LinuxIOVec
+{
+    uint64_t Base;
+    uint64_t Length;
+};
 
 constexpr int64_t LINUX_MAP_SHARED    = 0x01;
 constexpr int64_t LINUX_MAP_PRIVATE   = 0x02;
@@ -810,6 +817,131 @@ int64_t TranslationLayer::HandleWriteSystemCall(uint64_t FileDescriptor, const v
     }
 
     return static_cast<int64_t>(TotalCopied);
+}
+
+int64_t TranslationLayer::HandleWritevSystemCall(uint64_t FileDescriptor, const void* Iov, uint64_t IovCount)
+{
+    if (Logic == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    if (IovCount == 0 || IovCount > SYSCALL_IOV_MAX)
+    {
+        return LINUX_ERR_EINVAL;
+    }
+
+    if (Iov == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    ProcessManager* PM = Logic->GetProcessManager();
+    if (PM == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    Process* CurrentProcess = PM->GetRunningProcess();
+    if (CurrentProcess == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    if (FileDescriptor >= MAX_OPEN_FILES_PER_PROCESS)
+    {
+        return LINUX_ERR_EBADF;
+    }
+
+    File* OpenFile = CurrentProcess->FileTable[FileDescriptor];
+    if (OpenFile == nullptr || OpenFile->Node == nullptr)
+    {
+        return LINUX_ERR_EBADF;
+    }
+
+    if (OpenFile->AccessFlags == READ)
+    {
+        return LINUX_ERR_EBADF;
+    }
+
+    if (OpenFile->Node->FileOps == nullptr || OpenFile->Node->FileOps->Write == nullptr)
+    {
+        return LINUX_ERR_ENOSYS;
+    }
+
+    uint64_t TotalWritten = 0;
+
+    for (uint64_t Index = 0; Index < IovCount; ++Index)
+    {
+        LinuxIOVec KernelIOVec = {};
+        const void* UserIOVecAddress = reinterpret_cast<const void*>(reinterpret_cast<uint64_t>(Iov) + (Index * sizeof(LinuxIOVec)));
+        if (!Logic->CopyFromUserToKernel(UserIOVecAddress, &KernelIOVec, sizeof(KernelIOVec)))
+        {
+            return (TotalWritten == 0) ? LINUX_ERR_EFAULT : static_cast<int64_t>(TotalWritten);
+        }
+
+        if (KernelIOVec.Length == 0)
+        {
+            continue;
+        }
+
+        if (KernelIOVec.Base == 0)
+        {
+            return (TotalWritten == 0) ? LINUX_ERR_EFAULT : static_cast<int64_t>(TotalWritten);
+        }
+
+        uint8_t  KernelBuffer[SYSCALL_COPY_CHUNK_SIZE];
+        uint64_t SegmentWritten = 0;
+
+        while (SegmentWritten < KernelIOVec.Length)
+        {
+            uint64_t Remaining = KernelIOVec.Length - SegmentWritten;
+            uint64_t ChunkSize = (Remaining < SYSCALL_COPY_CHUNK_SIZE) ? Remaining : SYSCALL_COPY_CHUNK_SIZE;
+
+            const void* UserChunkSource = reinterpret_cast<const void*>(KernelIOVec.Base + SegmentWritten);
+            if (!Logic->CopyFromUserToKernel(UserChunkSource, KernelBuffer, ChunkSize))
+            {
+                return (TotalWritten == 0) ? LINUX_ERR_EFAULT : static_cast<int64_t>(TotalWritten);
+            }
+
+            int64_t BytesWritten = OpenFile->Node->FileOps->Write(OpenFile, KernelBuffer, ChunkSize);
+            if (BytesWritten < 0)
+            {
+                return (TotalWritten == 0) ? BytesWritten : static_cast<int64_t>(TotalWritten);
+            }
+
+            if (BytesWritten == 0)
+            {
+                break;
+            }
+
+            SegmentWritten += static_cast<uint64_t>(BytesWritten);
+
+            if (static_cast<uint64_t>(BytesWritten) < ChunkSize)
+            {
+                break;
+            }
+        }
+
+        if (SegmentWritten == 0)
+        {
+            break;
+        }
+
+        if (TotalWritten > (UINT64_MAX - SegmentWritten))
+        {
+            return (TotalWritten == 0) ? LINUX_ERR_EINVAL : static_cast<int64_t>(TotalWritten);
+        }
+
+        TotalWritten += SegmentWritten;
+
+        if (SegmentWritten < KernelIOVec.Length)
+        {
+            break;
+        }
+    }
+
+    return static_cast<int64_t>(TotalWritten);
 }
 
 int64_t TranslationLayer::HandleIoctlSystemCall(uint64_t FileDescriptor, uint64_t Request, uint64_t Argument)

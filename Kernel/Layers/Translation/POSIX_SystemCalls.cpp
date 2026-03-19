@@ -63,6 +63,9 @@ int64_t TranslationLayer::HandlePosixSystemCallNumber(uint64_t SystemCallNumber,
         case 16: // ioctl
             return HandleIoctlSystemCall(Arg1, Arg2, Arg3);
             break;
+        case 20: // writev
+            return HandleWritevSystemCall(Arg1, reinterpret_cast<const void*>(Arg2), Arg3);
+            break;
         case 33: // dup2
             return HandleDup2SystemCall(Arg1, Arg2);
             break;
