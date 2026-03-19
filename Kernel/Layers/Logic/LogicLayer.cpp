@@ -986,8 +986,33 @@ uint8_t LogicLayer::ChangeProcessExecution(uint8_t Id, const char* FilePath, con
 
     VirtualAddressSpace* OldAddressSpace = TargetProcess->AddressSpace;
     FILE_TYPE            OldFileType     = TargetProcess->FileType;
+    bool                 SkipOldAddressSpaceCleanup = false;
+    bool                 SkipAnonymousMappingCleanup = false;
 
-    FreeAnonymousProcessMappings(Resource->GetPMM(), TargetProcess);
+    if (TargetProcess->IsVforkChild && TargetProcess->VforkParentId != PROCESS_ID_INVALID)
+    {
+        Process* ParentProcess = PM->GetProcessById(TargetProcess->VforkParentId);
+        if (ParentProcess != nullptr && ParentProcess->AddressSpace == OldAddressSpace)
+        {
+            SkipOldAddressSpaceCleanup = true;
+            SkipAnonymousMappingCleanup = true;
+        }
+    }
+
+    if (!SkipAnonymousMappingCleanup)
+    {
+        if (!SkipAnonymousMappingCleanup)
+        {
+            FreeAnonymousProcessMappings(Resource->GetPMM(), TargetProcess);
+        }
+    }
+    else
+    {
+        for (size_t MappingIndex = 0; MappingIndex < MAX_MEMORY_MAPPINGS_PER_PROCESS; ++MappingIndex)
+        {
+            TargetProcess->MemoryMappings[MappingIndex] = {};
+        }
+    }
 
     TargetProcess->AddressSpace              = NewAddressSpace;
     TargetProcess->FileType                  = IsELF ? FILE_TYPE_ELF : FILE_TYPE_RAW_BINARY;
@@ -1006,7 +1031,7 @@ uint8_t LogicLayer::ChangeProcessExecution(uint8_t Id, const char* FilePath, con
         PM->UpdateCurrentProcessId(TargetProcess->Id);
     }
 
-    if (OldAddressSpace != nullptr)
+    if (OldAddressSpace != nullptr && !SkipOldAddressSpaceCleanup)
     {
         if (OldFileType == FILE_TYPE_ELF)
         {
@@ -1740,7 +1765,17 @@ void LogicLayer::KillProcess(uint8_t Id, int32_t ExitStatus)
         ParentId = TargetProcess->ParrentId;
     }
 
-    if (TargetProcess != nullptr && TargetProcess->Level == PROCESS_LEVEL_USER && TargetProcess->AddressSpace != nullptr)
+    bool SkipAddressSpaceCleanup = false;
+    if (TargetProcess != nullptr && TargetProcess->IsVforkChild && TargetProcess->VforkParentId != PROCESS_ID_INVALID)
+    {
+        Process* ParentProcess = PM->GetProcessById(TargetProcess->VforkParentId);
+        if (ParentProcess != nullptr && ParentProcess->AddressSpace == TargetProcess->AddressSpace)
+        {
+            SkipAddressSpaceCleanup = true;
+        }
+    }
+
+    if (TargetProcess != nullptr && TargetProcess->Level == PROCESS_LEVEL_USER && TargetProcess->AddressSpace != nullptr && !SkipAddressSpaceCleanup)
     {
         if (RunningProcess != nullptr && RunningProcess->Id == Id && Resource != nullptr)
         {
@@ -1797,6 +1832,27 @@ void LogicLayer::KillProcess(uint8_t Id, int32_t ExitStatus)
             UnblockProcess(ParentProcess->Id);
         }
     }
+}
+
+void LogicLayer::AddProcessToReadyQueue(uint8_t Id)
+{
+    if (PM == nullptr || Sched == nullptr)
+    {
+        return;
+    }
+
+    Process* TargetProcess = PM->GetProcessById(Id);
+    if (TargetProcess == nullptr || TargetProcess->Status == PROCESS_TERMINATED)
+    {
+        return;
+    }
+
+    if (TargetProcess->Status == PROCESS_BLOCKED)
+    {
+        TargetProcess->Status = PROCESS_READY;
+    }
+
+    Sched->AddToReadyQueue(Id);
 }
 
 bool LogicLayer::CopyFromUserToKernel(const void* UserSource, void* KernelDestination, uint64_t Count)

@@ -82,6 +82,10 @@ struct Process
 {
     uint8_t                     Id;
     uint8_t                     ParrentId;
+    bool                        WaitingForVforkChild       = false;
+    uint8_t                     VforkChildId               = PROCESS_ID_INVALID;
+    bool                        IsVforkChild               = false;
+    uint8_t                     VforkParentId              = PROCESS_ID_INVALID;
     bool                        WaitingForChild            = false;
     bool                        WaitingForSystemCallReturn = false;
     bool                        HasSavedSystemCallFrame    = false;

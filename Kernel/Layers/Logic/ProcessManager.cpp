@@ -70,6 +70,10 @@ ProcessManager::ProcessManager() : CurrentProcessId(PROCESS_ID_INVALID)
     {
         Processes[index].Id                         = static_cast<uint8_t>(index);
         Processes[index].ParrentId                  = PROCESS_ID_INVALID;
+        Processes[index].WaitingForVforkChild       = false;
+        Processes[index].VforkChildId               = PROCESS_ID_INVALID;
+        Processes[index].IsVforkChild               = false;
+        Processes[index].VforkParentId              = PROCESS_ID_INVALID;
         Processes[index].WaitingForChild            = false;
         Processes[index].WaitingForSystemCallReturn = false;
         Processes[index].HasSavedSystemCallFrame    = false;
@@ -205,6 +209,10 @@ uint8_t ProcessManager::CreateKernelProcess(void* StackPointer, CpuState Initial
         if (Processes[index].Status == PROCESS_TERMINATED)
         {
             Processes[index].ParrentId                  = PROCESS_ID_INVALID;
+            Processes[index].WaitingForVforkChild       = false;
+            Processes[index].VforkChildId               = PROCESS_ID_INVALID;
+            Processes[index].IsVforkChild               = false;
+            Processes[index].VforkParentId              = PROCESS_ID_INVALID;
             Processes[index].WaitingForChild            = false;
             Processes[index].WaitingForSystemCallReturn = false;
             Processes[index].HasSavedSystemCallFrame    = false;
@@ -252,6 +260,10 @@ uint8_t ProcessManager::CreateUserProcess(void* StackPointer, CpuState InitialSt
         if (Processes[index].Status == PROCESS_TERMINATED)
         {
             Processes[index].ParrentId                  = PROCESS_ID_INVALID;
+            Processes[index].WaitingForVforkChild       = false;
+            Processes[index].VforkChildId               = PROCESS_ID_INVALID;
+            Processes[index].IsVforkChild               = false;
+            Processes[index].VforkParentId              = PROCESS_ID_INVALID;
             Processes[index].WaitingForChild            = false;
             Processes[index].WaitingForSystemCallReturn = false;
             Processes[index].HasSavedSystemCallFrame    = false;
@@ -300,6 +312,10 @@ void* ProcessManager::KillProcess(uint8_t Id)
 
     ReleaseProcessFileTable(Processes[Id]);
     Processes[Id].ParrentId                  = PROCESS_ID_INVALID;
+    Processes[Id].WaitingForVforkChild       = false;
+    Processes[Id].VforkChildId               = PROCESS_ID_INVALID;
+    Processes[Id].IsVforkChild               = false;
+    Processes[Id].VforkParentId              = PROCESS_ID_INVALID;
     Processes[Id].WaitingForChild            = false;
     Processes[Id].WaitingForSystemCallReturn = false;
     Processes[Id].HasSavedSystemCallFrame    = false;

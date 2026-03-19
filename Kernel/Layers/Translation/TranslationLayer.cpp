@@ -70,7 +70,7 @@ constexpr uint32_t LINUX_S_IFDIR = 0040000;
 constexpr uint32_t LINUX_S_IFLNK = 0120000;
 constexpr uint32_t LINUX_S_IFCHR = 0020000;
 
-constexpr uint32_t LINUX_DEFAULT_FILE_PERMISSIONS = 0644;
+constexpr uint32_t LINUX_DEFAULT_FILE_PERMISSIONS = 0755;
 constexpr uint32_t LINUX_DEFAULT_DIR_PERMISSIONS  = 0755;
 constexpr uint32_t LINUX_DEFAULT_LINK_PERMISSIONS = 0777;
 constexpr uint32_t LINUX_DEFAULT_CHAR_PERMISSIONS = 0666;
@@ -393,6 +393,40 @@ bool BuildAbsolutePathFromDentry(const Dentry* Node, char* Buffer, uint64_t Buff
 
     Buffer[Cursor] = '\0';
     return true;
+}
+
+void ReleaseVforkParentIfNeeded(LogicLayer* Logic, Process* ChildProcess)
+{
+    if (Logic == nullptr || ChildProcess == nullptr || !ChildProcess->IsVforkChild)
+    {
+        return;
+    }
+
+    ProcessManager* PM = Logic->GetProcessManager();
+    if (PM == nullptr)
+    {
+        return;
+    }
+
+    uint8_t ParentId = ChildProcess->VforkParentId;
+
+    ChildProcess->IsVforkChild  = false;
+    ChildProcess->VforkParentId = PROCESS_ID_INVALID;
+
+    Process* ParentProcess = PM->GetProcessById(ParentId);
+    if (ParentProcess == nullptr || ParentProcess->Status == PROCESS_TERMINATED)
+    {
+        return;
+    }
+
+    bool ShouldUnblockParent = ParentProcess->WaitingForVforkChild && ParentProcess->VforkChildId == ChildProcess->Id;
+    ParentProcess->WaitingForVforkChild = false;
+    ParentProcess->VforkChildId         = PROCESS_ID_INVALID;
+
+    if (ShouldUnblockParent)
+    {
+        Logic->UnblockProcess(ParentProcess->Id);
+    }
 }
 
 uint64_t AlignDownToPageBoundary(uint64_t Address)
@@ -1598,6 +1632,8 @@ int64_t TranslationLayer::HandleForkSystemCall()
         return LINUX_ERR_EFAULT;
     }
 
+    CurrentProcess->UserFSBase = GetUserFSBase();
+
     uint8_t ChildId = Logic->CopyProcess(CurrentProcess->Id);
     if (ChildId == PROCESS_ID_INVALID)
     {
@@ -1642,6 +1678,129 @@ int64_t TranslationLayer::HandleForkSystemCall()
     return static_cast<int64_t>(ChildId);
 }
 
+int64_t TranslationLayer::HandleVforkSystemCall()
+{
+    if (Logic == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    ProcessManager* PM = Logic->GetProcessManager();
+    if (PM == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    Process* ParentProcess = PM->GetRunningProcess();
+    if (ParentProcess == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    if (ParentProcess->WaitingForVforkChild)
+    {
+        return LINUX_ERR_EAGAIN;
+    }
+
+    if (!ParentProcess->HasSavedSystemCallFrame || ParentProcess->AddressSpace == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    ParentProcess->UserFSBase = GetUserFSBase();
+
+    const ProcessSavedSystemCallFrame& SavedFrame = ParentProcess->SavedSystemCallFrame;
+
+    CpuState ChildState = {};
+    ChildState.rax      = 0;
+    ChildState.rcx      = 0;
+    ChildState.rdx      = SavedFrame.UserRDX;
+    ChildState.rbx      = SavedFrame.UserRBX;
+    ChildState.rbp      = SavedFrame.UserRBP;
+    ChildState.rsi      = SavedFrame.UserRSI;
+    ChildState.rdi      = SavedFrame.UserRDI;
+    ChildState.r8       = SavedFrame.UserR8;
+    ChildState.r9       = SavedFrame.UserR9;
+    ChildState.r10      = SavedFrame.UserR10;
+    ChildState.r11      = 0;
+    ChildState.r12      = SavedFrame.UserR12;
+    ChildState.r13      = SavedFrame.UserR13;
+    ChildState.r14      = SavedFrame.UserR14;
+    ChildState.r15      = SavedFrame.UserR15;
+    ChildState.rip      = SavedFrame.UserRIP;
+    ChildState.rflags   = SavedFrame.UserRFLAGS;
+    ChildState.rsp      = SavedFrame.UserRSP;
+    ChildState.cs       = USER_CS;
+    ChildState.ss       = USER_SS;
+
+    uint8_t ChildId = PM->CreateUserProcess(reinterpret_cast<void*>(ParentProcess->AddressSpace->GetStackVirtualAddressStart()), ChildState, ParentProcess->AddressSpace,
+                                            ParentProcess->FileType);
+    if (ChildId == PROCESS_ID_INVALID)
+    {
+        return LINUX_ERR_EAGAIN;
+    }
+
+    Process* ChildProcess = PM->GetProcessById(ChildId);
+    if (ChildProcess == nullptr)
+    {
+        PM->KillProcess(ChildId);
+        return LINUX_ERR_EFAULT;
+    }
+
+    ChildProcess->ParrentId                 = ParentProcess->Id;
+    ChildProcess->UserFSBase                = ParentProcess->UserFSBase;
+    ChildProcess->BlockedSignalMask         = ParentProcess->BlockedSignalMask;
+    ChildProcess->ClearChildTidAddress      = ParentProcess->ClearChildTidAddress;
+    ChildProcess->ProgramBreak              = ParentProcess->ProgramBreak;
+    ChildProcess->CurrentFileSystemLocation = ParentProcess->CurrentFileSystemLocation;
+
+    for (size_t SignalIndex = 0; SignalIndex < MAX_POSIX_SIGNALS_PER_PROCESS; ++SignalIndex)
+    {
+        ChildProcess->SignalActions[SignalIndex] = ParentProcess->SignalActions[SignalIndex];
+    }
+
+    for (size_t MappingIndex = 0; MappingIndex < MAX_MEMORY_MAPPINGS_PER_PROCESS; ++MappingIndex)
+    {
+        ChildProcess->MemoryMappings[MappingIndex] = ParentProcess->MemoryMappings[MappingIndex];
+    }
+
+    for (size_t FileIndex = 0; FileIndex < MAX_OPEN_FILES_PER_PROCESS; ++FileIndex)
+    {
+        if (ParentProcess->FileTable[FileIndex] == nullptr)
+        {
+            continue;
+        }
+
+        File* CopiedFile = new File;
+        if (CopiedFile == nullptr)
+        {
+            PM->KillProcess(ChildId);
+            return LINUX_ERR_ENOMEM;
+        }
+
+        *CopiedFile                       = *ParentProcess->FileTable[FileIndex];
+        ChildProcess->FileTable[FileIndex] = CopiedFile;
+    }
+
+    ParentProcess->WaitingForVforkChild = true;
+    ParentProcess->VforkChildId         = ChildId;
+
+    ChildProcess->IsVforkChild          = true;
+    ChildProcess->VforkParentId         = ParentProcess->Id;
+
+    Logic->AddProcessToReadyQueue(ChildId);
+
+    if (ParentProcess->WaitingForSystemCallReturn && ParentProcess->HasSavedSystemCallFrame)
+    {
+        ParentProcess->State.cs = KERNEL_CS;
+        ParentProcess->State.ss = KERNEL_SS;
+    }
+
+    Logic->BlockProcess(ParentProcess->Id);
+
+    return static_cast<int64_t>(ChildId);
+}
+
 int64_t TranslationLayer::HandleExitGroupSystemCall(int64_t Status)
 {
     if (Logic == nullptr)
@@ -1661,10 +1820,29 @@ int64_t TranslationLayer::HandleExitGroupSystemCall(int64_t Status)
         return LINUX_ERR_EFAULT;
     }
 
+    bool    ExitingVforkChild = CurrentProcess->IsVforkChild;
+    uint8_t VforkParentId     = CurrentProcess->VforkParentId;
+
     int32_t WaitStatus = static_cast<int32_t>((static_cast<uint64_t>(Status) & 0xFFULL) << 8);
     uint8_t CurrentProcessId = CurrentProcess->Id;
 
     Logic->KillProcess(CurrentProcessId, WaitStatus);
+
+    if (ExitingVforkChild)
+    {
+        Process* ParentProcess = PM->GetProcessById(VforkParentId);
+        if (ParentProcess != nullptr && ParentProcess->Status != PROCESS_TERMINATED)
+        {
+            bool ShouldUnblockParent = ParentProcess->WaitingForVforkChild && ParentProcess->VforkChildId == CurrentProcessId;
+            ParentProcess->WaitingForVforkChild = false;
+            ParentProcess->VforkChildId         = PROCESS_ID_INVALID;
+            if (ShouldUnblockParent)
+            {
+                Logic->UnblockProcess(ParentProcess->Id);
+            }
+        }
+    }
+
     Logic->Schedule();
 
     return 0;
@@ -1742,6 +1920,8 @@ int64_t TranslationLayer::HandleExecveSystemCall(const char* Path, const char* c
     {
         return LINUX_ERR_ENOENT;
     }
+
+    ReleaseVforkParentIfNeeded(Logic, CurrentProcess);
 
     return 0;
 }
