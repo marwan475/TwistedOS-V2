@@ -784,6 +784,156 @@ int64_t TranslationLayer::HandleCloseSystemCall(uint64_t FileDescriptor)
     return 0;
 }
 
+int64_t TranslationLayer::HandleBrkSystemCall(uint64_t Address)
+{
+    if (Logic == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    ProcessManager* PM = Logic->GetProcessManager();
+    if (PM == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    Process* CurrentProcess = PM->GetRunningProcess();
+    if (CurrentProcess == nullptr || CurrentProcess->Level != PROCESS_LEVEL_USER || CurrentProcess->AddressSpace == nullptr)
+    {
+        return LINUX_ERR_EINVAL;
+    }
+
+    Dispatcher* ActiveDispatcher = Dispatcher::GetActive();
+    if (ActiveDispatcher == nullptr || ActiveDispatcher->GetResourceLayer() == nullptr || ActiveDispatcher->GetResourceLayer()->GetPMM() == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    ResourceLayer*         Resource = ActiveDispatcher->GetResourceLayer();
+    PhysicalMemoryManager* PMM      = Resource->GetPMM();
+
+    VirtualAddressSpace* AddressSpace = CurrentProcess->AddressSpace;
+
+    uint64_t HeapStart = AddressSpace->GetHeapVirtualAddressStart();
+    uint64_t HeapSize  = AddressSpace->GetHeapSize();
+    uint64_t HeapEnd   = HeapStart + HeapSize;
+
+    if (HeapEnd < HeapStart)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    if (CurrentProcess->ProgramBreak == 0)
+    {
+        CurrentProcess->ProgramBreak = HeapStart;
+    }
+
+    if (Address == 0)
+    {
+        return static_cast<int64_t>(CurrentProcess->ProgramBreak);
+    }
+
+    if (Address < HeapStart)
+    {
+        return static_cast<int64_t>(CurrentProcess->ProgramBreak);
+    }
+
+    uint64_t StackStart = AddressSpace->GetStackVirtualAddressStart();
+    if (Address >= StackStart)
+    {
+        return static_cast<int64_t>(CurrentProcess->ProgramBreak);
+    }
+
+    if (Address <= HeapEnd)
+    {
+        CurrentProcess->ProgramBreak = Address;
+        return static_cast<int64_t>(CurrentProcess->ProgramBreak);
+    }
+
+    uint64_t RequestedHeapSize = Address - HeapStart;
+    uint64_t NewHeapSize       = AlignUpToPageBoundary(RequestedHeapSize);
+    if (NewHeapSize == 0 || NewHeapSize < HeapSize)
+    {
+        return static_cast<int64_t>(CurrentProcess->ProgramBreak);
+    }
+
+    uint64_t NewHeapEnd = HeapStart + NewHeapSize;
+    if (NewHeapEnd < HeapStart || NewHeapEnd > StackStart)
+    {
+        return static_cast<int64_t>(CurrentProcess->ProgramBreak);
+    }
+
+    uint64_t NewHeapPages = NewHeapSize / PAGE_SIZE;
+    void*    NewHeapPhysical = PMM->AllocatePagesFromDescriptor(NewHeapPages);
+    if (NewHeapPhysical == nullptr)
+    {
+        return static_cast<int64_t>(CurrentProcess->ProgramBreak);
+    }
+
+    kmemset(NewHeapPhysical, 0, static_cast<size_t>(NewHeapSize));
+
+    uint64_t OldHeapPhysical = AddressSpace->GetHeapPhysicalAddress();
+    if (OldHeapPhysical != 0 && HeapSize != 0)
+    {
+        memcpy(NewHeapPhysical, reinterpret_cast<const void*>(OldHeapPhysical), static_cast<size_t>(HeapSize));
+    }
+
+    uint64_t UserPageTable = AddressSpace->GetPageMapL4TableAddr();
+    if (UserPageTable == 0)
+    {
+        PMM->FreePagesFromDescriptor(NewHeapPhysical, NewHeapPages);
+        return static_cast<int64_t>(CurrentProcess->ProgramBreak);
+    }
+
+    uint64_t OldHeapPages = (HeapSize + PAGE_SIZE - 1) / PAGE_SIZE;
+
+    VirtualMemoryManager UserVMM(UserPageTable, *PMM);
+    uint64_t             MappedPages = 0;
+    for (uint64_t PageIndex = 0; PageIndex < NewHeapPages; ++PageIndex)
+    {
+        uint64_t PhysicalPage = reinterpret_cast<uint64_t>(NewHeapPhysical) + (PageIndex * PAGE_SIZE);
+        uint64_t VirtualPage  = HeapStart + (PageIndex * PAGE_SIZE);
+        if (!UserVMM.MapPage(PhysicalPage, VirtualPage, PageMappingFlags(true, true)))
+        {
+            for (uint64_t RollbackIndex = 0; RollbackIndex < MappedPages; ++RollbackIndex)
+            {
+                uint64_t RollbackVirtualPage = HeapStart + (RollbackIndex * PAGE_SIZE);
+                if (RollbackIndex < OldHeapPages && OldHeapPhysical != 0)
+                {
+                    uint64_t OldPhysicalPage = OldHeapPhysical + (RollbackIndex * PAGE_SIZE);
+                    UserVMM.MapPage(OldPhysicalPage, RollbackVirtualPage, PageMappingFlags(true, true));
+                }
+                else
+                {
+                    UserVMM.UnmapPage(RollbackVirtualPage);
+                }
+            }
+
+            PMM->FreePagesFromDescriptor(NewHeapPhysical, NewHeapPages);
+            return static_cast<int64_t>(CurrentProcess->ProgramBreak);
+        }
+
+        ++MappedPages;
+    }
+
+    if (OldHeapPhysical != 0 && HeapSize != 0)
+    {
+        PMM->FreePagesFromDescriptor(reinterpret_cast<void*>(OldHeapPhysical), OldHeapPages);
+    }
+
+    AddressSpace->SetHeapPhysicalAddress(reinterpret_cast<uint64_t>(NewHeapPhysical));
+    AddressSpace->SetHeapSize(NewHeapSize);
+
+    uint64_t ActivePageTable = Resource->ReadCurrentPageTable();
+    if (ActivePageTable == UserPageTable)
+    {
+        Resource->LoadPageTable(ActivePageTable);
+    }
+
+    CurrentProcess->ProgramBreak = Address;
+    return static_cast<int64_t>(CurrentProcess->ProgramBreak);
+}
+
 int64_t TranslationLayer::HandleDup2SystemCall(uint64_t OldFileDescriptor, uint64_t NewFileDescriptor)
 {
     if (Logic == nullptr)

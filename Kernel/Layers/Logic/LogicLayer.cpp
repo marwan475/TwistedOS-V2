@@ -1139,6 +1139,7 @@ uint8_t LogicLayer::CopyProcess(uint8_t Id)
     ChildProcess->ParrentId                 = SourceProcess->Id;
     ChildProcess->UserFSBase                = SourceProcess->UserFSBase;
     ChildProcess->ClearChildTidAddress      = SourceProcess->ClearChildTidAddress;
+    ChildProcess->ProgramBreak              = SourceProcess->ProgramBreak;
     ChildProcess->CurrentFileSystemLocation = SourceProcess->CurrentFileSystemLocation;
 
     for (size_t FileIndex = 0; FileIndex < MAX_OPEN_FILES_PER_PROCESS; ++FileIndex)

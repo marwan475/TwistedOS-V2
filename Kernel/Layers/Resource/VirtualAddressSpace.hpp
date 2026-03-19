@@ -41,6 +41,8 @@ public:
     uint64_t GetHeapPhysicalAddress() const;
     uint64_t GetHeapSize() const;
     uint64_t GetHeapVirtualAddressStart() const;
+    void     SetHeapPhysicalAddress(uint64_t HeapPhysicalAddress);
+    void     SetHeapSize(uint64_t HeapSize);
 
     uint64_t GetStackPhysicalAddress() const;
     uint64_t GetStackSize() const;

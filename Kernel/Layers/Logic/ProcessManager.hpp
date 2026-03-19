@@ -86,6 +86,7 @@ struct Process
     void*                       StackPointer;
     uint64_t                    UserFSBase               = 0;
     int*                        ClearChildTidAddress     = nullptr;
+    uint64_t                    ProgramBreak             = 0;
     VirtualAddressSpace*        AddressSpace              = nullptr;
     Dentry*                     CurrentFileSystemLocation = nullptr;
     File*                       FileTable[MAX_OPEN_FILES_PER_PROCESS];

@@ -208,6 +208,16 @@ uint64_t VirtualAddressSpace::GetHeapVirtualAddressStart() const
     return HeapVirtualAddressStart;
 }
 
+void VirtualAddressSpace::SetHeapPhysicalAddress(uint64_t HeapPhysicalAddress)
+{
+    this->HeapPhysicalAddress = HeapPhysicalAddress;
+}
+
+void VirtualAddressSpace::SetHeapSize(uint64_t HeapSize)
+{
+    this->HeapSize = HeapSize;
+}
+
 /**
  * Function: VirtualAddressSpace::GetStackPhysicalAddress
  * Description: Returns stack segment physical address.

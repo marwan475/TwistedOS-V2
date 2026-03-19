@@ -61,6 +61,7 @@ ProcessManager::ProcessManager() : CurrentProcessId(PROCESS_ID_INVALID)
         Processes[index].StackPointer               = nullptr;
         Processes[index].UserFSBase                 = 0;
         Processes[index].ClearChildTidAddress       = nullptr;
+        Processes[index].ProgramBreak               = 0;
         Processes[index].AddressSpace               = nullptr;
         Processes[index].CurrentFileSystemLocation  = nullptr;
         Processes[index].State                      = {};
@@ -173,6 +174,7 @@ uint8_t ProcessManager::CreateKernelProcess(void* StackPointer, CpuState Initial
             Processes[index].StackPointer               = StackPointer;
             Processes[index].UserFSBase                 = 0;
             Processes[index].ClearChildTidAddress       = nullptr;
+            Processes[index].ProgramBreak               = 0;
             Processes[index].AddressSpace               = nullptr;
             Processes[index].CurrentFileSystemLocation  = nullptr;
             Processes[index].State                      = InitialState;
@@ -215,6 +217,7 @@ uint8_t ProcessManager::CreateUserProcess(void* StackPointer, CpuState InitialSt
             Processes[index].StackPointer               = StackPointer;
             Processes[index].UserFSBase                 = 0;
             Processes[index].ClearChildTidAddress       = nullptr;
+            Processes[index].ProgramBreak               = (AddressSpace != nullptr) ? AddressSpace->GetHeapVirtualAddressStart() : 0;
             Processes[index].AddressSpace               = AddressSpace;
             Processes[index].CurrentFileSystemLocation  = nullptr;
             Processes[index].State                      = InitialState;
@@ -257,6 +260,7 @@ void* ProcessManager::KillProcess(uint8_t Id)
     Processes[Id].StackPointer               = nullptr;
     Processes[Id].UserFSBase                 = 0;
     Processes[Id].ClearChildTidAddress       = nullptr;
+    Processes[Id].ProgramBreak               = 0;
     Processes[Id].AddressSpace               = nullptr;
     Processes[Id].CurrentFileSystemLocation  = nullptr;
     Processes[Id].State                      = {};

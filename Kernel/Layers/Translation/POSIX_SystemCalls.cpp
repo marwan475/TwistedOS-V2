@@ -48,6 +48,9 @@ int64_t TranslationLayer::HandlePosixSystemCallNumber(uint64_t SystemCallNumber,
         case 9: // mmap
             return HandleMmapSystemCall(reinterpret_cast<void*>(Arg1), Arg2, static_cast<int64_t>(Arg3), static_cast<int64_t>(Arg4), static_cast<int64_t>(Arg5), static_cast<int64_t>(Arg6));
             break;
+        case 12: // brk
+            return HandleBrkSystemCall(Arg1);
+            break;
         case 33: // dup2
             return HandleDup2SystemCall(Arg1, Arg2);
             break;
