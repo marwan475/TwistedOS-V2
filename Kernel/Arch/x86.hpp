@@ -484,4 +484,7 @@ extern "C"
     DECL_ISR(254)
     DECL_ISR(255)
 #undef DECL_ISR
+
+    void GetSavedSystemCallFrame(uint64_t* Rip, uint64_t* Rsp, uint64_t* RFlags);
+    void LoadSavedSystemCallCpuState(CpuState* State);
 }

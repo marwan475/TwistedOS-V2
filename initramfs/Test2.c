@@ -1,7 +1,7 @@
 /**
  * File: Test2.c
  * Author: Marwan Mostafa
- * Description: User mode test process 2 - writes to TTY then execves back into Test1.
+ * Description: User mode test process 2 - writes to TTY and stays running.
  */
 
 typedef unsigned long u64;
@@ -33,9 +33,8 @@ static inline long syscall2(u64 number, u64 arg1, u64 arg2)
 
 void _start()
 {
-    static const char msg[]  = "[UserModeTest] Test2 running, execve -> /Test1\n";
-    static const char tty[]  = "/dev/tty";
-    static const char next[] = "/Test1";
+    static const char msg[] = "[UserModeTest] Test2 running\n";
+    static const char tty[] = "/dev/tty";
 
     long tty_fd = syscall2(2 /* open */, (u64) tty, 2 /* O_RDWR */);
     if (tty_fd >= 0)
@@ -44,10 +43,7 @@ void _start()
         syscall6(3 /* close */, (u64) tty_fd, 0, 0, 0, 0, 0);
     }
 
-    /* Replace this process image with Test1; the loop continues via execve chaining. */
-    syscall3(59 /* execve */, (u64) next, 0, 0);
-
-    /* execve failed - spin to avoid returning off the end of the binary. */
+    /* Keep process alive to make scheduler behavior observable in the user-mode test window. */
     while (1)
     {
         __asm__ __volatile__("pause");

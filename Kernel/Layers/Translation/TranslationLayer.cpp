@@ -379,6 +379,15 @@ int64_t TranslationLayer::HandleForkSystemCall()
         return LINUX_ERR_EAGAIN;
     }
 
+    Process* ChildProcess = PM->GetProcessById(ChildId);
+    if (ChildProcess == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    LoadSavedSystemCallCpuState(&ChildProcess->State);
+    ChildProcess->State.rax = 0;
+
     return static_cast<int64_t>(ChildId);
 }
 

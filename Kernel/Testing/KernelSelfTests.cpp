@@ -343,6 +343,34 @@ void PrintMemoryTestResult(Dispatcher* ActiveDispatcher)
     (void) ActiveDispatcher;
 }
 
+void KillChildProcessesOf(Dispatcher* ActiveDispatcher, uint8_t ParentProcessId)
+{
+    if (ActiveDispatcher == nullptr || ParentProcessId == INVALID_PROCESS_ID)
+    {
+        return;
+    }
+
+    ProcessManager* PM = ActiveDispatcher->GetLogicLayer()->GetProcessManager();
+    if (PM == nullptr)
+    {
+        return;
+    }
+
+    for (uint8_t ProcessId = 0; ProcessId < TEST_MAX_PROCESS_COUNT; ++ProcessId)
+    {
+        Process* Candidate = PM->GetProcessById(ProcessId);
+        if (Candidate == nullptr || Candidate->Status == PROCESS_TERMINATED)
+        {
+            continue;
+        }
+
+        if (Candidate->ParrentId == ParentProcessId)
+        {
+            ActiveDispatcher->GetLogicLayer()->KillProcess(ProcessId);
+        }
+    }
+}
+
 /**
  * Function: RunMemoryTest
  * Description: Runs physical allocation, virtual map/unmap, and heap allocation self-checks.
@@ -636,9 +664,9 @@ void KernelValidatorTask()
                     break;
                 }
 
-                // Spawn a single user process starting at /Test1 which will execve-chain
-                // between /Test1 and /Test2, writing to the TTY on each iteration.
-                ActiveDispatcher->GetResourceLayer()->GetTTY()->printf_("[SelfTest] [User Mode] test started: /Test1 will execve-chain with /Test2 for 3 seconds\n");
+                // Spawn a single user process at /Test1; it will fork and the child
+                // will execve into /Test2, which writes to TTY.
+                ActiveDispatcher->GetResourceLayer()->GetTTY()->printf_("[SelfTest] [User Mode] test started: /Test1 will fork and child execve /Test2 for 3 seconds\n");
                 State.UserModeTestProcessId = ActiveDispatcher->GetLogicLayer()->CreateUserProcessFromVFS("/Test1");
                 if (State.UserModeTestProcessId == INVALID_PROCESS_ID)
                 {
@@ -661,14 +689,18 @@ void KernelValidatorTask()
 
                 if (State.UserModeTestLoopCount >= USER_MODE_TEST_DURATION_LOOPS && !State.UserModeTestResultLogged)
                 {
+                    uint8_t ParentUserProcessId = State.UserModeTestProcessId;
+
                     if (State.UserModeTestProcessId != INVALID_PROCESS_ID)
                     {
                         ActiveDispatcher->GetLogicLayer()->KillProcess(State.UserModeTestProcessId);
                         State.UserModeTestProcessId = INVALID_PROCESS_ID;
                     }
 
+                    KillChildProcessesOf(ActiveDispatcher, ParentUserProcessId);
+
                     LogTestResult(ActiveDispatcher, "User Mode", true);
-                    ActiveDispatcher->GetResourceLayer()->GetTTY()->printf_("[SelfTest] [User Mode] user process ran for 3 seconds and was terminated by validator\n");
+                    ActiveDispatcher->GetResourceLayer()->GetTTY()->printf_("[SelfTest] [User Mode] parent user process ran for 3 seconds and was terminated by validator\n");
                     State.UserModeTestResultLogged = true;
                     State.Passed                  = true;
                     State.Phase                   = SELF_TEST_PHASE_COMPLETE;
