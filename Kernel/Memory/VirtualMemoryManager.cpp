@@ -133,6 +133,52 @@ bool VirtualMemoryManager::MapPage(UINTN PhysicalAddr, UINTN VirtualAddr, const 
     return true;
 }
 
+bool VirtualMemoryManager::ProtectPage(UINTN VirtualAddr, bool UserAccess, bool Writeable, bool Executable)
+{
+    VirtualAddress Vaddr;
+    Vaddr.value = VirtualAddr;
+
+    UINTN PageMapL4TableIndex            = Vaddr.fields.pml4_index;
+    UINTN PageDirectoryPointerTableIndex = Vaddr.fields.pdpt_index;
+    UINTN PageDirectoryTableIndex        = Vaddr.fields.pd_index;
+    UINTN PageTableIndex                 = Vaddr.fields.pt_index;
+
+    PageTableEntry PmL4Entry = PageMapL4Table[PageMapL4TableIndex];
+    if (!PmL4Entry.fields.present)
+    {
+        return false;
+    }
+
+    PageTableEntry* PageDirectoryPointerTable = (PageTableEntry*) (PmL4Entry.value & PHYS_PAGE_ADDR_MASK);
+    PageTableEntry  PDPTEntry                 = PageDirectoryPointerTable[PageDirectoryPointerTableIndex];
+    if (!PDPTEntry.fields.present)
+    {
+        return false;
+    }
+
+    PageTableEntry* PageDirectoryTable = (PageTableEntry*) (PDPTEntry.value & PHYS_PAGE_ADDR_MASK);
+    PageTableEntry  PDTEntry           = PageDirectoryTable[PageDirectoryTableIndex];
+    if (!PDTEntry.fields.present)
+    {
+        return false;
+    }
+
+    PageTableEntry* PageTable = (PageTableEntry*) (PDTEntry.value & PHYS_PAGE_ADDR_MASK);
+    PageTableEntry  PTEntry   = PageTable[PageTableIndex];
+    if (!PTEntry.fields.present)
+    {
+        return false;
+    }
+
+    PTEntry.fields.user_access        = UserAccess ? 1U : 0U;
+    PTEntry.fields.writeable          = Writeable ? 1U : 0U;
+    PTEntry.fields.execution_disabled = Executable ? 0U : 1U;
+    PageTable[PageTableIndex]         = PTEntry;
+
+    __asm__("invlpg (%0)\n" : : "r"(VirtualAddr) : "memory");
+    return true;
+}
+
 /**
  * Function: VirtualMemoryManager::MapRange
  * Description: Maps a contiguous range of pages from a physical range to a virtual range.
@@ -153,6 +199,19 @@ UINTN VirtualMemoryManager::MapRange(UINTN PhysicalAddr, UINTN VirtualAddr, UINT
     {
         UINTN Offset = i * PAGE_SIZE;
         MapPage(RangeStartPhysical + Offset, RangeStartVirtual + Offset, Flags);
+    }
+
+    return RangeStartVirtual + (Pages * PAGE_SIZE);
+}
+
+UINTN VirtualMemoryManager::ProtectRange(UINTN VirtualAddr, UINTN Pages, bool UserAccess, bool Writeable, bool Executable)
+{
+    UINTN RangeStartVirtual = VirtualAddr & PHYS_PAGE_ADDR_MASK;
+
+    for (UINTN i = 0; i < Pages; i++)
+    {
+        UINTN Offset = i * PAGE_SIZE;
+        ProtectPage(RangeStartVirtual + Offset, UserAccess, Writeable, Executable);
     }
 
     return RangeStartVirtual + (Pages * PAGE_SIZE);

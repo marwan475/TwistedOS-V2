@@ -25,6 +25,7 @@ public:
     int64_t HandleWriteSystemCall(uint64_t FileDescriptor, const void* Buffer, uint64_t Count);
     int64_t HandleOpenSystemCall(const char* Path, uint64_t Flags);
     int64_t HandleCloseSystemCall(uint64_t FileDescriptor);
+    int64_t HandleMprotectSystemCall(void* Address, uint64_t Length, int64_t Protection);
     int64_t HandleBrkSystemCall(uint64_t Address);
     int64_t HandleDup2SystemCall(uint64_t OldFileDescriptor, uint64_t NewFileDescriptor);
     int64_t HandleForkSystemCall();

@@ -65,8 +65,10 @@ private:
 public:
     VirtualMemoryManager(UINTN PageMapL4TableAddr, PhysicalMemoryManager& PMM);
     bool            MapPage(UINTN PhysicalAddr, UINTN VirtualAddr, const PageMappingFlags& Flags);
+    bool            ProtectPage(UINTN VirtualAddr, bool UserAccess, bool Writeable, bool Executable);
     bool            UnmapPage(UINTN VirtualAddr);
     UINTN           MapRange(UINTN PhysicalAddr, UINTN VirtualAddr, UINTN Pages, const PageMappingFlags& Flags);
+    UINTN           ProtectRange(UINTN VirtualAddr, UINTN Pages, bool UserAccess, bool Writeable, bool Executable);
     UINTN           UnmapRange(UINTN VirtualAddr, UINTN Pages);
     PageTableEntry* CopyPageMapL4Table();
 };

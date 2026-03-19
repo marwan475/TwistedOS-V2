@@ -38,7 +38,10 @@ constexpr int64_t LINUX_MAP_PRIVATE   = 0x02;
 constexpr int64_t LINUX_MAP_FIXED     = 0x10;
 constexpr int64_t LINUX_MAP_ANONYMOUS = 0x20;
 
+constexpr int64_t LINUX_PROT_READ  = 0x1;
 constexpr int64_t LINUX_PROT_WRITE = 0x2;
+constexpr int64_t LINUX_PROT_EXEC  = 0x4;
+constexpr int64_t LINUX_PROT_NONE  = 0x0;
 
 constexpr uint64_t MMAP_DEFAULT_BASE = 0x0000000001000000;
 
@@ -781,6 +784,85 @@ int64_t TranslationLayer::HandleCloseSystemCall(uint64_t FileDescriptor)
 
     delete OpenFile;
     CurrentProcess->FileTable[FileDescriptor] = nullptr;
+    return 0;
+}
+
+int64_t TranslationLayer::HandleMprotectSystemCall(void* Address, uint64_t Length, int64_t Protection)
+{
+    if (Logic == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    if (Length == 0)
+    {
+        return LINUX_ERR_EINVAL;
+    }
+
+    constexpr int64_t LINUX_MPROTECT_ALLOWED_MASK = (LINUX_PROT_READ | LINUX_PROT_WRITE | LINUX_PROT_EXEC);
+    if ((Protection & ~LINUX_MPROTECT_ALLOWED_MASK) != 0)
+    {
+        return LINUX_ERR_EINVAL;
+    }
+
+    uint64_t StartAddress = reinterpret_cast<uint64_t>(Address);
+    if ((StartAddress & (PAGE_SIZE - 1)) != 0)
+    {
+        return LINUX_ERR_EINVAL;
+    }
+
+    uint64_t EndAddress = StartAddress + Length;
+    if (EndAddress < StartAddress)
+    {
+        return LINUX_ERR_EINVAL;
+    }
+
+    uint64_t ProtectedLength = AlignUpToPageBoundary(Length);
+    if (ProtectedLength == 0)
+    {
+        return LINUX_ERR_EINVAL;
+    }
+
+    ProcessManager* PM = Logic->GetProcessManager();
+    if (PM == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    Process* CurrentProcess = PM->GetRunningProcess();
+    if (CurrentProcess == nullptr || CurrentProcess->Level != PROCESS_LEVEL_USER || CurrentProcess->AddressSpace == nullptr)
+    {
+        return LINUX_ERR_EINVAL;
+    }
+
+    Dispatcher* ActiveDispatcher = Dispatcher::GetActive();
+    if (ActiveDispatcher == nullptr || ActiveDispatcher->GetResourceLayer() == nullptr || ActiveDispatcher->GetResourceLayer()->GetPMM() == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    uint64_t UserPageTable = CurrentProcess->AddressSpace->GetPageMapL4TableAddr();
+    if (UserPageTable == 0)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    bool UserAccess = (Protection != LINUX_PROT_NONE);
+    bool Writeable  = (Protection & LINUX_PROT_WRITE) != 0;
+    bool Executable = (Protection & LINUX_PROT_EXEC) != 0;
+
+    VirtualMemoryManager UserVMM(UserPageTable, *ActiveDispatcher->GetResourceLayer()->GetPMM());
+
+    uint64_t ProtectedPages = ProtectedLength / PAGE_SIZE;
+    for (uint64_t PageIndex = 0; PageIndex < ProtectedPages; ++PageIndex)
+    {
+        uint64_t VirtualPage = StartAddress + (PageIndex * PAGE_SIZE);
+        if (!UserVMM.ProtectPage(VirtualPage, UserAccess, Writeable, Executable))
+        {
+            return LINUX_ERR_ENOMEM;
+        }
+    }
+
     return 0;
 }
 
