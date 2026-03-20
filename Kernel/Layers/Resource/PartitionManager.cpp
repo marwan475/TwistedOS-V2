@@ -504,8 +504,8 @@ bool PartitionManager::EnumeratePartitions(const DeviceManager* DeviceManagerIns
         return false;
     }
 
-    uint8_t SectorBuffer[512] = {};
-    if (!DeviceManagerInstance->ReadBlock(1, SectorBuffer))
+    uint8_t HeaderSectorBuffer[512] = {};
+    if (!DeviceManagerInstance->ReadBlock(1, HeaderSectorBuffer))
     {
         if (Terminal != nullptr)
         {
@@ -514,7 +514,7 @@ bool PartitionManager::EnumeratePartitions(const DeviceManager* DeviceManagerIns
         return false;
     }
 
-    const GptHeader* Header = reinterpret_cast<const GptHeader*>(SectorBuffer);
+    const GptHeader* Header = reinterpret_cast<const GptHeader*>(HeaderSectorBuffer);
     if (!SignatureMatchesGpt(Header->Signature) || Header->SizeOfPartitionEntry < sizeof(GptPartitionEntryPrefix) || Header->NumberOfPartitionEntries == 0)
     {
         if (Terminal != nullptr)
@@ -527,10 +527,17 @@ bool PartitionManager::EnumeratePartitions(const DeviceManager* DeviceManagerIns
     }
 
     uint32_t EntryCount = Header->NumberOfPartitionEntries;
+    if (EntryCount < 128)
+    {
+        EntryCount = 128;
+    }
     if (EntryCount > 256)
     {
         EntryCount = 256;
     }
+
+    uint8_t  EntrySectorBuffer[512] = {};
+    uint64_t CachedEntryLBA64       = static_cast<uint64_t>(~0ull);
 
     for (uint32_t EntryIndex = 0; EntryIndex < EntryCount; ++EntryIndex)
     {
@@ -543,27 +550,34 @@ bool PartitionManager::EnumeratePartitions(const DeviceManager* DeviceManagerIns
             continue;
         }
 
-        if (!DeviceManagerInstance->ReadBlock(static_cast<uint32_t>(EntryLBA64), SectorBuffer))
+        if (EntryLBA64 != CachedEntryLBA64)
         {
-            if (Terminal != nullptr)
+            if (!DeviceManagerInstance->ReadBlock(static_cast<uint32_t>(EntryLBA64), EntrySectorBuffer))
             {
-                Terminal->printf_("partition scan: enumerate failed reading partition entry block lba=%lu\n", static_cast<unsigned long>(EntryLBA64));
+                if (Terminal != nullptr)
+                {
+                    Terminal->printf_("partition scan: enumerate failed reading partition entry block lba=%lu\n", static_cast<unsigned long>(EntryLBA64));
+                }
+                return false;
             }
-            return false;
+
+            CachedEntryLBA64 = EntryLBA64;
         }
 
-        const GptPartitionEntryPrefix* Entry = reinterpret_cast<const GptPartitionEntryPrefix*>(SectorBuffer + EntryOffset);
+        const GptPartitionEntryPrefix* Entry = reinterpret_cast<const GptPartitionEntryPrefix*>(EntrySectorBuffer + EntryOffset);
         if (IsZeroGuid(Entry->TypeGuid) || Entry->LastLBA < Entry->FirstLBA)
         {
             continue;
         }
+
+        uint32_t DiscoveredPartitionIndex = (*PartitionCount) + 1;
 
         if (*PartitionCount < MaxPartitionCount)
         {
             RootFileSystemPartitionInfo& Info = PartitionInfos[*PartitionCount];
             Info.StartLBA                     = Entry->FirstLBA;
             Info.SectorCount                  = (Entry->LastLBA - Entry->FirstLBA) + 1;
-            Info.PartitionIndex               = EntryIndex + 1;
+            Info.PartitionIndex               = DiscoveredPartitionIndex;
             if (!BuildPartitionDevicePath(Info.PartitionIndex, Info.DevicePath, sizeof(Info.DevicePath)))
             {
                 Info.DevicePath[0] = '\0';
@@ -575,7 +589,7 @@ bool PartitionManager::EnumeratePartitions(const DeviceManager* DeviceManagerIns
             RootFileSystemPartitionInfo& CachedInfo = CachedPartitions[CachedPartitionCount];
             CachedInfo.StartLBA                     = Entry->FirstLBA;
             CachedInfo.SectorCount                  = (Entry->LastLBA - Entry->FirstLBA) + 1;
-            CachedInfo.PartitionIndex               = EntryIndex + 1;
+            CachedInfo.PartitionIndex               = CachedPartitionCount + 1;
             if (!BuildPartitionDevicePath(CachedInfo.PartitionIndex, CachedInfo.DevicePath, sizeof(CachedInfo.DevicePath)))
             {
                 CachedInfo.DevicePath[0] = '\0';
@@ -585,6 +599,11 @@ bool PartitionManager::EnumeratePartitions(const DeviceManager* DeviceManagerIns
         }
 
         ++(*PartitionCount);
+    }
+
+    if (Terminal != nullptr)
+    {
+        Terminal->printf_("partition scan: enumerate discovered=%u cached=%u\n", *PartitionCount, CachedPartitionCount);
     }
 
     return true;
@@ -745,6 +764,10 @@ bool PartitionManager::LocateRootFileSystemPartition(const DeviceManager* Device
     }
 
     uint32_t EntryCount = Header->NumberOfPartitionEntries;
+    if (EntryCount < 128)
+    {
+        EntryCount = 128;
+    }
     if (EntryCount > 256)
     {
         EntryCount = 256;
@@ -760,6 +783,8 @@ bool PartitionManager::LocateRootFileSystemPartition(const DeviceManager* Device
     RootFileSystemPartitionInfo Ext2Fallback            = {};
     bool                        HasExt2Fallback         = false;
     uint64_t                    HighestPartitionLastLBA = 0;
+
+    uint32_t DiscoveredPartitionOrdinal = 0;
 
     for (uint32_t EntryIndex = 0; EntryIndex < EntryCount; ++EntryIndex)
     {
@@ -803,9 +828,10 @@ bool PartitionManager::LocateRootFileSystemPartition(const DeviceManager* Device
         }
 
         RootFileSystemPartitionInfo Candidate = {};
+        ++DiscoveredPartitionOrdinal;
         Candidate.StartLBA                    = Entry->FirstLBA;
         Candidate.SectorCount                 = (Entry->LastLBA - Entry->FirstLBA) + 1;
-        Candidate.PartitionIndex              = EntryIndex + 1;
+        Candidate.PartitionIndex              = DiscoveredPartitionOrdinal;
         if (!BuildPartitionDevicePath(Candidate.PartitionIndex, Candidate.DevicePath, sizeof(Candidate.DevicePath)))
         {
             Candidate.DevicePath[0] = '\0';
