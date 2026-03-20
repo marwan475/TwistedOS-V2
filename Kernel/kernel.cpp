@@ -151,7 +151,16 @@ extern "C"
 
         ActiveDispatcher->GetLogicLayer()->RegisterPartitionDevices();
 
-        ActiveDispatcher->GetLogicLayer()->InitializeRootFileSystem("/dev/sda2");
+        if (!ActiveDispatcher->GetLogicLayer()->InitializeRootFileSystem("/dev/sda2"))
+        {
+            if (Terminal != nullptr)
+            {
+                Terminal->printf_("kernel startup failed: unable to initialize root filesystem on /dev/sda2\n");
+            }
+
+            while (1)
+                __asm__ __volatile__("hlt");
+        }
 
         ActiveDispatcher->GetLogicLayer()->GetVirtualFileSystem()->PrintVFS(ActiveDispatcher->GetResourceLayer()->GetTTY());
 

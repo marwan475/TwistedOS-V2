@@ -884,32 +884,33 @@ bool LogicLayer::InitializeRootFileSystem(const char* DevicePath)
     TTY*              Terminal                 = Resource->GetTTY();
     if (PartitionManagerInstance == nullptr || DevicePath == nullptr)
     {
+        if (Terminal != nullptr)
+        {
+            Terminal->printf_("root filesystem init failed: invalid initialization state\n");
+        }
         return false;
     }
 
     RootFileSystemPartitionInfo RootPartitionInfo = {};
-    bool                        RootFileSystemReady
-            = PartitionManagerInstance->GetPartitionByDevicePath(DevicePath, &RootPartitionInfo) && Resource->InitializeRootFileSystemManager(&RootPartitionInfo);
-
-    if (!RootFileSystemReady && Terminal != nullptr)
+    if (!PartitionManagerInstance->GetPartitionByDevicePath(DevicePath, &RootPartitionInfo))
     {
-        Terminal->printf_("root filesystem init fallback: trying auto-detected root partition\n");
-    }
-
-    if (!RootFileSystemReady)
-    {
-        RootFileSystemPartitionInfo AutoPartitionInfo = {};
-        if (Resource->LocateRootFileSystemPartition(&AutoPartitionInfo))
-        {
-            RootFileSystemReady = Resource->InitializeRootFileSystemManager(&AutoPartitionInfo);
-        }
-        else if (Terminal != nullptr)
+        if (Terminal != nullptr)
         {
             Terminal->printf_("root filesystem partition not found: %s\n", DevicePath);
         }
+        return false;
     }
 
-    return RootFileSystemReady;
+    if (!Resource->InitializeRootFileSystemManager(&RootPartitionInfo))
+    {
+        if (Terminal != nullptr)
+        {
+            Terminal->printf_("root filesystem init failed: %s\n", DevicePath);
+        }
+        return false;
+    }
+
+    return true;
 }
 
 /**
