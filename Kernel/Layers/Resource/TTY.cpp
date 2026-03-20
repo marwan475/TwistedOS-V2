@@ -571,6 +571,7 @@ int64_t TTY::Write(File* OpenFile, const void* Buffer, uint64_t Count)
 
     const char* InBuffer = reinterpret_cast<const char*>(Buffer);
 
+#ifdef DEBUG_BUILD
     EnsureSerialInitialized();
     int SerialCount = static_cast<int>(Count);
     if (Count > static_cast<uint64_t>(INT32_MAX))
@@ -578,10 +579,18 @@ int64_t TTY::Write(File* OpenFile, const void* Buffer, uint64_t Count)
         SerialCount = INT32_MAX;
     }
     SerialWriteBuffer(InBuffer, SerialCount);
+#endif
 
     for (uint64_t Index = 0; Index < Count; ++Index)
     {
-        HandleOutputChar(InBuffer[Index]);
+        char Character = InBuffer[Index];
+        if (OutputAnsiState == AnsiParseState::Normal && Character >= ' ' && Character != 127)
+        {
+            PutChar(Character);
+            continue;
+        }
+
+        HandleOutputChar(Character);
     }
 
     OpenFile->CurrentOffset += Count;

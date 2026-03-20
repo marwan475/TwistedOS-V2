@@ -187,20 +187,36 @@ bool CopyUserCString(LogicLayer* Logic, const char* UserString, char* KernelBuff
         return false;
     }
 
-    for (uint64_t Index = 0; Index < KernelBufferSize; ++Index)
+    constexpr uint64_t USER_STRING_COPY_CHUNK_SIZE = 64;
+
+    uint64_t Index = 0;
+    while (Index < KernelBufferSize)
     {
-        char        Character            = 0;
-        const void* UserCharacterAddress = reinterpret_cast<const void*>(reinterpret_cast<uint64_t>(UserString) + Index);
-        if (!Logic->CopyFromUserToKernel(UserCharacterAddress, &Character, sizeof(Character)))
+        uint64_t Remaining = KernelBufferSize - Index;
+        uint64_t ChunkSize = (Remaining < USER_STRING_COPY_CHUNK_SIZE) ? Remaining : USER_STRING_COPY_CHUNK_SIZE;
+
+        uint64_t UserAddress      = reinterpret_cast<uint64_t>(UserString) + Index;
+        uint64_t OffsetWithinPage = (UserAddress & (PAGE_SIZE - 1));
+        uint64_t BytesUntilPageEnd = PAGE_SIZE - OffsetWithinPage;
+        if (ChunkSize > BytesUntilPageEnd)
+        {
+            ChunkSize = BytesUntilPageEnd;
+        }
+
+        if (!Logic->CopyFromUserToKernel(reinterpret_cast<const void*>(UserAddress), KernelBuffer + Index, ChunkSize))
         {
             return false;
         }
 
-        KernelBuffer[Index] = Character;
-        if (Character == '\0')
+        for (uint64_t ChunkIndex = 0; ChunkIndex < ChunkSize; ++ChunkIndex)
         {
-            return true;
+            if (KernelBuffer[Index + ChunkIndex] == '\0')
+            {
+                return true;
+            }
         }
+
+        Index += ChunkSize;
     }
 
     KernelBuffer[KernelBufferSize - 1] = '\0';
@@ -344,6 +360,101 @@ int64_t AllocateProcessFileDescriptor(Process* CurrentProcess, Dentry* NodeDentr
     }
 
     return LINUX_ERR_EMFILE;
+}
+
+bool HasPathSeparator(const char* Path)
+{
+    if (Path == nullptr)
+    {
+        return false;
+    }
+
+    for (uint64_t Index = 0; Path[Index] != '\0'; ++Index)
+    {
+        if (Path[Index] == '/')
+        {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+Dentry* ResolveSimpleRelativeChildDentry(Dentry* BaseDirectory, const char* RelativePath, bool FollowFinalSymlink)
+{
+    if (BaseDirectory == nullptr || RelativePath == nullptr || BaseDirectory->inode == nullptr)
+    {
+        return nullptr;
+    }
+
+    if (BaseDirectory->inode->NodeType != INODE_DIR)
+    {
+        return nullptr;
+    }
+
+    if (RelativePath[0] == '\0')
+    {
+        return nullptr;
+    }
+
+    if (RelativePath[0] == '.' && RelativePath[1] == '\0')
+    {
+        return BaseDirectory;
+    }
+
+    if (RelativePath[0] == '.' && RelativePath[1] == '.' && RelativePath[2] == '\0')
+    {
+        return (BaseDirectory->parent != nullptr) ? BaseDirectory->parent : BaseDirectory;
+    }
+
+    if (HasPathSeparator(RelativePath))
+    {
+        return nullptr;
+    }
+
+    uint64_t NameLength = CStrLength(RelativePath);
+    if (NameLength == 0)
+    {
+        return nullptr;
+    }
+
+    for (uint64_t ChildIndex = 0; ChildIndex < BaseDirectory->child_count; ++ChildIndex)
+    {
+        Dentry* Child = BaseDirectory->children[ChildIndex];
+        if (Child == nullptr || Child->inode == nullptr || Child->name == nullptr)
+        {
+            continue;
+        }
+
+        bool NamesMatch = true;
+        for (uint64_t NameIndex = 0; NameIndex < NameLength; ++NameIndex)
+        {
+            if (Child->name[NameIndex] != RelativePath[NameIndex])
+            {
+                NamesMatch = false;
+                break;
+            }
+        }
+
+        if (!NamesMatch || Child->name[NameLength] != '\0')
+        {
+            continue;
+        }
+
+        if (!FollowFinalSymlink && Child->inode->NodeType == INODE_SYMLINK)
+        {
+            return Child;
+        }
+
+        if (Child->inode->NodeType == INODE_SYMLINK)
+        {
+            return nullptr;
+        }
+
+        return Child;
+    }
+
+    return nullptr;
 }
 
 void FreeKernelStringVector(LogicLayer* Logic, char** KernelVector, uint64_t Count)
@@ -1670,6 +1781,13 @@ int64_t TranslationLayer::HandleNewFstatatSystemCall(int64_t DirectoryFileDescri
                 return LINUX_ERR_ENOENT;
             }
 
+            bool FollowFinalSymlink = ((Flags & LINUX_AT_SYMLINK_NOFOLLOW) == 0);
+            NodeDentry              = ResolveSimpleRelativeChildDentry(BaseDirectory, KernelPath, FollowFinalSymlink);
+            if (NodeDentry != nullptr)
+            {
+                goto finalize_newfstatat_lookup;
+            }
+
             char BasePath[SYSCALL_PATH_MAX] = {};
             if (!BuildAbsolutePathFromDentry(BaseDirectory, BasePath, sizeof(BasePath)))
             {
@@ -1700,6 +1818,8 @@ int64_t TranslationLayer::HandleNewFstatatSystemCall(int64_t DirectoryFileDescri
             NodeDentry = ((Flags & LINUX_AT_SYMLINK_NOFOLLOW) != 0) ? VFS->LookupNoFollowFinal(AbsolutePath) : VFS->Lookup(AbsolutePath);
         }
     }
+
+finalize_newfstatat_lookup:
 
     if (NodeDentry == nullptr || NodeDentry->inode == nullptr)
     {
@@ -1761,7 +1881,9 @@ int64_t TranslationLayer::HandleGetdents64SystemCall(uint64_t FileDescriptor, vo
         return LINUX_ERR_ENOTDIR;
     }
 
-    uint8_t* KernelBuffer = reinterpret_cast<uint8_t*>(Logic->kmalloc(BufferSize));
+    uint8_t  StackBuffer[SYSCALL_COPY_CHUNK_SIZE];
+    bool     UseHeapBuffer = (BufferSize > SYSCALL_COPY_CHUNK_SIZE);
+    uint8_t* KernelBuffer  = UseHeapBuffer ? reinterpret_cast<uint8_t*>(Logic->kmalloc(BufferSize)) : StackBuffer;
     if (KernelBuffer == nullptr)
     {
         return LINUX_ERR_ENOMEM;
@@ -1807,7 +1929,10 @@ int64_t TranslationLayer::HandleGetdents64SystemCall(uint64_t FileDescriptor, vo
 
         if (RecordLength > BufferSize)
         {
-            Logic->kfree(KernelBuffer);
+            if (UseHeapBuffer)
+            {
+                Logic->kfree(KernelBuffer);
+            }
             return LINUX_ERR_EINVAL;
         }
 
@@ -1838,19 +1963,28 @@ int64_t TranslationLayer::HandleGetdents64SystemCall(uint64_t FileDescriptor, vo
 
     if (Cursor == 0)
     {
-        Logic->kfree(KernelBuffer);
+        if (UseHeapBuffer)
+        {
+            Logic->kfree(KernelBuffer);
+        }
         return 0;
     }
 
     if (!Logic->CopyFromKernelToUser(KernelBuffer, Buffer, Cursor))
     {
-        Logic->kfree(KernelBuffer);
+        if (UseHeapBuffer)
+        {
+            Logic->kfree(KernelBuffer);
+        }
         return LINUX_ERR_EFAULT;
     }
 
     OpenFile->CurrentOffset = EntryIndex;
 
-    Logic->kfree(KernelBuffer);
+    if (UseHeapBuffer)
+    {
+        Logic->kfree(KernelBuffer);
+    }
     return static_cast<int64_t>(Cursor);
 }
 

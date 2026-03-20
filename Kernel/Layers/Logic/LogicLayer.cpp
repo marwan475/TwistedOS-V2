@@ -2141,11 +2141,19 @@ bool LogicLayer::CopyFromUserToKernel(const void* UserSource, void* KernelDestin
         return false;
     }
 
-    Resource->LoadPageTable(UserPageTable);
+    bool NeedsPageTableSwitch = (PreviousPageTable != UserPageTable);
+    if (NeedsPageTableSwitch)
+    {
+        Resource->LoadPageTable(UserPageTable);
+    }
 
     memcpy(KernelDestination, UserSource, static_cast<size_t>(Count));
 
-    Resource->LoadPageTable(PreviousPageTable);
+    if (NeedsPageTableSwitch)
+    {
+        Resource->LoadPageTable(PreviousPageTable);
+    }
+
     return true;
 }
 
@@ -2189,11 +2197,19 @@ bool LogicLayer::CopyFromKernelToUser(const void* KernelSource, void* UserDestin
         return false;
     }
 
-    Resource->LoadPageTable(UserPageTable);
+    bool NeedsPageTableSwitch = (PreviousPageTable != UserPageTable);
+    if (NeedsPageTableSwitch)
+    {
+        Resource->LoadPageTable(UserPageTable);
+    }
 
     memcpy(UserDestination, KernelSource, static_cast<size_t>(Count));
 
-    Resource->LoadPageTable(PreviousPageTable);
+    if (NeedsPageTableSwitch)
+    {
+        Resource->LoadPageTable(PreviousPageTable);
+    }
+
     return true;
 }
 
