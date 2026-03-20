@@ -151,7 +151,7 @@ extern "C"
 
         ActiveDispatcher->GetLogicLayer()->RegisterPartitionDevices();
 
-        if (!ActiveDispatcher->GetLogicLayer()->InitializeRootFileSystem("/dev/sda2"))
+        if (!ActiveDispatcher->GetLogicLayer()->InitializeExtendedFileSystem("/dev/sda2"))
         {
             if (Terminal != nullptr)
             {

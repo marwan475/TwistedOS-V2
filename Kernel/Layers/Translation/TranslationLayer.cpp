@@ -119,6 +119,7 @@ constexpr uint8_t LINUX_DT_REG     = 8;
 constexpr uint8_t LINUX_DT_LNK     = 10;
 
 constexpr uint64_t LINUX_ARCH_SET_FS = 0x1002;
+constexpr uint64_t LINUX_ARCH_GET_FS = 0x1003;
 
 constexpr int64_t LINUX_SIG_BLOCK   = 0;
 constexpr int64_t LINUX_SIG_UNBLOCK = 1;
@@ -3319,19 +3320,35 @@ int64_t TranslationLayer::HandleArchPrctlSystemCall(uint64_t Code, uint64_t Addr
         return LINUX_ERR_EINVAL;
     }
 
-    if (Code != LINUX_ARCH_SET_FS)
+    if (Code == LINUX_ARCH_SET_FS)
     {
-        return LINUX_ERR_EINVAL;
+        if (!IsCanonicalX86_64Address(Address))
+        {
+            return LINUX_ERR_EPERM;
+        }
+
+        CurrentProcess->UserFSBase = Address;
+        SetUserFSBase(Address);
+        return 0;
     }
 
-    if (!IsCanonicalX86_64Address(Address))
+    if (Code == LINUX_ARCH_GET_FS)
     {
-        return LINUX_ERR_EPERM;
+        if (Address == 0)
+        {
+            return LINUX_ERR_EFAULT;
+        }
+
+        uint64_t CurrentFSBase = CurrentProcess->UserFSBase;
+        if (!Logic->CopyFromKernelToUser(&CurrentFSBase, reinterpret_cast<void*>(Address), sizeof(CurrentFSBase)))
+        {
+            return LINUX_ERR_EFAULT;
+        }
+
+        return 0;
     }
 
-    CurrentProcess->UserFSBase = Address;
-    SetUserFSBase(Address);
-    return 0;
+    return LINUX_ERR_EINVAL;
 }
 
 int64_t TranslationLayer::HandleRtSigactionSystemCall(int64_t Signal, const void* Action, void* OldAction, uint64_t SigsetSize)

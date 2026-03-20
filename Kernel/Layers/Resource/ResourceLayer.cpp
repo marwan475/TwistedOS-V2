@@ -256,7 +256,7 @@ void ResourceLayer::InitPartitionManager()
     }
 }
 
-bool ResourceLayer::InitializeRootFileSystemManager(const RootFileSystemPartitionInfo* PartitionInfo)
+bool ResourceLayer::InitializeExtendedFileSystemManager(const RootFileSystemPartitionInfo* PartitionInfo)
 {
     if (EFSManager != nullptr)
     {
@@ -268,7 +268,7 @@ bool ResourceLayer::InitializeRootFileSystemManager(const RootFileSystemPartitio
     {
         if (Terminal != nullptr)
         {
-            Terminal->printf_("root filesystem manager init failed: device manager unavailable\n");
+            Terminal->printf_("ext filesystem manager init failed: device manager unavailable\n");
         }
         return false;
     }
@@ -277,7 +277,7 @@ bool ResourceLayer::InitializeRootFileSystemManager(const RootFileSystemPartitio
     {
         if (Terminal != nullptr)
         {
-            Terminal->printf_("root filesystem manager init failed: invalid partition info\n");
+            Terminal->printf_("ext filesystem manager init failed: invalid partition info\n");
         }
         return false;
     }
@@ -287,7 +287,7 @@ bool ResourceLayer::InitializeRootFileSystemManager(const RootFileSystemPartitio
     {
         if (Terminal != nullptr)
         {
-            Terminal->printf_("root filesystem controller not available\n");
+            Terminal->printf_("ext filesystem controller not available\n");
         }
         return false;
     }
@@ -297,7 +297,7 @@ bool ResourceLayer::InitializeRootFileSystemManager(const RootFileSystemPartitio
     {
         if (Terminal != nullptr)
         {
-            Terminal->printf_("root filesystem manager init failed: configure partition failed device=%s start_lba=%lu sectors=%lu\n",
+            Terminal->printf_("ext filesystem manager init failed: configure partition failed device=%s start_lba=%lu sectors=%lu\n",
                               (PartitionInfo->DevicePath[0] != '\0') ? PartitionInfo->DevicePath : "<none>", static_cast<unsigned long>(PartitionInfo->StartLBA),
                               static_cast<unsigned long>(PartitionInfo->SectorCount));
         }
@@ -311,7 +311,7 @@ bool ResourceLayer::InitializeRootFileSystemManager(const RootFileSystemPartitio
     {
         if (Terminal != nullptr)
         {
-            Terminal->printf_("root filesystem manager init failed: ext2 initialize failed device=%s start_lba=%lu sectors=%lu\n",
+            Terminal->printf_("ext filesystem manager init failed: ext2 initialize failed device=%s start_lba=%lu sectors=%lu\n",
                               (PartitionInfo->DevicePath[0] != '\0') ? PartitionInfo->DevicePath : "<none>", static_cast<unsigned long>(PartitionInfo->StartLBA),
                               static_cast<unsigned long>(PartitionInfo->SectorCount));
         }
@@ -323,7 +323,7 @@ bool ResourceLayer::InitializeRootFileSystemManager(const RootFileSystemPartitio
 
     if (Terminal != nullptr)
     {
-        Terminal->printf_("root filesystem found: device=%s partition=%u start_lba=%lu sectors=%lu ext2_block=%u\n",
+        Terminal->printf_("ext filesystem found: device=%s partition=%u start_lba=%lu sectors=%lu ext2_block=%u\n",
                           (PartitionInfo->DevicePath[0] != '\0') ? PartitionInfo->DevicePath : "<none>", PartitionInfo->PartitionIndex,
                           static_cast<unsigned long>(PartitionInfo->StartLBA), static_cast<unsigned long>(PartitionInfo->SectorCount), EFSManager->GetBlockSizeBytes());
         EFSManager->PrintFileSystem(Terminal);

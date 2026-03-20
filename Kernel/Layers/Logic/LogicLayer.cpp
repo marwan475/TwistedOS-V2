@@ -12,6 +12,7 @@
 
 #include <Arch/x86.hpp>
 #include <CommonUtils.hpp>
+#include <Memory/VirtualMemoryManager.hpp>
 
 namespace
 {
@@ -484,6 +485,86 @@ void FreeAnonymousProcessMappings(PhysicalMemoryManager* PMM, Process* TargetPro
     }
 }
 
+bool CloneAnonymousProcessMappings(ResourceLayer* Resource, const Process* SourceProcess, Process* TargetProcess)
+{
+    if (Resource == nullptr || SourceProcess == nullptr || TargetProcess == nullptr || SourceProcess->AddressSpace == nullptr || TargetProcess->AddressSpace == nullptr)
+    {
+        return false;
+    }
+
+    PhysicalMemoryManager* PMM = Resource->GetPMM();
+    if (PMM == nullptr)
+    {
+        return false;
+    }
+
+    uint64_t TargetPageTable = TargetProcess->AddressSpace->GetPageMapL4TableAddr();
+    if (TargetPageTable == 0)
+    {
+        return false;
+    }
+
+    VirtualMemoryManager TargetVMM(TargetPageTable, *PMM);
+
+    for (size_t MappingIndex = 0; MappingIndex < MAX_MEMORY_MAPPINGS_PER_PROCESS; ++MappingIndex)
+    {
+        const ProcessMemoryMapping& SourceMapping = SourceProcess->MemoryMappings[MappingIndex];
+        if (!SourceMapping.InUse)
+        {
+            continue;
+        }
+
+        ProcessMemoryMapping ClonedMapping = SourceMapping;
+
+        if (SourceMapping.IsAnonymous)
+        {
+            if (SourceMapping.PhysicalAddressStart == 0 || SourceMapping.Length == 0)
+            {
+                return false;
+            }
+
+            uint64_t PageCount = (SourceMapping.Length + PAGE_SIZE - 1) / PAGE_SIZE;
+            void*    NewPages  = PMM->AllocatePagesFromDescriptor(PageCount);
+            if (NewPages == nullptr)
+            {
+                return false;
+            }
+
+            memcpy(NewPages, reinterpret_cast<const void*>(SourceMapping.PhysicalAddressStart), static_cast<size_t>(PageCount * PAGE_SIZE));
+
+            bool MappingSucceeded = true;
+            for (uint64_t PageIndex = 0; PageIndex < PageCount; ++PageIndex)
+            {
+                uint64_t PhysicalPage = reinterpret_cast<uint64_t>(NewPages) + (PageIndex * PAGE_SIZE);
+                uint64_t VirtualPage  = SourceMapping.VirtualAddressStart + (PageIndex * PAGE_SIZE);
+                if (!TargetVMM.MapPage(PhysicalPage, VirtualPage, PageMappingFlags(true, true)))
+                {
+                    MappingSucceeded = false;
+                    for (uint64_t RollbackIndex = 0; RollbackIndex < PageIndex; ++RollbackIndex)
+                    {
+                        uint64_t RollbackVirtualPage = SourceMapping.VirtualAddressStart + (RollbackIndex * PAGE_SIZE);
+                        TargetVMM.UnmapPage(RollbackVirtualPage);
+                    }
+
+                    PMM->FreePagesFromDescriptor(NewPages, PageCount);
+                    break;
+                }
+            }
+
+            if (!MappingSucceeded)
+            {
+                return false;
+            }
+
+            ClonedMapping.PhysicalAddressStart = reinterpret_cast<uint64_t>(NewPages);
+        }
+
+        TargetProcess->MemoryMappings[MappingIndex] = ClonedMapping;
+    }
+
+    return true;
+}
+
 bool IsUserAddressRangeAccessible(const Process* CurrentProcess, uint64_t Address, uint64_t Count)
 {
     if (CurrentProcess == nullptr)
@@ -874,7 +955,7 @@ bool LogicLayer::RegisterPartitionDevices()
     return PartitionManagerInstance->RegisterPartitionDevices(DeviceManagerInstance, VFS);
 }
 
-bool LogicLayer::InitializeRootFileSystem(const char* DevicePath)
+bool LogicLayer::InitializeExtendedFileSystem(const char* DevicePath)
 {
     if (Resource == nullptr)
     {
@@ -887,7 +968,7 @@ bool LogicLayer::InitializeRootFileSystem(const char* DevicePath)
     {
         if (Terminal != nullptr)
         {
-            Terminal->printf_("root filesystem init failed: invalid initialization state\n");
+            Terminal->printf_("ext filesystem init failed: invalid initialization state\n");
         }
         return false;
     }
@@ -897,16 +978,16 @@ bool LogicLayer::InitializeRootFileSystem(const char* DevicePath)
     {
         if (Terminal != nullptr)
         {
-            Terminal->printf_("root filesystem partition not found: %s\n", DevicePath);
+            Terminal->printf_("ext filesystem partition not found: %s\n", DevicePath);
         }
         return false;
     }
 
-    if (!Resource->InitializeRootFileSystemManager(&RootPartitionInfo))
+    if (!Resource->InitializeExtendedFileSystemManager(&RootPartitionInfo))
     {
         if (Terminal != nullptr)
         {
-            Terminal->printf_("root filesystem init failed: %s\n", DevicePath);
+            Terminal->printf_("ext filesystem init failed: %s\n", DevicePath);
         }
         return false;
     }
@@ -1215,7 +1296,7 @@ uint8_t LogicLayer::CopyProcess(uint8_t Id)
             return PROCESS_ID_INVALID;
         }
 
-        NewAddressSpace = MapELF(reinterpret_cast<uint64_t>(CopiedImage), SourceCodeSize, Header);
+        NewAddressSpace = MapELF(reinterpret_cast<uint64_t>(CopiedImage), SourceCodeSize, Header, static_cast<VirtualAddressSpaceELF*>(SourceAddressSpace));
     }
     else
     {
@@ -1282,6 +1363,12 @@ uint8_t LogicLayer::CopyProcess(uint8_t Id)
     ChildProcess->ClearChildTidAddress      = SourceProcess->ClearChildTidAddress;
     ChildProcess->ProgramBreak              = SourceProcess->ProgramBreak;
     ChildProcess->CurrentFileSystemLocation = SourceProcess->CurrentFileSystemLocation;
+
+    if (!CloneAnonymousProcessMappings(Resource, SourceProcess, ChildProcess))
+    {
+        KillProcess(ChildId);
+        return PROCESS_ID_INVALID;
+    }
 
     for (size_t SignalIndex = 0; SignalIndex < MAX_POSIX_SIGNALS_PER_PROCESS; ++SignalIndex)
     {
@@ -1506,7 +1593,7 @@ VirtualAddressSpace* LogicLayer::MapRawBinary(uint64_t CodeAddr, uint64_t CodeSi
  * Returns:
  *   VirtualAddressSpace* - Initialized ELF address space or nullptr on failure.
  */
-VirtualAddressSpace* LogicLayer::MapELF(uint64_t CodeAddr, uint64_t CodeSize, const ELFHeader& Header)
+VirtualAddressSpace* LogicLayer::MapELF(uint64_t CodeAddr, uint64_t CodeSize, const ELFHeader& Header, const VirtualAddressSpaceELF* SourceRuntimeELFAddressSpace)
 {
     if (ELF == nullptr || !ELF->ValidateProgramHeaderTable(Header, CodeSize))
     {
@@ -1630,8 +1717,23 @@ VirtualAddressSpace* LogicLayer::MapELF(uint64_t CodeAddr, uint64_t CodeSize, co
 
                 if (BssTailBytes != 0)
                 {
+                    uint64_t BssTailVirtual  = BssVirtualStart;
                     uint64_t BssTailPhysical = CodeAddr + ProgramHeader.Offset + ProgramHeader.FileSize;
                     kmemset(reinterpret_cast<void*>(BssTailPhysical), 0, static_cast<size_t>(BssTailBytes));
+
+                    ELFMemoryRegion BssTailRegion = {};
+                    BssTailRegion.PhysicalAddress = BssTailPhysical;
+                    BssTailRegion.VirtualAddress  = BssTailVirtual;
+                    BssTailRegion.Size            = BssTailBytes;
+                    BssTailRegion.Writable        = IsWritableSegment;
+
+                    if (!AddressSpace->AddMemoryRegion(BssTailRegion))
+                    {
+                        Resource->GetPMM()->FreePagesFromDescriptor(ProcessHeap, USER_PROCESS_HEAP_SIZE / PAGE_SIZE);
+                        Resource->GetPMM()->FreePagesFromDescriptor(ProcessStack, USER_PROCESS_STACK_SIZE / PAGE_SIZE);
+                        delete AddressSpace;
+                        return nullptr;
+                    }
 
                     BssVirtualStart += BssTailBytes;
                     BssRemaining -= BssTailBytes;
@@ -1685,6 +1787,46 @@ VirtualAddressSpace* LogicLayer::MapELF(uint64_t CodeAddr, uint64_t CodeSize, co
         Resource->GetPMM()->FreePagesFromDescriptor(ProcessStack, USER_PROCESS_STACK_SIZE / PAGE_SIZE);
         delete AddressSpace;
         return nullptr;
+    }
+
+    if (SourceRuntimeELFAddressSpace != nullptr)
+    {
+        const ELFMemoryRegion* SourceRegions = SourceRuntimeELFAddressSpace->GetMemoryRegions();
+        size_t                 SourceCount   = SourceRuntimeELFAddressSpace->GetMemoryRegionCount();
+        const ELFMemoryRegion* ChildRegions  = AddressSpace->GetMemoryRegions();
+        size_t                 ChildCount    = AddressSpace->GetMemoryRegionCount();
+
+        for (size_t SourceRegionIndex = 0; SourceRegionIndex < SourceCount; ++SourceRegionIndex)
+        {
+            const ELFMemoryRegion& SourceRegion = SourceRegions[SourceRegionIndex];
+            if (!SourceRegion.Writable || SourceRegion.PhysicalAddress == 0 || SourceRegion.Size == 0)
+            {
+                continue;
+            }
+
+            const ELFMemoryRegion* MatchingChildRegion = nullptr;
+            for (size_t ChildRegionIndex = 0; ChildRegionIndex < ChildCount; ++ChildRegionIndex)
+            {
+                const ELFMemoryRegion& Candidate = ChildRegions[ChildRegionIndex];
+                if (Candidate.VirtualAddress != SourceRegion.VirtualAddress)
+                {
+                    continue;
+                }
+
+                MatchingChildRegion = &Candidate;
+                break;
+            }
+
+            if (MatchingChildRegion == nullptr || MatchingChildRegion->PhysicalAddress == 0 || MatchingChildRegion->Size == 0)
+            {
+                CleanUpELF(AddressSpace);
+                delete AddressSpace;
+                return nullptr;
+            }
+
+            uint64_t BytesToCopy = (SourceRegion.Size < MatchingChildRegion->Size) ? SourceRegion.Size : MatchingChildRegion->Size;
+            memcpy(reinterpret_cast<void*>(MatchingChildRegion->PhysicalAddress), reinterpret_cast<const void*>(SourceRegion.PhysicalAddress), static_cast<size_t>(BytesToCopy));
+        }
     }
 
     return AddressSpace;
@@ -2269,6 +2411,12 @@ void LogicLayer::BlockProcess(uint8_t Id)
     if (TargetProcess == nullptr || TargetProcess->Status != PROCESS_RUNNING)
     {
         return;
+    }
+
+    if (TargetProcess->WaitingForSystemCallReturn && TargetProcess->HasSavedSystemCallFrame)
+    {
+        TargetProcess->State.cs = KERNEL_CS;
+        TargetProcess->State.ss = KERNEL_SS;
     }
 
     TargetProcess->Status = PROCESS_BLOCKED;

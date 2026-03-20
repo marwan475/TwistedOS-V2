@@ -71,7 +71,7 @@ static Process* GetCurrentProcessForSystemCallFrame()
         return nullptr;
     }
 
-    return PM->GetRunningProcess();
+    return PM->GetCurrentProcess();
 }
 
 [[maybe_unused]] static const char* ProcessStateToString(ProcessState State)
@@ -464,6 +464,7 @@ extern "C" void ISRHANDLER(Registers* reg)
                     uint64_t HeapSize         = 0;
                     uint64_t StackStart       = 0;
                     uint64_t StackSize        = 0;
+                    uint64_t ProcessFSBase    = 0;
 
                     if (CurrentProcess->AddressSpace != nullptr)
                     {
@@ -475,13 +476,17 @@ extern "C" void ISRHANDLER(Registers* reg)
                         StackStart       = CurrentProcess->AddressSpace->GetStackVirtualAddressStart();
                         StackSize        = CurrentProcess->AddressSpace->GetStackSize();
                     }
+                    ProcessFSBase = CurrentProcess->UserFSBase;
 
+                    uint64_t LiveFSBase      = GetUserFSBase();
                     uint64_t ActivePageTable = ActiveDispatcher->GetResourceLayer()->ReadCurrentPageTable();
 
                     Terminal->printf_("Exception process: id=%u parent=%u state=%s level=%s type=%s waiting_sysret=%u saved_syscall=%u addrspace=%p cr3=%p proc_cr3=%p\n", CurrentProcess->Id,
                                       CurrentProcess->ParrentId, ProcessStateToString(CurrentProcess->Status), ProcessLevelToString(CurrentProcess->Level),
                                       ProcessFileTypeToString(CurrentProcess->FileType), CurrentProcess->WaitingForSystemCallReturn ? 1U : 0U, CurrentProcess->HasSavedSystemCallFrame ? 1U : 0U,
                                       CurrentProcess->AddressSpace, (void*) ActivePageTable, (void*) ProcessPageTable);
+
+                    Terminal->printf_("Exception process FS: live=%p saved=%p\n", (void*) LiveFSBase, (void*) ProcessFSBase);
 
                     Terminal->printf_("Exception process ranges: code=[%p..%p) heap=[%p..%p) stack=[%p..%p)\n", (void*) CodeStart, (void*) (CodeStart + CodeSize), (void*) HeapStart,
                                       (void*) (HeapStart + HeapSize), (void*) StackStart, (void*) (StackStart + StackSize));
@@ -815,6 +820,17 @@ extern "C" bool RestoreCurrentSavedSystemCallFrame()
     SavedSystemCallUserR14    = CurrentProcess->SavedSystemCallFrame.UserR14;
     SavedSystemCallUserR15    = CurrentProcess->SavedSystemCallFrame.UserR15;
     return true;
+}
+
+extern "C" void ApplyCurrentProcessUserFSBaseForSyscallReturn()
+{
+    Process* CurrentProcess = GetCurrentProcessForSystemCallFrame();
+    if (CurrentProcess == nullptr || CurrentProcess->Level != PROCESS_LEVEL_USER)
+    {
+        return;
+    }
+
+    SetUserFSBase(CurrentProcess->UserFSBase);
 }
 
 extern "C" void CompleteCurrentSystemCallReturn()

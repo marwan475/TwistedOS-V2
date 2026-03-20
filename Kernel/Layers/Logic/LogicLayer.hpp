@@ -31,7 +31,7 @@ private:
     bool                    IsScheduling = false;
 
     VirtualAddressSpace* MapRawBinary(uint64_t CodeAddr, uint64_t CodeSize);
-    VirtualAddressSpace* MapELF(uint64_t CodeAddr, uint64_t CodeSize, const ELFHeader& Header);
+    VirtualAddressSpace* MapELF(uint64_t CodeAddr, uint64_t CodeSize, const ELFHeader& Header, const VirtualAddressSpaceELF* SourceRuntimeELFAddressSpace = nullptr);
     void                 CleanUpELF(VirtualAddressSpace* AddressSpace);
     void                 CleanUpRawBinary(VirtualAddressSpace* AddressSpace);
 
@@ -52,7 +52,7 @@ public:
     void               InitializeELFManager();
     void               InitializeVirtualFileSystem();
     bool               RegisterPartitionDevices();
-    bool               InitializeRootFileSystem(const char* DevicePath);
+    bool               InitializeExtendedFileSystem(const char* DevicePath);
     uint8_t            CreateNullProcess();
     uint8_t            CreateKernelProcess(void (*EntryPoint)());
     uint8_t            CreateUserProcess(uint64_t CodeAddr, uint64_t CodeSize);

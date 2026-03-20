@@ -30,6 +30,7 @@ extern GetCurrentProcessCpuStateForSyscallReturn
 extern PersistCurrentSavedSystemCallFrame
 extern RestoreCurrentSavedSystemCallFrame
 extern CompleteCurrentSystemCallReturn
+extern ApplyCurrentProcessUserFSBaseForSyscallReturn
 extern KernelTSS
 
 %define TSS_RSP0_LOWER_OFFSET_BYTES 4
@@ -114,6 +115,10 @@ SystemCallEntry:
     mov r11, rax
     mov rcx, r11
 
+    push rcx
+    call ApplyCurrentProcessUserFSBaseForSyscallReturn
+    pop rcx
+
     mov rdx, [rcx + CPUSTATE_RDX]
     mov rbx, [rcx + CPUSTATE_RBX]
     mov rbp, [rcx + CPUSTATE_RBP]
@@ -147,6 +152,7 @@ SystemCallEntry:
 
     push rax
     call RestoreCurrentSavedSystemCallFrame
+    call ApplyCurrentProcessUserFSBaseForSyscallReturn
     call CompleteCurrentSystemCallReturn
     pop rax
 

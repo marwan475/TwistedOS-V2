@@ -65,7 +65,7 @@ public:
     void                       InitializeKeyboard();
     void                       InitializeDeviceManager();
     void                       InitPartitionManager();
-    bool                       InitializeRootFileSystemManager(const RootFileSystemPartitionInfo* PartitionInfo);
+    bool                       InitializeExtendedFileSystemManager(const RootFileSystemPartitionInfo* PartitionInfo);
     bool                       LocateRootFileSystemPartition(RootFileSystemPartitionInfo* PartitionInfo);
     PartitionManager*          GetPartitionManager();
     DeviceManager*             GetDeviceManager() const;
