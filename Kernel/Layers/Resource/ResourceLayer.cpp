@@ -280,6 +280,8 @@ void ResourceLayer::InitializeDeviceManager()
     {
         Terminal->printf_("root filesystem found: partition=%u start_lba=%lu sectors=%lu ext2_block=%u\n", PartitionInfo.PartitionIndex,
                           static_cast<unsigned long>(PartitionInfo.StartLBA), static_cast<unsigned long>(PartitionInfo.SectorCount), EFSManager->GetBlockSizeBytes());
+        EFSManager->PrintFileSystem(Terminal);
+        EFSManager->PrintFileTree(Terminal);
     }
 }
 

@@ -9,6 +9,7 @@
 #include <stdint.h>
 
 class IDEController;
+class TTY;
 
 class ExtendedFileSystemManager
 {
@@ -25,8 +26,17 @@ private:
     uint32_t             BlockSizeBytes;
     uint32_t             InodesCount;
     uint32_t             BlocksCount;
+    uint32_t             FreeBlocksCount;
+    uint32_t             FreeInodesCount;
+    uint32_t             FirstDataBlock;
+    uint32_t             BlocksPerGroup;
+    uint32_t             InodesPerGroup;
+    uint32_t             InodeSizeBytes;
+    char                 VolumeName[17];
 
     bool ReadBytesFromDisk(uint32_t OffsetBytes, void* Buffer, uint32_t SizeBytes) const;
+    bool ReadInode(uint32_t InodeNumber, uint8_t* InodeData, uint32_t InodeDataSize) const;
+    void PrintDirectoryTree(uint32_t DirectoryInodeNumber, TTY* Terminal, uint32_t Depth, uint32_t MaxDepth) const;
 
 public:
     explicit ExtendedFileSystemManager(const IDEController* Controller);
@@ -39,4 +49,6 @@ public:
     uint32_t GetBlockSizeBytes() const;
     uint32_t GetInodesCount() const;
     uint32_t GetBlocksCount() const;
+    void PrintFileSystem(TTY* Terminal) const;
+    void PrintFileTree(TTY* Terminal) const;
 };

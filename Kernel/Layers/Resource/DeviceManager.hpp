@@ -46,6 +46,7 @@ public:
     uint32_t GetPCIDeviceCount() const;
     bool GetPCIDeviceInfo(uint32_t Index, PciDeviceInfo* Info) const;
     IDEController* GetDiskController() const;
+    TTY* GetLogTerminal() const;
     bool ReadBlock(uint32_t LBA, void* Buffer) const;
     bool WriteBlock(uint32_t LBA, const void* Buffer) const;
     IDEController* GetPrimaryIDEController() const;

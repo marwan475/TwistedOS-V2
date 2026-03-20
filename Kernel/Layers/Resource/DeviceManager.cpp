@@ -251,6 +251,11 @@ IDEController* DeviceManager::GetDiskController() const
 	return PrimaryIDEController;
 }
 
+TTY* DeviceManager::GetLogTerminal() const
+{
+	return LogTerminal;
+}
+
 bool DeviceManager::ReadBlock(uint32_t LBA, void* Buffer) const
 {
 	if (PrimaryIDEController == nullptr)
