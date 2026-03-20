@@ -200,7 +200,7 @@ $(IMG): $(EFI) $(KERNEL) $(INITRAMFS)
 	mcopy -i $$ESP $(BIN)$(KERNEL) ::/kernel.bin; \
 	mcopy -i $$ESP $(BIN)$(INITRAMFS) ::/initramfs.cpio; \
 	dd if=/dev/zero of=$$ROOTFS bs=512 count=$(ROOTFS_SECTORS) status=none; \
-	mkfs.ext2 -F -d $(ROOTFS_DIR) $$ROOTFS >/dev/null; \
+	mkfs.ext2 -F $$ROOTFS >/dev/null; \
 	debugfs -w -R "mkdir /bin" $$ROOTFS >/dev/null 2>&1 || true; \
 	for entry in $(ROOTFS_BIN_DIR)/*; do \
 		[ -e "$$entry" ] || continue; \

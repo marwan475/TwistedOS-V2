@@ -234,7 +234,7 @@ void ExtendedFileSystemManager::PrintDirectoryTree(uint32_t DirectoryInodeNumber
                 break;
             }
 
-            if (EntryInode != 0 && NameLength > 0 && NameLength <= 255 && (8u + NameLength) <= EntryLength)
+            if (EntryInode != 0 && NameLength > 0 && (8u + NameLength) <= EntryLength)
             {
                 char Name[256] = {};
                 for (uint32_t NameIndex = 0; NameIndex < NameLength; ++NameIndex)
