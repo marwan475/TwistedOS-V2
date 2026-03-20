@@ -6,6 +6,7 @@
 
 #include "DeviceManager.hpp"
 
+#include "Drivers/IDEController.hpp"
 #include "TTY.hpp"
 
 #include <Arch/x86.hpp>
@@ -61,8 +62,17 @@ bool ReadPciConfigByte(uint8_t Bus, uint8_t Device, uint8_t Function, uint8_t Re
  *   DeviceManager - Constructed device manager instance.
  */
 DeviceManager::DeviceManager()
-    : PciDevices{}, PciDeviceCount(0)
+	: PciDevices{}, PciDeviceCount(0), PrimaryIDEController(nullptr), LogTerminal(nullptr)
 {
+}
+
+DeviceManager::~DeviceManager()
+{
+	if (PrimaryIDEController != nullptr)
+	{
+		delete PrimaryIDEController;
+		PrimaryIDEController = nullptr;
+	}
 }
 
 /**
@@ -73,14 +83,21 @@ DeviceManager::DeviceManager()
  * Returns:
  *   void - No return value.
  */
-void DeviceManager::Initialize()
+void DeviceManager::Initialize(TTY* Terminal)
 {
+	LogTerminal = Terminal;
 	EnumeratePCI();
 }
 
 void DeviceManager::EnumeratePCI()
 {
 	PciDeviceCount = 0;
+
+	if (PrimaryIDEController != nullptr)
+	{
+		delete PrimaryIDEController;
+		PrimaryIDEController = nullptr;
+	}
 
 	for (uint16_t Bus = 0; Bus < 256; ++Bus)
 	{
@@ -126,8 +143,65 @@ void DeviceManager::EnumeratePCI()
 				}
 
 				PciDevices[PciDeviceCount++] = Info;
+
+				if (Info.VendorId == QEMU_IDE_VENDOR_ID && Info.DeviceId == QEMU_IDE_DEVICE_ID)
+				{
+					if (LogTerminal != nullptr)
+					{
+						LogTerminal->printf_("Driver match: PCI %u:%u.%u vendor=0x%x device=0x%x\n", Info.Bus, Info.Device, Info.Function, Info.VendorId, Info.DeviceId);
+					}
+					InitializeIDEControllerForDevice(Info);
+				}
 			}
 		}
+	}
+}
+
+void DeviceManager::InitializeIDEControllerForDevice(const PciDeviceInfo& Device)
+{
+	if (PrimaryIDEController != nullptr)
+	{
+		return;
+	}
+
+	uint16_t PrimaryIoBase      = 0x1F0;
+	uint16_t PrimaryControlBase = 0x3F6;
+
+	uint32_t Bar0 = 0;
+	if (ReadPciConfigDword(Device.Bus, Device.Device, Device.Function, 0x10, &Bar0) && (Bar0 & 0x1u) != 0)
+	{
+		uint16_t ParsedBase = static_cast<uint16_t>(Bar0 & 0xFFFCu);
+		if (ParsedBase != 0)
+		{
+			PrimaryIoBase = ParsedBase;
+		}
+	}
+
+	uint32_t Bar1 = 0;
+	if (ReadPciConfigDword(Device.Bus, Device.Device, Device.Function, 0x14, &Bar1) && (Bar1 & 0x1u) != 0)
+	{
+		uint16_t ParsedBase = static_cast<uint16_t>(Bar1 & 0xFFFCu);
+		if (ParsedBase != 0)
+		{
+			PrimaryControlBase = static_cast<uint16_t>(ParsedBase + 2);
+		}
+	}
+
+	PrimaryIDEController = new IDEController(PrimaryIoBase, PrimaryControlBase);
+	if (!PrimaryIDEController->Initialize())
+	{
+		if (LogTerminal != nullptr)
+		{
+			LogTerminal->printf_("device driver init failed: ide\n");
+		}
+		delete PrimaryIDEController;
+		PrimaryIDEController = nullptr;
+		return;
+	}
+
+	if (LogTerminal != nullptr)
+	{
+		LogTerminal->printf_("device driver inited: ide\n");
 	}
 }
 
@@ -170,4 +244,34 @@ bool DeviceManager::GetPCIDeviceInfo(uint32_t Index, PciDeviceInfo* Info) const
 
     *Info = PciDevices[Index];
     return true;
+}
+
+IDEController* DeviceManager::GetDiskController() const
+{
+	return PrimaryIDEController;
+}
+
+bool DeviceManager::ReadBlock(uint32_t LBA, void* Buffer) const
+{
+	if (PrimaryIDEController == nullptr)
+	{
+		return false;
+	}
+
+	return PrimaryIDEController->ReadBlock(LBA, Buffer);
+}
+
+bool DeviceManager::WriteBlock(uint32_t LBA, const void* Buffer) const
+{
+	if (PrimaryIDEController == nullptr)
+	{
+		return false;
+	}
+
+	return PrimaryIDEController->WriteBlock(LBA, Buffer);
+}
+
+IDEController* DeviceManager::GetPrimaryIDEController() const
+{
+	return PrimaryIDEController;
 }

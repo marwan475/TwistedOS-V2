@@ -6,6 +6,7 @@
 
 #include "Dispatcher.hpp"
 
+#include <Layers/Resource/Drivers/IDEController.hpp>
 #include <Memory/KernelHeapAllocations.hpp>
 #include <Testing/KernelSelfTests.hpp>
 
@@ -13,6 +14,7 @@ namespace
 {
 constexpr uint64_t TIMER_INTERRUPT_VECTOR    = 32;
 constexpr uint64_t KEYBOARD_INTERRUPT_VECTOR = 33;
+constexpr uint64_t IDE_PRIMARY_INTERRUPT_VECTOR = 46;
 constexpr uint64_t SYSCALL_INTERRUPT_VECTOR  = 128;
 constexpr uint64_t SCHEDULER_TICK_INTERVAL   = 5;
 } // namespace
@@ -165,6 +167,16 @@ void Dispatcher::InterruptHandler(uint64_t InterruptNumber)
             if (ActiveKeyboard != nullptr)
             {
                 ActiveKeyboard->HandleInterrupt();
+            }
+        }
+        break;
+        case IDE_PRIMARY_INTERRUPT_VECTOR:
+        {
+            DeviceManager* DeviceManagerInstance = Resource.GetDeviceManager();
+            IDEController* DiskController = (DeviceManagerInstance == nullptr) ? nullptr : DeviceManagerInstance->GetDiskController();
+            if (DiskController == nullptr || !DiskController->HandleInterrupt())
+            {
+                Resource.GetTTY()->printf_("IDE interrupt with no active IDE driver\n");
             }
         }
         break;

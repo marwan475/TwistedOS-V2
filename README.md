@@ -162,6 +162,7 @@ make format
 - http://wiki.osdev.org/Paging
 - https://wiki.osdev.org/GDT_Tutorial
 - https://wiki.osdev.org/Global_Descriptor_Table
+- https://wiki.osdev.org/Interrupts
 - https://wiki.osdev.org/Initrd
 - https://wiki.osdev.org/Model_Specific_Registers
 - https://wiki.osdev.org/ELF

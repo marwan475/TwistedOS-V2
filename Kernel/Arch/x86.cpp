@@ -188,6 +188,28 @@ static inline uint32_t inl(uint16_t port)
     return value;
 }
 
+void X86OutB(uint16_t Port, uint8_t Value)
+{
+    outb(Port, Value);
+}
+
+uint8_t X86InB(uint16_t Port)
+{
+    return inb(Port);
+}
+
+void X86OutW(uint16_t Port, uint16_t Value)
+{
+    __asm__ __volatile__("outw %0, %1" : : "a"(Value), "Nd"(Port));
+}
+
+uint16_t X86InW(uint16_t Port)
+{
+    uint16_t Value = 0;
+    __asm__ __volatile__("inw %1, %0" : "=a"(Value) : "Nd"(Port));
+    return Value;
+}
+
 static uint32_t ReadPciConfigDword(uint8_t Bus, uint8_t Device, uint8_t Function, uint8_t RegisterOffset)
 {
     constexpr uint16_t PciConfigAddressPort = 0xCF8;

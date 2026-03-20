@@ -24,7 +24,7 @@ extern "C" void ResourceLayerTaskSwitchUserAsm(CpuState* OldState, const CpuStat
  */
 ResourceLayer::ResourceLayer()
     : PMM(nullptr), VMM(nullptr), Console(nullptr), KernelHeapVirtualAddrStart(0), KernelHeapVirtualAddrEnd(0), KernelPageMapL4TableAddr(0), InitramfsAddress(0), InitramfsSize(0), KHM(0, 0),
-      RFS(0, 0), Terminal(nullptr), InputKeyboard(nullptr)
+    RFS(0, 0), Terminal(nullptr), InputKeyboard(nullptr), DevManager(nullptr)
 {
 }
 
@@ -234,8 +234,13 @@ void ResourceLayer::InitializeDeviceManager()
     }
 
     DevManager = new DeviceManager();
-    DevManager->Initialize();
+    DevManager->Initialize(Terminal);
     DevManager->PrintPCI(Terminal);
+}
+
+DeviceManager* ResourceLayer::GetDeviceManager() const
+{
+    return DevManager;
 }
 
 /**

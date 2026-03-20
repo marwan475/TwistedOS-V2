@@ -60,6 +60,7 @@ public:
     void                   InitializeTTY();
     void                   InitializeKeyboard();
     void                   InitializeDeviceManager();
+    DeviceManager*         GetDeviceManager() const;
     void*                  kmalloc(size_t Size);
     void                   kfree(void* Ptr);
     uint64_t               ReadCurrentPageTable() const;
