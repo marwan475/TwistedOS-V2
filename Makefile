@@ -65,7 +65,6 @@ EFI = BOOTX64.EFI
 KERNEL = kernel.bin
 INITRAMFS = initramfs.cpio
 IMG = $(OUTPUT)
-DRIVE = TwistedDrive.img
 ROOTFS_DIR = initramfs/rootfs
 ROOTFS_BIN_DIR = $(ROOTFS_DIR)/bin
 ROOTFS_BUSYBOX = $(ROOTFS_BIN_DIR)/busybox
@@ -95,11 +94,10 @@ QEMU_FW = \
 QEMU_COMMON = \
 	-m 512M \
 	$(QEMU_FW) \
-	-drive file=TwistedOS.img,format=raw \
 	-serial stdio
 QEMU_FULL = \
 	$(QEMU_COMMON) \
-	-drive if=none,id=data,file=TwistedDrive.img,format=raw \
+	-drive if=none,id=data,file=$(IMG),format=raw \
 	-device virtio-blk-pci,drive=data \
 	-device virtio-gpu-gl-pci \
 	-display gtk,gl=on \
@@ -109,7 +107,7 @@ QEMU_FULL = \
 	-device usb-kbd,bus=xhci.0 \
 	-device usb-mouse,bus=xhci.0
 
-all: bin build $(EFI) $(KERNEL) $(INITRAMFS) $(IMG) $(DRIVE)
+all: bin build $(EFI) $(KERNEL) $(INITRAMFS) $(IMG)
 
 clean:
 	rm -rf $(BIN) $(BUILD) $(OUTPUT) *.pcap $(INIT_BIN) $(TEST1_BIN) $(TEST2_BIN) 
@@ -124,7 +122,7 @@ $(EFI): Bootloader/bootloader.cpp utils/printf.cpp utils/CommonUtils.cpp Bootloa
 	$(CC) $(CFLAGS) -I. -I./Bootloader -I./utils -o $(BIN)$@ $^ \
 		-L /usr/lib -l:libefi.a -l:libgnuefi.a
 
-$(KERNEL): Kernel/kernel.cpp Kernel/Testing/KernelSelfTests.cpp Kernel/Layers/Dispatcher.cpp Kernel/Layers/Resource/ResourceLayer.cpp Kernel/Layers/Resource/FrameBuffer.cpp Kernel/Layers/Resource/TTY.cpp Kernel/Layers/Resource/Keyboard.cpp Kernel/Layers/Resource/KernelHeapManager.cpp Kernel/Layers/Resource/RamFileSystemManager.cpp Kernel/Layers/Resource/VirtualAddressSpace.cpp Kernel/Layers/Logic/ELFManager.cpp Kernel/Layers/Logic/LogicLayer.cpp Kernel/Layers/Logic/ProcessManager.cpp Kernel/Layers/Logic/Scheduler.cpp Kernel/Layers/Logic/SynchronizationManager.cpp Kernel/Layers/Logic/VirtualFileSystem.cpp Kernel/Layers/Translation/TranslationLayer.cpp Kernel/Layers/Translation/POSIX_SystemCalls.cpp Kernel/Memory/KernelHeapAllocations.cpp Kernel/Memory/PhysicalMemoryManager.cpp Kernel/Memory/VirtualMemoryManager.cpp Kernel/Logging/FrameBufferConsole.cpp Kernel/Arch/x86.cpp Kernel/Arch/Interrupts.asm Kernel/Arch/task.asm Kernel/Arch/syscall.asm utils/printf.cpp utils/CommonUtils.cpp Kernel/linker.ld
+$(KERNEL): Kernel/kernel.cpp Kernel/Testing/KernelSelfTests.cpp Kernel/Layers/Dispatcher.cpp Kernel/Layers/Resource/ResourceLayer.cpp Kernel/Layers/Resource/FrameBuffer.cpp Kernel/Layers/Resource/TTY.cpp Kernel/Layers/Resource/Keyboard.cpp Kernel/Layers/Resource/KernelHeapManager.cpp Kernel/Layers/Resource/RamFileSystemManager.cpp Kernel/Layers/Resource/VirtualAddressSpace.cpp Kernel/Layers/Resource/DeviceManager.cpp Kernel/Layers/Logic/ELFManager.cpp Kernel/Layers/Logic/LogicLayer.cpp Kernel/Layers/Logic/ProcessManager.cpp Kernel/Layers/Logic/Scheduler.cpp Kernel/Layers/Logic/SynchronizationManager.cpp Kernel/Layers/Logic/VirtualFileSystem.cpp Kernel/Layers/Translation/TranslationLayer.cpp Kernel/Layers/Translation/POSIX_SystemCalls.cpp Kernel/Memory/KernelHeapAllocations.cpp Kernel/Memory/PhysicalMemoryManager.cpp Kernel/Memory/VirtualMemoryManager.cpp Kernel/Logging/FrameBufferConsole.cpp Kernel/Arch/x86.cpp Kernel/Arch/Interrupts.asm Kernel/Arch/task.asm Kernel/Arch/syscall.asm utils/printf.cpp utils/CommonUtils.cpp Kernel/linker.ld
 	$(KERNEL_CC) $(KERNEL_CFLAGS) -I./Kernel -I./Bootloader -I./utils -c Kernel/kernel.cpp -o $(BUILD)kernel.o
 	$(KERNEL_CC) $(KERNEL_CFLAGS) -I./Kernel -I./Bootloader -I./utils -c Kernel/Testing/KernelSelfTests.cpp -o $(BUILD)kernel_self_tests.o
 	$(KERNEL_CC) $(KERNEL_CFLAGS) -I./Kernel -I./Bootloader -I./utils -c Kernel/Layers/Dispatcher.cpp -o $(BUILD)dispatcher.o
@@ -135,6 +133,7 @@ $(KERNEL): Kernel/kernel.cpp Kernel/Testing/KernelSelfTests.cpp Kernel/Layers/Di
 	$(KERNEL_CC) $(KERNEL_CFLAGS) -I./Kernel -I./Bootloader -I./utils -c Kernel/Layers/Resource/KernelHeapManager.cpp -o $(BUILD)kernel_heap_manager.o
 	$(KERNEL_CC) $(KERNEL_CFLAGS) -I./Kernel -I./Bootloader -I./utils -c Kernel/Layers/Resource/RamFileSystemManager.cpp -o $(BUILD)ram_file_system_manager.o
 	$(KERNEL_CC) $(KERNEL_CFLAGS) -I./Kernel -I./Bootloader -I./utils -c Kernel/Layers/Resource/VirtualAddressSpace.cpp -o $(BUILD)virtual_address_space.o
+	$(KERNEL_CC) $(KERNEL_CFLAGS) -I./Kernel -I./Bootloader -I./utils -c Kernel/Layers/Resource/DeviceManager.cpp -o $(BUILD)device_manager.o
 	$(KERNEL_CC) $(KERNEL_CFLAGS) -I./Kernel -I./Bootloader -I./utils -c Kernel/Layers/Logic/ELFManager.cpp -o $(BUILD)elf_manager.o
 	$(KERNEL_CC) $(KERNEL_CFLAGS) -I./Kernel -I./Bootloader -I./utils -c Kernel/Layers/Logic/LogicLayer.cpp -o $(BUILD)logic_layer.o
 	$(KERNEL_CC) $(KERNEL_CFLAGS) -I./Kernel -I./Bootloader -I./utils -c Kernel/Layers/Logic/ProcessManager.cpp -o $(BUILD)process_manager.o
@@ -153,7 +152,7 @@ $(KERNEL): Kernel/kernel.cpp Kernel/Testing/KernelSelfTests.cpp Kernel/Layers/Di
 	$(KERNEL_AS) $(KERNEL_ASFLAGS) Kernel/Arch/syscall.asm -o $(BUILD)syscall.o
 	$(KERNEL_CC) $(KERNEL_CFLAGS) -I./Kernel -I./Bootloader -I./utils -c utils/printf.cpp -o $(BUILD)printf.o
 	$(KERNEL_CC) $(KERNEL_CFLAGS) -I./Kernel -I./Bootloader -I./utils -c utils/CommonUtils.cpp -o $(BUILD)common_utils.o
-	$(KERNEL_LD) $(KERNEL_LDFLAGS) $(BUILD)kernel.o $(BUILD)kernel_self_tests.o $(BUILD)dispatcher.o $(BUILD)resource_layer.o $(BUILD)frame_buffer.o $(BUILD)tty.o $(BUILD)keyboard.o $(BUILD)kernel_heap_manager.o $(BUILD)ram_file_system_manager.o $(BUILD)virtual_address_space.o $(BUILD)elf_manager.o $(BUILD)logic_layer.o $(BUILD)process_manager.o $(BUILD)scheduler.o $(BUILD)synchronization_manager.o $(BUILD)virtual_file_system.o $(BUILD)translation_layer.o $(BUILD)posix_system_calls.o $(BUILD)kernel_heap_allocations.o $(BUILD)physical_memory_manager.o $(BUILD)virtual_memory_manager.o $(BUILD)framebuffer_console.o $(BUILD)x86.o $(BUILD)interrupts.o $(BUILD)task_switch.o $(BUILD)syscall.o $(BUILD)printf.o $(BUILD)common_utils.o -o $(BUILD)kernel.elf
+	$(KERNEL_LD) $(KERNEL_LDFLAGS) $(BUILD)kernel.o $(BUILD)kernel_self_tests.o $(BUILD)dispatcher.o $(BUILD)resource_layer.o $(BUILD)frame_buffer.o $(BUILD)tty.o $(BUILD)keyboard.o $(BUILD)kernel_heap_manager.o $(BUILD)ram_file_system_manager.o $(BUILD)virtual_address_space.o $(BUILD)device_manager.o $(BUILD)elf_manager.o $(BUILD)logic_layer.o $(BUILD)process_manager.o $(BUILD)scheduler.o $(BUILD)synchronization_manager.o $(BUILD)virtual_file_system.o $(BUILD)translation_layer.o $(BUILD)posix_system_calls.o $(BUILD)kernel_heap_allocations.o $(BUILD)physical_memory_manager.o $(BUILD)virtual_memory_manager.o $(BUILD)framebuffer_console.o $(BUILD)x86.o $(BUILD)interrupts.o $(BUILD)task_switch.o $(BUILD)syscall.o $(BUILD)printf.o $(BUILD)common_utils.o -o $(BUILD)kernel.elf
 	objcopy -O binary --set-section-flags .bss=alloc,load,contents $(BUILD)kernel.elf $(BIN)$@
 
 
@@ -215,15 +214,6 @@ $(IMG): $(EFI) $(KERNEL) $(INITRAMFS)
 	dd if=$$ROOTFS of=$@ bs=512 seek=$$ROOTFS_START conv=notrunc status=none; \
 	rm -f $$ESP $$ROOTFS
 
-$(DRIVE):
-	@if [ ! -f $@ ]; then \
-		echo "Creating 4GB TwistedDrive.img..."; \
-		dd if=/dev/zero of=$@ bs=1M count=$$((4*1024)) status=progress; \
-	else \
-		echo "$@ already exists, skipping."; \
-	fi
-
-
 qemu: 
 	$(QEMU) $(QEMU_FULL)
 
@@ -238,7 +228,7 @@ qemu-debug: all
 		-S -no-reboot -no-shutdown
 
 qemu-basic: 
-	$(QEMU) $(QEMU_COMMON)
+	$(QEMU) $(QEMU_COMMON) -drive file=$(IMG),format=raw
 
 qemu-basic-debug: all
 	@mkdir -p $(BUILD)
@@ -246,7 +236,7 @@ qemu-basic-debug: all
 	$(QEMU) \
 		-m 1024M \
 		$(QEMU_FW) \
-		-drive file=TwistedOS.img,format=raw \
+		-drive file=$(IMG),format=raw \
 		-serial file:$(QEMU_DEBUG_SERIAL_LOG) \
 		-gdb tcp::$(QEMU_GDB_PORT) \
 		-S -no-reboot -no-shutdown
