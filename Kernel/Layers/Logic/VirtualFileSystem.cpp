@@ -818,7 +818,7 @@ bool MountEXTEntryCallback(const ExtendedFileSystemEntry& Entry, void* Context)
     }
 
     FileType NodeType = DecodeNodeType(Entry.Type);
-    void*    NodeData = nullptr;
+    void*    NodeData = const_cast<void*>(Entry.Data);
 
     bool IsMountPointRoot = (Entry.Name != nullptr && Entry.Name[0] == PATH_SEPARATOR && Entry.Name[1] == STRING_TERMINATOR);
     if (IsMountPointRoot)
@@ -1038,6 +1038,22 @@ bool VirtualFileSystem::SetRoot(Dentry* RootDentry)
     if (RootDentry->inode->NodeType != INODE_DIR)
     {
         return false;
+    }
+
+    if (RootDentry->name == nullptr || !(RootDentry->name[0] == PATH_SEPARATOR && RootDentry->name[1] == STRING_TERMINATOR))
+    {
+        char* RootName = DuplicateString("/");
+        if (RootName == nullptr)
+        {
+            return false;
+        }
+
+        if (RootDentry->name != nullptr)
+        {
+            delete[] const_cast<char*>(RootDentry->name);
+        }
+
+        RootDentry->name = RootName;
     }
 
     RootDentry->parent = nullptr;

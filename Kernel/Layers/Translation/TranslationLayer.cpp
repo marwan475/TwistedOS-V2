@@ -2363,6 +2363,20 @@ int64_t TranslationLayer::HandleChrootSystemCall(const char* Path)
         return LINUX_ERR_EFAULT;
     }
 
+    ProcessManager* PM = Logic->GetProcessManager();
+    if (PM == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    Process* CurrentProcess = PM->GetRunningProcess();
+    if (CurrentProcess == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    CurrentProcess->CurrentFileSystemLocation = RootDentry;
+
     return 0;
 }
 

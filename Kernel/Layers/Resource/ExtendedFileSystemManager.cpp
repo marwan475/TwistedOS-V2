@@ -194,16 +194,6 @@ bool ExtendedFileSystemManager::ReadInode(uint32_t InodeNumber, uint8_t* InodeDa
     uint32_t GroupIndex     = ZeroBasedInode / InodesPerGroup;
     uint32_t InodeIndex     = ZeroBasedInode % InodesPerGroup;
 
-#ifdef DEBUG_BUILD
-    {
-        Dispatcher* ActiveDispatcher = Dispatcher::GetActive();
-        if (ActiveDispatcher != nullptr && ActiveDispatcher->GetResourceLayer() != nullptr && ActiveDispatcher->GetResourceLayer()->GetTTY() != nullptr)
-        {
-            ActiveDispatcher->GetResourceLayer()->GetTTY()->printf_("ext2 inode load: ino=%u group=%u index=%u\n", InodeNumber, GroupIndex, InodeIndex);
-        }
-    }
-#endif
-
     uint32_t GroupDescriptorTableOffset = (BlockSizeBytes == 1024u) ? (2u * BlockSizeBytes) : BlockSizeBytes;
     uint32_t GroupDescriptorOffset      = GroupDescriptorTableOffset + (GroupIndex * EXT2_GROUP_DESCRIPTOR_SIZE);
 
@@ -216,59 +206,16 @@ bool ExtendedFileSystemManager::ReadInode(uint32_t InodeNumber, uint8_t* InodeDa
     uint32_t InodeTableBlock = ReadLE32(&GroupDescriptor[8]);
     if (InodeTableBlock == 0)
     {
-#ifdef DEBUG_BUILD
-        {
-            Dispatcher* ActiveDispatcher = Dispatcher::GetActive();
-            if (ActiveDispatcher != nullptr && ActiveDispatcher->GetResourceLayer() != nullptr && ActiveDispatcher->GetResourceLayer()->GetTTY() != nullptr)
-            {
-                ActiveDispatcher->GetResourceLayer()->GetTTY()->printf_("ext2 inode load fail: ino=%u inode_table_block=0\n", InodeNumber);
-            }
-        }
-#endif
         return false;
     }
 
     uint64_t InodeOffset = (static_cast<uint64_t>(InodeTableBlock) * BlockSizeBytes) + (static_cast<uint64_t>(InodeIndex) * InodeSizeBytes);
     if (InodeOffset > 0xFFFFFFFFu)
     {
-#ifdef DEBUG_BUILD
-    {
-        Dispatcher* ActiveDispatcher = Dispatcher::GetActive();
-        if (ActiveDispatcher != nullptr && ActiveDispatcher->GetResourceLayer() != nullptr && ActiveDispatcher->GetResourceLayer()->GetTTY() != nullptr)
-        {
-        ActiveDispatcher->GetResourceLayer()->GetTTY()->printf_("ext2 inode load fail: ino=%u inode_offset_overflow=%llu\n", InodeNumber,
-                                    static_cast<unsigned long long>(InodeOffset));
-        }
-    }
-#endif
         return false;
     }
 
     bool ReadOk = ReadBytesFromDisk(static_cast<uint32_t>(InodeOffset), InodeData, InodeSizeBytes);
-#ifdef DEBUG_BUILD
-    if (!ReadOk)
-    {
-        {
-            Dispatcher* ActiveDispatcher = Dispatcher::GetActive();
-            if (ActiveDispatcher != nullptr && ActiveDispatcher->GetResourceLayer() != nullptr && ActiveDispatcher->GetResourceLayer()->GetTTY() != nullptr)
-            {
-                ActiveDispatcher->GetResourceLayer()->GetTTY()->printf_("ext2 inode load fail: ino=%u inode_disk_read_failed\n", InodeNumber);
-            }
-        }
-    }
-    else
-    {
-        uint16_t Mode = ReadLE16(&InodeData[0]);
-        uint32_t Size = ReadLE32(&InodeData[4]);
-        {
-            Dispatcher* ActiveDispatcher = Dispatcher::GetActive();
-            if (ActiveDispatcher != nullptr && ActiveDispatcher->GetResourceLayer() != nullptr && ActiveDispatcher->GetResourceLayer()->GetTTY() != nullptr)
-            {
-                ActiveDispatcher->GetResourceLayer()->GetTTY()->printf_("ext2 inode loaded: ino=%u mode=0x%x size=%u\n", InodeNumber, Mode, Size);
-            }
-        }
-    }
-#endif
     return ReadOk;
 }
 
@@ -287,30 +234,9 @@ bool ExtendedFileSystemManager::ReadInodePayload(uint32_t InodeNumber, const uin
     uint8_t* Destination = reinterpret_cast<uint8_t*>(DestinationBuffer);
     kmemset(Destination, 0, static_cast<size_t>(PayloadSize));
 
-#ifdef DEBUG_BUILD
-    {
-        Dispatcher* ActiveDispatcher = Dispatcher::GetActive();
-        if (ActiveDispatcher != nullptr && ActiveDispatcher->GetResourceLayer() != nullptr && ActiveDispatcher->GetResourceLayer()->GetTTY() != nullptr)
-        {
-            ActiveDispatcher->GetResourceLayer()->GetTTY()->printf_("ext2 inode payload: ino=%u mode=0x%x size=%llu\n", InodeNumber, InodeMode,
-                                                                    static_cast<unsigned long long>(PayloadSize));
-        }
-    }
-#endif
-
     if ((InodeMode & 0xF000) == EXT2_INODE_MODE_SYMLINK && PayloadSize <= 60)
     {
         memcpy(Destination, &InodeData[40], static_cast<size_t>(PayloadSize));
-#ifdef DEBUG_BUILD
-    {
-        Dispatcher* ActiveDispatcher = Dispatcher::GetActive();
-        if (ActiveDispatcher != nullptr && ActiveDispatcher->GetResourceLayer() != nullptr && ActiveDispatcher->GetResourceLayer()->GetTTY() != nullptr)
-        {
-        ActiveDispatcher->GetResourceLayer()->GetTTY()->printf_("ext2 inode payload inline-symlink: ino=%u size=%llu\n", InodeNumber,
-                                    static_cast<unsigned long long>(PayloadSize));
-        }
-    }
-#endif
         return true;
     }
 
@@ -407,49 +333,16 @@ bool ExtendedFileSystemManager::ReadInodePayload(uint32_t InodeNumber, const uin
         uint64_t BytesThisBlock = (RemainingBytes < BlockSizeBytes) ? RemainingBytes : BlockSizeBytes;
         uint32_t DataBlock      = ResolveDataBlockNumber(LogicalBlock);
 
-#ifdef DEBUG_BUILD
-        {
-            Dispatcher* ActiveDispatcher = Dispatcher::GetActive();
-            if (ActiveDispatcher != nullptr && ActiveDispatcher->GetResourceLayer() != nullptr && ActiveDispatcher->GetResourceLayer()->GetTTY() != nullptr)
-            {
-                ActiveDispatcher->GetResourceLayer()->GetTTY()->printf_("ext2 inode payload block: ino=%u lblock=%llu pblock=%u bytes=%llu\n", InodeNumber,
-                                                                        static_cast<unsigned long long>(LogicalBlock), DataBlock,
-                                                                        static_cast<unsigned long long>(BytesThisBlock));
-            }
-        }
-#endif
-
         if (DataBlock != 0)
         {
             uint64_t BlockByteOffset = static_cast<uint64_t>(DataBlock) * BlockSizeBytes;
             if (BlockByteOffset > 0xFFFFFFFFu)
             {
-#ifdef DEBUG_BUILD
-                {
-                    Dispatcher* ActiveDispatcher = Dispatcher::GetActive();
-                    if (ActiveDispatcher != nullptr && ActiveDispatcher->GetResourceLayer() != nullptr && ActiveDispatcher->GetResourceLayer()->GetTTY() != nullptr)
-                    {
-                        ActiveDispatcher->GetResourceLayer()->GetTTY()->printf_("ext2 inode payload fail: ino=%u lblock=%llu pblock_offset_overflow=%llu\n", InodeNumber,
-                                                                                static_cast<unsigned long long>(LogicalBlock),
-                                                                                static_cast<unsigned long long>(BlockByteOffset));
-                    }
-                }
-#endif
                 return false;
             }
 
             if (!ReadBytesFromDisk(static_cast<uint32_t>(BlockByteOffset), Destination + WriteOffset, static_cast<uint32_t>(BytesThisBlock)))
             {
-#ifdef DEBUG_BUILD
-                {
-                    Dispatcher* ActiveDispatcher = Dispatcher::GetActive();
-                    if (ActiveDispatcher != nullptr && ActiveDispatcher->GetResourceLayer() != nullptr && ActiveDispatcher->GetResourceLayer()->GetTTY() != nullptr)
-                    {
-                        ActiveDispatcher->GetResourceLayer()->GetTTY()->printf_("ext2 inode payload fail: ino=%u lblock=%llu disk_read_failed\n", InodeNumber,
-                                                                                static_cast<unsigned long long>(LogicalBlock));
-                    }
-                }
-#endif
                 return false;
             }
         }
@@ -458,17 +351,6 @@ bool ExtendedFileSystemManager::ReadInodePayload(uint32_t InodeNumber, const uin
         WriteOffset += BytesThisBlock;
         ++LogicalBlock;
     }
-
-#ifdef DEBUG_BUILD
-    {
-        Dispatcher* ActiveDispatcher = Dispatcher::GetActive();
-        if (ActiveDispatcher != nullptr && ActiveDispatcher->GetResourceLayer() != nullptr && ActiveDispatcher->GetResourceLayer()->GetTTY() != nullptr)
-        {
-            ActiveDispatcher->GetResourceLayer()->GetTTY()->printf_("ext2 inode payload loaded: ino=%u size=%llu\n", InodeNumber,
-                                                                    static_cast<unsigned long long>(PayloadSize));
-        }
-    }
-#endif
     return true;
 }
 
@@ -490,16 +372,6 @@ bool ExtendedFileSystemManager::EnumerateDirectoryEntries(uint32_t DirectoryInod
     {
         return false;
     }
-
-#ifdef DEBUG_BUILD
-    {
-        Dispatcher* ActiveDispatcher = Dispatcher::GetActive();
-        if (ActiveDispatcher != nullptr && ActiveDispatcher->GetResourceLayer() != nullptr && ActiveDispatcher->GetResourceLayer()->GetTTY() != nullptr)
-        {
-            ActiveDispatcher->GetResourceLayer()->GetTTY()->printf_("ext2 enumerate dir: ino=%u path='%s'\n", DirectoryInodeNumber, DirectoryPath);
-        }
-    }
-#endif
 
     uint32_t DirectBlockOffset = 40;
     for (uint32_t BlockPointerIndex = 0; BlockPointerIndex < 12; ++BlockPointerIndex)
@@ -597,27 +469,10 @@ bool ExtendedFileSystemManager::EnumerateDirectoryEntries(uint32_t DirectoryInod
                     Entry.Name                    = FullPath;
                     void* EntryData               = nullptr;
 
-                    bool ShouldLoadData = (DecodedType == ExtendedFileSystemEntryTypeSymbolicLink);
-
-                    if (!ShouldLoadData && DecodedType == ExtendedFileSystemEntryTypeRegularFile)
-                    {
-                        ShouldLoadData = StringEquals(FullPath, "/bin/busybox");
-                    }
+                    bool ShouldLoadData = (DecodedType == ExtendedFileSystemEntryTypeSymbolicLink || DecodedType == ExtendedFileSystemEntryTypeRegularFile);
 
                     if (ShouldLoadData && EntrySize > 0)
                     {
-#ifdef DEBUG_BUILD
-                        {
-                            Dispatcher* ActiveDispatcher = Dispatcher::GetActive();
-                            if (ActiveDispatcher != nullptr && ActiveDispatcher->GetResourceLayer() != nullptr && ActiveDispatcher->GetResourceLayer()->GetTTY() != nullptr)
-                            {
-                                ActiveDispatcher->GetResourceLayer()->GetTTY()->printf_("ext2 preload inode: ino=%u path='%s' type=%s size=%llu\n", EntryInode, FullPath,
-                                                                                        (DecodedType == ExtendedFileSystemEntryTypeSymbolicLink) ? "symlink" : "file",
-                                                                                        static_cast<unsigned long long>(EntrySize));
-                            }
-                        }
-#endif
-
                         uint8_t* LoadedData    = nullptr;
                         bool     UsedKernelHeap = false;
                         bool     UsedPMM        = false;
@@ -653,19 +508,6 @@ bool ExtendedFileSystemManager::EnumerateDirectoryEntries(uint32_t DirectoryInod
                             delete[] BlockData;
                             return false;
                         }
-
-#ifdef DEBUG_BUILD
-                        {
-                            Dispatcher* AllocationDispatcher = Dispatcher::GetActive();
-                            if (AllocationDispatcher != nullptr && AllocationDispatcher->GetResourceLayer() != nullptr
-                                && AllocationDispatcher->GetResourceLayer()->GetTTY() != nullptr)
-                            {
-                                AllocationDispatcher->GetResourceLayer()->GetTTY()->printf_(
-                                        "ext2 preload alloc ok: ino=%u path='%s' size=%llu src=%s\n", EntryInode, FullPath, static_cast<unsigned long long>(EntrySize),
-                                        UsedPMM ? "pmm" : (UsedKernelHeap ? "kmalloc" : "new"));
-                            }
-                        }
-#endif
 
                         if (!ReadInodePayload(EntryInode, ChildInodeData, ChildMode, EntrySize, LoadedData))
                         {
@@ -928,20 +770,12 @@ uint32_t ExtendedFileSystemManager::GetBlocksCount() const
 
 bool ExtendedFileSystemManager::EnumerateEntries(ExtendedFileSystemEntryCallback Callback, void* Context, TTY* Terminal) const
 {
+    (void) Terminal;
+
     if (!Initialized || Callback == nullptr)
     {
         return false;
     }
-
-#ifdef DEBUG_BUILD
-    {
-        Dispatcher* ActiveDispatcher = Dispatcher::GetActive();
-        if (ActiveDispatcher != nullptr && ActiveDispatcher->GetResourceLayer() != nullptr && ActiveDispatcher->GetResourceLayer()->GetTTY() != nullptr)
-        {
-            ActiveDispatcher->GetResourceLayer()->GetTTY()->printf_("ext2 enumerate start: root_inode=%u\n", EXT2_ROOT_INODE_NUMBER);
-        }
-    }
-#endif
 
     ExtendedFileSystemEntry RootEntry = {};
     RootEntry.Name                    = "/";
@@ -952,31 +786,10 @@ bool ExtendedFileSystemManager::EnumerateEntries(ExtendedFileSystemEntryCallback
 
     if (!Callback(RootEntry, Context))
     {
-#ifdef DEBUG_BUILD
-        {
-            Dispatcher* ActiveDispatcher = Dispatcher::GetActive();
-            if (ActiveDispatcher != nullptr && ActiveDispatcher->GetResourceLayer() != nullptr && ActiveDispatcher->GetResourceLayer()->GetTTY() != nullptr)
-            {
-                ActiveDispatcher->GetResourceLayer()->GetTTY()->printf_("ext2 enumerate stop: root callback rejected\n");
-            }
-        }
-#endif
         return false;
     }
 
-    bool Result = EnumerateDirectoryEntries(EXT2_ROOT_INODE_NUMBER, "/", Callback, Context);
-
-#ifdef DEBUG_BUILD
-    {
-        Dispatcher* ActiveDispatcher = Dispatcher::GetActive();
-        if (ActiveDispatcher != nullptr && ActiveDispatcher->GetResourceLayer() != nullptr && ActiveDispatcher->GetResourceLayer()->GetTTY() != nullptr)
-        {
-            ActiveDispatcher->GetResourceLayer()->GetTTY()->printf_("ext2 enumerate done: result=%d\n", Result ? 1 : 0);
-        }
-    }
-#endif
-
-    return Result;
+    return EnumerateDirectoryEntries(EXT2_ROOT_INODE_NUMBER, "/", Callback, Context);
 }
 
 void ExtendedFileSystemManager::PrintFileSystem(TTY* Terminal) const
