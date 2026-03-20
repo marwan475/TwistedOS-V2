@@ -81,7 +81,10 @@ TEST1_BIN = $(ROOTFS_DIR)/Test1
 TEST2_SRC = initramfs/Test2.c
 TEST2_BIN = $(ROOTFS_DIR)/Test2
 ESP_SIZE = 64
-SECTORS = $(shell echo $$(( $(ESP_SIZE) * 2048 )))
+ROOTFS_SIZE = 256
+IMG_SECTORS = $(shell echo $$(( ($(ESP_SIZE) + $(ROOTFS_SIZE) + 2) * 2048 )))
+ESP_SECTORS = $(shell echo $$(( $(ESP_SIZE) * 2048 )))
+ROOTFS_SECTORS = $(shell echo $$(( $(ROOTFS_SIZE) * 2048 )))
 GDB = gdb
 QEMU_GDB_PORT = 1234
 QEMU_DEBUG_SERIAL_LOG = $(BUILD)qemu-debug-serial.log
@@ -177,21 +180,40 @@ $(INITRAMFS): $(INIT_BIN) $(TEST1_BIN) $(TEST2_BIN) busybox-rootfs $(ROOTFS_BUSY
 
 $(IMG): $(EFI) $(KERNEL) $(INITRAMFS)
 	rm -f $@
-	dd if=/dev/zero of=$@ bs=512 count=$(SECTORS) status=none
+	dd if=/dev/zero of=$@ bs=512 count=$(IMG_SECTORS) status=none
 	parted $@ --script mklabel gpt
-	parted $@ --script mkpart ESP fat32 1MiB 100%
+	parted $@ --script mkpart ESP fat32 1MiB $$((1 + $(ESP_SIZE)))MiB
 	parted $@ --script set 1 boot on
+	parted $@ --script set 1 esp on
+	parted $@ --script mkpart ROOTFS ext2 $$((1 + $(ESP_SIZE)))MiB 100%
 	START=$$(parted -s $@ unit s print | awk '/^ 1/ {print $$2}' | sed 's/s//'); \
+	ROOTFS_START=$$(parted -s $@ unit s print | awk '/^ 2/ {print $$2}' | sed 's/s//'); \
 	ESP=esp.fat; \
-	dd if=/dev/zero of=$$ESP bs=512 count=$(SECTORS) status=none; \
+	ROOTFS=rootfs.ext2; \
+	dd if=/dev/zero of=$$ESP bs=512 count=$(ESP_SECTORS) status=none; \
 	mkfs.fat -F32 $$ESP >/dev/null; \
 	export MTOOLS_SKIP_CHECK=1; \
 	mmd -i $$ESP ::/EFI; mmd -i $$ESP ::/EFI/BOOT; \
 	mcopy -i $$ESP $(BIN)$(EFI) ::/EFI/BOOT/BOOTX64.EFI; \
 	mcopy -i $$ESP $(BIN)$(KERNEL) ::/kernel.bin; \
 	mcopy -i $$ESP $(BIN)$(INITRAMFS) ::/initramfs.cpio; \
+	dd if=/dev/zero of=$$ROOTFS bs=512 count=$(ROOTFS_SECTORS) status=none; \
+	mkfs.ext2 -F -d $(ROOTFS_DIR) $$ROOTFS >/dev/null; \
+	debugfs -w -R "mkdir /bin" $$ROOTFS >/dev/null 2>&1 || true; \
+	for entry in $(ROOTFS_BIN_DIR)/*; do \
+		[ -e "$$entry" ] || continue; \
+		name=$$(basename "$$entry"); \
+		debugfs -w -R "rm /bin/$$name" $$ROOTFS >/dev/null 2>&1 || true; \
+		if [ -L "$$entry" ]; then \
+			target=$$(readlink "$$entry"); \
+			debugfs -w -R "symlink /bin/$$name $$target" $$ROOTFS >/dev/null; \
+		else \
+			debugfs -w -R "write $$entry /bin/$$name" $$ROOTFS >/dev/null; \
+		fi; \
+	done; \
 	dd if=$$ESP of=$@ bs=512 seek=$$START conv=notrunc status=none; \
-	rm -f $$ESP
+	dd if=$$ROOTFS of=$@ bs=512 seek=$$ROOTFS_START conv=notrunc status=none; \
+	rm -f $$ESP $$ROOTFS
 
 $(DRIVE):
 	@if [ ! -f $@ ]; then \
