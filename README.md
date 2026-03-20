@@ -171,3 +171,5 @@ make format
 - https://man7.org/linux/man-pages/
 - https://en.wikipedia.org/wiki/Buddy_memory_allocation
 - CMPT 432 Advanced Operating Systems
+
+git clone https://github.com/mirror/busybox.git

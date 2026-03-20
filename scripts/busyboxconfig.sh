@@ -117,9 +117,11 @@ CONFIG_HEAD=y
 CONFIG_TAIL=y
 CONFIG_CP=n
 CONFIG_MV=n
-CONFIG_RM=n
-CONFIG_MKDIR=n
-CONFIG_TOUCH=n
+CONFIG_RM=y
+CONFIG_MKDIR=y
+CONFIG_TOUCH=y
+CONFIG_MOUNT=y
+CONFIG_CHROOT=y
 
 # Logging / proc / networking off
 CONFIG_SYSLOGD=n
@@ -208,6 +210,11 @@ set_config_y CONFIG_TEST
 set_config_y CONFIG_BASENAME
 set_config_y CONFIG_DIRNAME
 set_config_y CONFIG_ENV
+set_config_y CONFIG_MKDIR
+set_config_y CONFIG_RM
+set_config_y CONFIG_TOUCH
+set_config_y CONFIG_MOUNT
+set_config_y CONFIG_CHROOT
 set_config_y CONFIG_SH_IS_ASH
 set_config_y CONFIG_SHELL_ASH
 set_config_n CONFIG_HUSH
@@ -273,6 +280,11 @@ ln -sf busybox "${INSTALL_DIR}/test"
 ln -sf busybox "${INSTALL_DIR}/basename"
 ln -sf busybox "${INSTALL_DIR}/dirname"
 ln -sf busybox "${INSTALL_DIR}/env"
+ln -sf busybox "${INSTALL_DIR}/mkdir"
+ln -sf busybox "${INSTALL_DIR}/rm"
+ln -sf busybox "${INSTALL_DIR}/touch"
+ln -sf busybox "${INSTALL_DIR}/mount"
+ln -sf busybox "${INSTALL_DIR}/chroot"
 
 
 echo "Built: ${BUSYBOX_DIR}/busybox"
