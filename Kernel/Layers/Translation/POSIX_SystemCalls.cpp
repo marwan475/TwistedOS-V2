@@ -102,6 +102,9 @@ int64_t TranslationLayer::HandlePosixSystemCallNumber(uint64_t SystemCallNumber,
         case 79: // getcwd
             return HandleGetcwdSystemCall(reinterpret_cast<char*>(Arg1), Arg2);
             break;
+        case 80: // chdir
+            return HandleChdirSystemCall(reinterpret_cast<const char*>(Arg1));
+            break;
         case 102: // getuid
             return HandleGetuidSystemCall();
             break;

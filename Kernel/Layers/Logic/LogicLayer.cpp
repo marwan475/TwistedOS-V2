@@ -1065,7 +1065,6 @@ uint8_t LogicLayer::ChangeProcessExecution(uint8_t Id, const char* FilePath, con
     TargetProcess->FileType                  = IsELF ? FILE_TYPE_ELF : FILE_TYPE_RAW_BINARY;
     TargetProcess->StackPointer              = reinterpret_cast<void*>(NewAddressSpace->GetStackVirtualAddressStart());
     TargetProcess->State                     = NewState;
-    TargetProcess->CurrentFileSystemLocation = (Entry->parent != nullptr) ? Entry->parent : Entry;
 
     Process* RunningProcess = PM->GetRunningProcess();
     if (RunningProcess == TargetProcess)

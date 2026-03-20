@@ -109,8 +109,7 @@ QEMU_FULL = \
 all: bin build $(EFI) $(KERNEL) $(INITRAMFS) $(IMG) $(DRIVE)
 
 clean:
-	rm -rf $(BIN) $(BUILD) $(OUTPUT) *.pcap $(INIT_BIN) $(TEST1_BIN) $(TEST2_BIN) \
-		$(ROOTFS_BIN_DIR)/*
+	rm -rf $(BIN) $(BUILD) $(OUTPUT) *.pcap $(INIT_BIN) $(TEST1_BIN) $(TEST2_BIN) 
 
 build:
 	mkdir $(BUILD)
