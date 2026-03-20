@@ -11,6 +11,26 @@
 class IDEController;
 class TTY;
 
+enum ExtendedFileSystemEntryType
+{
+    ExtendedFileSystemEntryTypeUnknown = 0,
+    ExtendedFileSystemEntryTypeRegularFile,
+    ExtendedFileSystemEntryTypeDirectory,
+    ExtendedFileSystemEntryTypeSymbolicLink,
+    ExtendedFileSystemEntryTypeOther
+};
+
+typedef struct
+{
+    const char*                 Name;
+    const void*                 Data;
+    uint64_t                    Size;
+    ExtendedFileSystemEntryType Type;
+    uint32_t                    InodeNumber;
+} ExtendedFileSystemEntry;
+
+typedef bool (*ExtendedFileSystemEntryCallback)(const ExtendedFileSystemEntry& Entry, void* Context);
+
 class ExtendedFileSystemManager
 {
 private:
@@ -37,6 +57,7 @@ private:
     bool ReadBytesFromDisk(uint32_t OffsetBytes, void* Buffer, uint32_t SizeBytes) const;
     bool ReadInode(uint32_t InodeNumber, uint8_t* InodeData, uint32_t InodeDataSize) const;
     void PrintDirectoryTree(uint32_t DirectoryInodeNumber, TTY* Terminal, uint32_t Depth, uint32_t MaxDepth) const;
+    bool EnumerateDirectoryEntries(uint32_t DirectoryInodeNumber, const char* DirectoryPath, ExtendedFileSystemEntryCallback Callback, void* Context) const;
 
 public:
     explicit ExtendedFileSystemManager(const IDEController* Controller);
@@ -49,6 +70,7 @@ public:
     uint32_t GetBlockSizeBytes() const;
     uint32_t GetInodesCount() const;
     uint32_t GetBlocksCount() const;
+    bool     EnumerateEntries(ExtendedFileSystemEntryCallback Callback, void* Context, TTY* Terminal = nullptr) const;
     void     PrintFileSystem(TTY* Terminal) const;
     void     PrintFileTree(TTY* Terminal) const;
 };

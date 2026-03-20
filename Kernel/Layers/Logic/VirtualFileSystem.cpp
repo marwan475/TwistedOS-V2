@@ -6,6 +6,7 @@
 
 #include "VirtualFileSystem.hpp"
 
+#include "../Resource/ExtendedFileSystemManager.hpp"
 #include "../Resource/RamFileSystemManager.hpp"
 #include "../Resource/TTY.hpp"
 
@@ -32,6 +33,14 @@ typedef struct
     Dentry* RootDentry;
     bool    IsSuccessful;
 } MountInitRamFileSystemContext;
+
+typedef struct
+{
+    Dentry*      RootDentry;
+    const char*  MountPath;
+    const void*  FileSystemManager;
+    bool         IsSuccessful;
+} MountEXTFileSystemContext;
 
 bool    IsRootAliasPath(const char* NormalizedPath);
 Dentry* FindChildBySegment(Dentry* Parent, const char* SegmentStart, uint64_t SegmentLength);
@@ -304,6 +313,69 @@ FileType DecodeNodeType(RamFileSystemEntryType EntryType)
     }
 
     return INODE_DEV;
+}
+
+FileType DecodeNodeType(ExtendedFileSystemEntryType EntryType)
+{
+    if (EntryType == ExtendedFileSystemEntryTypeDirectory)
+    {
+        return INODE_DIR;
+    }
+
+    if (EntryType == ExtendedFileSystemEntryTypeRegularFile)
+    {
+        return INODE_FILE;
+    }
+
+    if (EntryType == ExtendedFileSystemEntryTypeSymbolicLink)
+    {
+        return INODE_SYMLINK;
+    }
+
+    return INODE_FILE;
+}
+
+char* ComposeMountPath(const char* MountPath, const char* EntryPath)
+{
+    if (MountPath == nullptr || EntryPath == nullptr)
+    {
+        return nullptr;
+    }
+
+    const char* RelativePath = EntryPath;
+    while (*RelativePath == PATH_SEPARATOR)
+    {
+        ++RelativePath;
+    }
+
+    uint64_t MountLength = GetStringLength(MountPath);
+    uint64_t EntryLength = GetStringLength(RelativePath);
+
+    bool MountIsRoot = (MountLength == 1 && MountPath[0] == PATH_SEPARATOR);
+    bool NeedsSeparator
+            = (MountLength > 0 && !MountIsRoot && MountPath[MountLength - 1] != PATH_SEPARATOR && EntryLength > 0);
+
+    uint64_t CombinedLength = MountLength + (NeedsSeparator ? 1 : 0) + EntryLength;
+    char*    CombinedPath   = new char[CombinedLength + 1];
+
+    uint64_t Cursor = 0;
+    memcpy(CombinedPath + Cursor, MountPath, static_cast<size_t>(MountLength));
+    Cursor += MountLength;
+
+    if (NeedsSeparator)
+    {
+        CombinedPath[Cursor] = PATH_SEPARATOR;
+        ++Cursor;
+    }
+
+    if (EntryLength > 0)
+    {
+        memcpy(CombinedPath + Cursor, RelativePath, static_cast<size_t>(EntryLength));
+        Cursor += EntryLength;
+    }
+
+    CombinedPath[Cursor] = STRING_TERMINATOR;
+    return CombinedPath;
 }
 
 bool IsDotSegment(const char* SegmentStart, uint64_t SegmentLength)
@@ -732,6 +804,37 @@ bool MountEntryCallback(const RamFileSystemEntry& Entry, void* Context)
     return MountContext->IsSuccessful;
 }
 
+bool MountEXTEntryCallback(const ExtendedFileSystemEntry& Entry, void* Context)
+{
+    MountEXTFileSystemContext* MountContext = reinterpret_cast<MountEXTFileSystemContext*>(Context);
+    if (MountContext == nullptr || MountContext->RootDentry == nullptr || MountContext->MountPath == nullptr)
+    {
+        return false;
+    }
+
+    char* TargetPath = ComposeMountPath(MountContext->MountPath, Entry.Name);
+    if (TargetPath == nullptr)
+    {
+        return false;
+    }
+
+    FileType NodeType = DecodeNodeType(Entry.Type);
+    void*    NodeData = nullptr;
+
+    bool IsMountPointRoot = (Entry.Name != nullptr && Entry.Name[0] == PATH_SEPARATOR && Entry.Name[1] == STRING_TERMINATOR);
+    if (IsMountPointRoot)
+    {
+        NodeData = const_cast<void*>(MountContext->FileSystemManager);
+    }
+
+    bool Added = EnsurePathDentry(MountContext->RootDentry, TargetPath, NodeType, Entry.Size, NodeData);
+
+    delete[] TargetPath;
+
+    MountContext->IsSuccessful = MountContext->IsSuccessful && Added;
+    return MountContext->IsSuccessful;
+}
+
 /**
  * Function: FileTypeToString
  * Description: Converts a VFS file type to a human-readable string.
@@ -865,6 +968,39 @@ void VirtualFileSystem::MountInitRamFileSystem(RamFileSystemManager* ramFileSyst
     {
         return;
     }
+}
+
+bool VirtualFileSystem::MountEXTFileSystem(ExtendedFileSystemManager* extendedFileSystemManager, const char* mountPath)
+{
+    if (extendedFileSystemManager == nullptr || mountPath == nullptr || !extendedFileSystemManager->IsInitialized())
+    {
+        return false;
+    }
+
+    if (Root == nullptr)
+    {
+        INode* RootNode = CreateINode(INODE_DIR, 0, nullptr);
+        Root            = CreateDentry("/", nullptr, RootNode);
+    }
+
+    if (!EnsurePathDentry(Root, mountPath, INODE_DIR, 0, extendedFileSystemManager))
+    {
+        return false;
+    }
+
+    MountEXTFileSystemContext MountContext = {};
+    MountContext.RootDentry                = Root;
+    MountContext.MountPath                 = mountPath;
+    MountContext.FileSystemManager         = extendedFileSystemManager;
+    MountContext.IsSuccessful              = true;
+
+    bool EnumerationSuccess = extendedFileSystemManager->EnumerateEntries(&MountEXTEntryCallback, &MountContext, nullptr);
+    if (!EnumerationSuccess || !MountContext.IsSuccessful)
+    {
+        return false;
+    }
+
+    return true;
 }
 
 bool VirtualFileSystem::RegisterDevice(const char* path, void* deviceData, FileOperations* fileOperations)

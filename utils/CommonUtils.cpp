@@ -28,6 +28,22 @@ char* strcpy(char* dest, const char* src)
     return dest;
 }
 
+size_t strlen(const char* src)
+{
+    if (src == nullptr)
+    {
+        return 0;
+    }
+
+    size_t length = 0;
+    while (src[length] != '\0')
+    {
+        ++length;
+    }
+
+    return length;
+}
+
 void memcpy(void* dest, const void* src, size_t count)
 {
     unsigned char*       d = (unsigned char*) dest;

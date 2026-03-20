@@ -162,7 +162,11 @@ extern "C"
                 __asm__ __volatile__("hlt");
         }
 
+        ActiveDispatcher->GetLogicLayer()->GetVirtualFileSystem()->MountEXTFileSystem(ActiveDispatcher->GetResourceLayer()->GetExtendedFileSystemManager(), "/mnt");
+
         ActiveDispatcher->GetLogicLayer()->GetVirtualFileSystem()->PrintVFS(ActiveDispatcher->GetResourceLayer()->GetTTY());
+
+
 
 #ifdef STEST_BUILD
         if (!KernelSelfTestStart(ActiveDispatcher))

@@ -9,6 +9,7 @@
 #include <stdint.h>
 
 class RamFileSystemManager;
+class ExtendedFileSystemManager;
 class TTY;
 class VirtualAddressSpace;
 class LogicLayer;
@@ -84,6 +85,7 @@ public:
     VirtualFileSystem();
     ~VirtualFileSystem();
     void    MountInitRamFileSystem(RamFileSystemManager* ramFileSystemManager);
+    bool    MountEXTFileSystem(ExtendedFileSystemManager* extendedFileSystemManager, const char* mountPath);
     bool    RegisterDevice(const char* path, void* deviceData, FileOperations* fileOperations);
     Dentry* Lookup(const char* path);
     Dentry* LookupNoFollowFinal(const char* path);

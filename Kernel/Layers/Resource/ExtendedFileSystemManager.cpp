@@ -18,6 +18,21 @@ constexpr uint32_t EXT2_GROUP_DESCRIPTOR_SIZE   = 32;
 constexpr uint32_t EXT2_ROOT_INODE_NUMBER       = 2;
 constexpr uint16_t EXT2_INODE_MODE_DIRECTORY    = 0x4000;
 
+ExtendedFileSystemEntryType DecodeEntryType(uint8_t Type)
+{
+    switch (Type)
+    {
+        case 1:
+            return ExtendedFileSystemEntryTypeRegularFile;
+        case 2:
+            return ExtendedFileSystemEntryTypeDirectory;
+        case 7:
+            return ExtendedFileSystemEntryTypeSymbolicLink;
+        default:
+            return ExtendedFileSystemEntryTypeOther;
+    }
+}
+
 uint16_t ReadLE16(const uint8_t* Data)
 {
     return static_cast<uint16_t>(Data[0]) | static_cast<uint16_t>(static_cast<uint16_t>(Data[1]) << 8);
@@ -173,6 +188,150 @@ bool ExtendedFileSystemManager::ReadInode(uint32_t InodeNumber, uint8_t* InodeDa
     }
 
     return ReadBytesFromDisk(static_cast<uint32_t>(InodeOffset), InodeData, InodeSizeBytes);
+}
+
+bool ExtendedFileSystemManager::EnumerateDirectoryEntries(uint32_t DirectoryInodeNumber, const char* DirectoryPath, ExtendedFileSystemEntryCallback Callback, void* Context) const
+{
+    if (DirectoryPath == nullptr || Callback == nullptr)
+    {
+        return false;
+    }
+
+    uint8_t InodeBuffer[256] = {};
+    if (InodeSizeBytes > sizeof(InodeBuffer) || !ReadInode(DirectoryInodeNumber, InodeBuffer, sizeof(InodeBuffer)))
+    {
+        return false;
+    }
+
+    uint16_t Mode = ReadLE16(&InodeBuffer[0]);
+    if ((Mode & EXT2_INODE_MODE_DIRECTORY) == 0)
+    {
+        return false;
+    }
+
+    uint32_t DirectBlockOffset = 40;
+    for (uint32_t BlockPointerIndex = 0; BlockPointerIndex < 12; ++BlockPointerIndex)
+    {
+        uint32_t BlockNumber = ReadLE32(&InodeBuffer[DirectBlockOffset + (BlockPointerIndex * 4)]);
+        if (BlockNumber == 0)
+        {
+            continue;
+        }
+
+        uint64_t BlockByteOffset = static_cast<uint64_t>(BlockNumber) * BlockSizeBytes;
+        if (BlockByteOffset > 0xFFFFFFFFu)
+        {
+            continue;
+        }
+
+        uint8_t* BlockData = new uint8_t[BlockSizeBytes];
+        if (BlockData == nullptr)
+        {
+            return false;
+        }
+
+        bool ReadSuccess = ReadBytesFromDisk(static_cast<uint32_t>(BlockByteOffset), BlockData, BlockSizeBytes);
+        if (!ReadSuccess)
+        {
+            delete[] BlockData;
+            continue;
+        }
+
+        uint32_t Offset = 0;
+        while (Offset + 8 <= BlockSizeBytes)
+        {
+            uint32_t EntryInode  = ReadLE32(&BlockData[Offset]);
+            uint16_t EntryLength = ReadLE16(&BlockData[Offset + 4]);
+            uint8_t  NameLength  = BlockData[Offset + 6];
+            uint8_t  EntryType   = BlockData[Offset + 7];
+
+            if (EntryLength < 8 || (Offset + EntryLength) > BlockSizeBytes)
+            {
+                break;
+            }
+
+            if (EntryInode != 0 && NameLength > 0 && (8u + NameLength) <= EntryLength)
+            {
+                char Name[256] = {};
+                for (uint32_t NameIndex = 0; NameIndex < NameLength && NameIndex < (sizeof(Name) - 1); ++NameIndex)
+                {
+                    Name[NameIndex] = static_cast<char>(BlockData[Offset + 8 + NameIndex]);
+                }
+                Name[(NameLength < (sizeof(Name) - 1)) ? NameLength : (sizeof(Name) - 1)] = '\0';
+
+                bool IsDot    = (NameLength == 1 && Name[0] == '.');
+                bool IsDotDot = (NameLength == 2 && Name[0] == '.' && Name[1] == '.');
+                if (!IsDot && !IsDotDot)
+                {
+                    uint64_t EntrySize      = 0;
+                    bool     IsDirectory    = false;
+                    uint8_t  ChildInodeData[256] = {};
+
+                    if (EntryInode <= InodesCount && InodeSizeBytes <= sizeof(ChildInodeData) && ReadInode(EntryInode, ChildInodeData, sizeof(ChildInodeData)))
+                    {
+                        EntrySize   = ReadLE32(&ChildInodeData[4]);
+                        uint16_t ChildMode = ReadLE16(&ChildInodeData[0]);
+                        IsDirectory = ((ChildMode & EXT2_INODE_MODE_DIRECTORY) != 0);
+                    }
+
+                    uint64_t DirectoryPathLength = strlen(DirectoryPath);
+                    uint64_t NameLengthSafe      = strlen(Name);
+                    bool     NeedsSeparator      = (DirectoryPathLength > 1 && DirectoryPath[DirectoryPathLength - 1] != '/');
+                    uint64_t FullPathLength      = DirectoryPathLength + (NeedsSeparator ? 1 : 0) + NameLengthSafe;
+                    char*    FullPath            = new char[FullPathLength + 1];
+
+                    uint64_t Cursor = 0;
+                    memcpy(FullPath + Cursor, DirectoryPath, static_cast<size_t>(DirectoryPathLength));
+                    Cursor += DirectoryPathLength;
+
+                    if (NeedsSeparator)
+                    {
+                        FullPath[Cursor] = '/';
+                        ++Cursor;
+                    }
+
+                    memcpy(FullPath + Cursor, Name, static_cast<size_t>(NameLengthSafe));
+                    Cursor += NameLengthSafe;
+                    FullPath[Cursor] = '\0';
+
+                    ExtendedFileSystemEntryType DecodedType = DecodeEntryType(EntryType);
+                    if (DecodedType == ExtendedFileSystemEntryTypeOther)
+                    {
+                        DecodedType = IsDirectory ? ExtendedFileSystemEntryTypeDirectory : ExtendedFileSystemEntryTypeRegularFile;
+                    }
+
+                    ExtendedFileSystemEntry Entry = {};
+                    Entry.Name                    = FullPath;
+                    Entry.Data                    = nullptr;
+                    Entry.Size                    = EntrySize;
+                    Entry.Type                    = DecodedType;
+                    Entry.InodeNumber             = EntryInode;
+
+                    bool ContinueEnumeration = Callback(Entry, Context);
+
+                    bool RecurseIntoDirectory = (DecodedType == ExtendedFileSystemEntryTypeDirectory || IsDirectory);
+                    if (ContinueEnumeration && RecurseIntoDirectory)
+                    {
+                        ContinueEnumeration = EnumerateDirectoryEntries(EntryInode, FullPath, Callback, Context);
+                    }
+
+                    delete[] FullPath;
+
+                    if (!ContinueEnumeration)
+                    {
+                        delete[] BlockData;
+                        return false;
+                    }
+                }
+            }
+
+            Offset += EntryLength;
+        }
+
+        delete[] BlockData;
+    }
+
+    return true;
 }
 
 void ExtendedFileSystemManager::PrintDirectoryTree(uint32_t DirectoryInodeNumber, TTY* Terminal, uint32_t Depth, uint32_t MaxDepth) const
@@ -369,6 +528,30 @@ uint32_t ExtendedFileSystemManager::GetInodesCount() const
 uint32_t ExtendedFileSystemManager::GetBlocksCount() const
 {
     return BlocksCount;
+}
+
+bool ExtendedFileSystemManager::EnumerateEntries(ExtendedFileSystemEntryCallback Callback, void* Context, TTY* Terminal) const
+{
+    (void) Terminal;
+
+    if (!Initialized || Callback == nullptr)
+    {
+        return false;
+    }
+
+    ExtendedFileSystemEntry RootEntry = {};
+    RootEntry.Name                    = "/";
+    RootEntry.Data                    = nullptr;
+    RootEntry.Size                    = 0;
+    RootEntry.Type                    = ExtendedFileSystemEntryTypeDirectory;
+    RootEntry.InodeNumber             = EXT2_ROOT_INODE_NUMBER;
+
+    if (!Callback(RootEntry, Context))
+    {
+        return false;
+    }
+
+    return EnumerateDirectoryEntries(EXT2_ROOT_INODE_NUMBER, "/", Callback, Context);
 }
 
 void ExtendedFileSystemManager::PrintFileSystem(TTY* Terminal) const
