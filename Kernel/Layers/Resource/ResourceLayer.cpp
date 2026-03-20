@@ -24,7 +24,7 @@ extern "C" void ResourceLayerTaskSwitchUserAsm(CpuState* OldState, const CpuStat
  */
 ResourceLayer::ResourceLayer()
     : PMM(nullptr), VMM(nullptr), Console(nullptr), KernelHeapVirtualAddrStart(0), KernelHeapVirtualAddrEnd(0), KernelPageMapL4TableAddr(0), InitramfsAddress(0), InitramfsSize(0), KHM(0, 0),
-    RFS(0, 0), EFSManager(nullptr), Terminal(nullptr), InputKeyboard(nullptr), DevManager(nullptr)
+      RFS(0, 0), EFSManager(nullptr), Terminal(nullptr), InputKeyboard(nullptr), DevManager(nullptr)
 {
 }
 
@@ -227,12 +227,6 @@ void ResourceLayer::InitializeKeyboard()
 
 void ResourceLayer::InitializeDeviceManager()
 {
-    if (EFSManager != nullptr)
-    {
-        delete EFSManager;
-        EFSManager = nullptr;
-    }
-
     if (DevManager != nullptr)
     {
         delete DevManager;
@@ -242,15 +236,49 @@ void ResourceLayer::InitializeDeviceManager()
     DevManager = new DeviceManager();
     DevManager->Initialize(Terminal);
     DevManager->PrintPCI(Terminal);
+}
 
-    RootFileSystemPartitionInfo PartitionInfo = {};
-    if (!LocateRootFileSystemPartition(&PartitionInfo))
+void ResourceLayer::InitPartitionManager()
+{
+    if (DevManager == nullptr)
     {
         if (Terminal != nullptr)
         {
-            Terminal->printf_("root filesystem partition not found\n");
+            Terminal->printf_("partition manager init failed: device manager unavailable\n");
         }
         return;
+    }
+
+    if (!PartManager.RefreshPartitionCache(DevManager) && Terminal != nullptr)
+    {
+        Terminal->printf_("partition manager init: partition cache refresh failed\n");
+    }
+}
+
+bool ResourceLayer::InitializeRootFileSystemManager(const RootFileSystemPartitionInfo* PartitionInfo)
+{
+    if (EFSManager != nullptr)
+    {
+        delete EFSManager;
+        EFSManager = nullptr;
+    }
+
+    if (DevManager == nullptr)
+    {
+        if (Terminal != nullptr)
+        {
+            Terminal->printf_("root filesystem manager init failed: device manager unavailable\n");
+        }
+        return false;
+    }
+
+    if (PartitionInfo == nullptr)
+    {
+        if (Terminal != nullptr)
+        {
+            Terminal->printf_("root filesystem manager init failed: invalid partition info\n");
+        }
+        return false;
     }
 
     IDEController* Controller = DevManager->GetPrimaryIDEController();
@@ -260,34 +288,58 @@ void ResourceLayer::InitializeDeviceManager()
         {
             Terminal->printf_("root filesystem controller not available\n");
         }
-        return;
+        return false;
     }
 
     EFSManager = new ExtendedFileSystemManager(Controller);
-    if (!EFSManager->ConfigurePartition(PartitionInfo.StartLBA, PartitionInfo.SectorCount) || !EFSManager->Initialize())
+    if (!EFSManager->ConfigurePartition(PartitionInfo->StartLBA, PartitionInfo->SectorCount))
     {
         if (Terminal != nullptr)
         {
-            Terminal->printf_("root filesystem manager init failed\n");
+            Terminal->printf_("root filesystem manager init failed: configure partition failed device=%s start_lba=%lu sectors=%lu\n",
+                              (PartitionInfo->DevicePath[0] != '\0') ? PartitionInfo->DevicePath : "<none>", static_cast<unsigned long>(PartitionInfo->StartLBA),
+                              static_cast<unsigned long>(PartitionInfo->SectorCount));
         }
 
         delete EFSManager;
         EFSManager = nullptr;
-        return;
+        return false;
+    }
+
+    if (!EFSManager->Initialize())
+    {
+        if (Terminal != nullptr)
+        {
+            Terminal->printf_("root filesystem manager init failed: ext2 initialize failed device=%s start_lba=%lu sectors=%lu\n",
+                              (PartitionInfo->DevicePath[0] != '\0') ? PartitionInfo->DevicePath : "<none>", static_cast<unsigned long>(PartitionInfo->StartLBA),
+                              static_cast<unsigned long>(PartitionInfo->SectorCount));
+        }
+
+        delete EFSManager;
+        EFSManager = nullptr;
+        return false;
     }
 
     if (Terminal != nullptr)
     {
-        Terminal->printf_("root filesystem found: partition=%u start_lba=%lu sectors=%lu ext2_block=%u\n", PartitionInfo.PartitionIndex,
-                          static_cast<unsigned long>(PartitionInfo.StartLBA), static_cast<unsigned long>(PartitionInfo.SectorCount), EFSManager->GetBlockSizeBytes());
+        Terminal->printf_("root filesystem found: device=%s partition=%u start_lba=%lu sectors=%lu ext2_block=%u\n",
+                          (PartitionInfo->DevicePath[0] != '\0') ? PartitionInfo->DevicePath : "<none>", PartitionInfo->PartitionIndex,
+                          static_cast<unsigned long>(PartitionInfo->StartLBA), static_cast<unsigned long>(PartitionInfo->SectorCount), EFSManager->GetBlockSizeBytes());
         EFSManager->PrintFileSystem(Terminal);
         EFSManager->PrintFileTree(Terminal);
     }
+
+    return true;
 }
 
-bool ResourceLayer::LocateRootFileSystemPartition(RootFileSystemPartitionInfo* PartitionInfo) const
+bool ResourceLayer::LocateRootFileSystemPartition(RootFileSystemPartitionInfo* PartitionInfo)
 {
-    return PartitionManager::LocateRootFileSystemPartition(DevManager, PartitionInfo);
+    return PartManager.LocateRootFileSystemPartition(DevManager, PartitionInfo);
+}
+
+PartitionManager* ResourceLayer::GetPartitionManager()
+{
+    return &PartManager;
 }
 
 DeviceManager* ResourceLayer::GetDeviceManager() const

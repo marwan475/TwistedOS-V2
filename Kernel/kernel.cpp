@@ -149,18 +149,22 @@ extern "C"
             ActiveDispatcher->GetLogicLayer()->GetVirtualFileSystem()->RegisterDevice("/dev/fb0", FB, FB->GetFileOperations());
         }
 
+        ActiveDispatcher->GetLogicLayer()->RegisterPartitionDevices();
+
+        ActiveDispatcher->GetLogicLayer()->InitializeRootFileSystem("/dev/sda1");
+
         ActiveDispatcher->GetLogicLayer()->GetVirtualFileSystem()->PrintVFS(ActiveDispatcher->GetResourceLayer()->GetTTY());
 
-        #ifdef STEST_BUILD
+#ifdef STEST_BUILD
         if (!KernelSelfTestStart(ActiveDispatcher))
         {
             ActiveDispatcher->GetResourceLayer()->GetTTY()->printf_("KernelSelfTestStart setup failed\n");
             while (1)
                 __asm__ __volatile__("hlt");
         }
-        #else
+#else
         ActiveDispatcher->GetResourceLayer()->GetTTY()->printf_("Kernel self-tests disabled (set STEST=1 to enable)\n");
-        #endif
+#endif
 
         ActiveDispatcher->GetLogicLayer()->CreateUserProcessFromVFS("/init");
 

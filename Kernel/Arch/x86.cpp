@@ -215,8 +215,8 @@ static uint32_t ReadPciConfigDword(uint8_t Bus, uint8_t Device, uint8_t Function
     constexpr uint16_t PciConfigAddressPort = 0xCF8;
     constexpr uint16_t PciConfigDataPort    = 0xCFC;
 
-    uint32_t Address = (1u << 31) | (static_cast<uint32_t>(Bus) << 16) | (static_cast<uint32_t>(Device) << 11) | (static_cast<uint32_t>(Function) << 8)
-                       | (static_cast<uint32_t>(RegisterOffset) & 0xFCu);
+    uint32_t Address
+            = (1u << 31) | (static_cast<uint32_t>(Bus) << 16) | (static_cast<uint32_t>(Device) << 11) | (static_cast<uint32_t>(Function) << 8) | (static_cast<uint32_t>(RegisterOffset) & 0xFCu);
 
     outl(PciConfigAddressPort, Address);
     return inl(PciConfigDataPort);
@@ -461,14 +461,13 @@ extern "C" void ISRHANDLER(Registers* reg)
 
                     uint64_t ActivePageTable = ActiveDispatcher->GetResourceLayer()->ReadCurrentPageTable();
 
-                    Terminal->printf_(
-                            "Exception process: id=%u parent=%u state=%s level=%s type=%s waiting_sysret=%u saved_syscall=%u addrspace=%p cr3=%p proc_cr3=%p\n",
-                            CurrentProcess->Id, CurrentProcess->ParrentId, ProcessStateToString(CurrentProcess->Status), ProcessLevelToString(CurrentProcess->Level),
-                            ProcessFileTypeToString(CurrentProcess->FileType), CurrentProcess->WaitingForSystemCallReturn ? 1U : 0U, CurrentProcess->HasSavedSystemCallFrame ? 1U : 0U,
-                            CurrentProcess->AddressSpace, (void*) ActivePageTable, (void*) ProcessPageTable);
+                    Terminal->printf_("Exception process: id=%u parent=%u state=%s level=%s type=%s waiting_sysret=%u saved_syscall=%u addrspace=%p cr3=%p proc_cr3=%p\n", CurrentProcess->Id,
+                                      CurrentProcess->ParrentId, ProcessStateToString(CurrentProcess->Status), ProcessLevelToString(CurrentProcess->Level),
+                                      ProcessFileTypeToString(CurrentProcess->FileType), CurrentProcess->WaitingForSystemCallReturn ? 1U : 0U, CurrentProcess->HasSavedSystemCallFrame ? 1U : 0U,
+                                      CurrentProcess->AddressSpace, (void*) ActivePageTable, (void*) ProcessPageTable);
 
-                    Terminal->printf_("Exception process ranges: code=[%p..%p) heap=[%p..%p) stack=[%p..%p)\n", (void*) CodeStart, (void*) (CodeStart + CodeSize),
-                                      (void*) HeapStart, (void*) (HeapStart + HeapSize), (void*) StackStart, (void*) (StackStart + StackSize));
+                    Terminal->printf_("Exception process ranges: code=[%p..%p) heap=[%p..%p) stack=[%p..%p)\n", (void*) CodeStart, (void*) (CodeStart + CodeSize), (void*) HeapStart,
+                                      (void*) (HeapStart + HeapSize), (void*) StackStart, (void*) (StackStart + StackSize));
                 }
             }
 #else

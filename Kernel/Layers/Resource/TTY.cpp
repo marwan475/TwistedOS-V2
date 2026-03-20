@@ -28,10 +28,10 @@ constexpr int64_t LINUX_ERR_EAGAIN = -11;
 
 constexpr uint64_t LINUX_O_NONBLOCK = 0x800;
 
-constexpr uint64_t LINUX_IOCTL_TCGETS    = 0x5401;
-constexpr uint64_t LINUX_IOCTL_TCSETS    = 0x5402;
-constexpr uint64_t LINUX_IOCTL_TCSETSW   = 0x5403;
-constexpr uint64_t LINUX_IOCTL_TCSETSF   = 0x5404;
+constexpr uint64_t LINUX_IOCTL_TCGETS     = 0x5401;
+constexpr uint64_t LINUX_IOCTL_TCSETS     = 0x5402;
+constexpr uint64_t LINUX_IOCTL_TCSETSW    = 0x5403;
+constexpr uint64_t LINUX_IOCTL_TCSETSF    = 0x5404;
 constexpr uint64_t LINUX_IOCTL_TIOCGWINSZ = 0x5413;
 constexpr uint64_t LINUX_IOCTL_TIOCSWINSZ = 0x5414;
 constexpr uint64_t LINUX_IOCTL_FIONREAD   = 0x541B;
@@ -127,17 +127,13 @@ static void EnsureSerialInitialized()
 } // namespace
 
 FileOperations TTY::TerminalFileOperations = {
-        &TTY::ReadFileOperation,
-        &TTY::WriteFileOperation,
-        &TTY::SeekFileOperation,
-        &TTY::MemoryMapFileOperation,
-    &TTY::IoctlFileOperation,
+        &TTY::ReadFileOperation, &TTY::WriteFileOperation, &TTY::SeekFileOperation, &TTY::MemoryMapFileOperation, &TTY::IoctlFileOperation,
 };
 
 TTY::TTY(FrameBuffer* FrameBuffer, uint32_t InitialCursorX, uint32_t InitialCursorY)
-    : FrameBufferDevice(FrameBuffer), CursorX(InitialCursorX), CursorY(InitialCursorY), TextColor(0xFFFFFFFF), BackgroundColor(0x00000000), BufferHead(0), BufferTail(0), BufferedBytes(0), CommittedBytes(0),
-    TermiosInputFlags(0), TermiosOutputFlags(0), TermiosControlFlags(0), TermiosLocalFlags(LINUX_TERMIOS_DEFAULT), TermiosLineDiscipline(0), OutputAnsiState(AnsiParseState::Normal),
-    OutputAnsiParams{0, 0, 0, 0}, OutputAnsiParamCount(0), OutputAnsiCurrentValue(0), OutputAnsiReadingValue(false)
+    : FrameBufferDevice(FrameBuffer), CursorX(InitialCursorX), CursorY(InitialCursorY), TextColor(0xFFFFFFFF), BackgroundColor(0x00000000), BufferHead(0), BufferTail(0), BufferedBytes(0),
+      CommittedBytes(0), TermiosInputFlags(0), TermiosOutputFlags(0), TermiosControlFlags(0), TermiosLocalFlags(LINUX_TERMIOS_DEFAULT), TermiosLineDiscipline(0),
+      OutputAnsiState(AnsiParseState::Normal), OutputAnsiParams{0, 0, 0, 0}, OutputAnsiParamCount(0), OutputAnsiCurrentValue(0), OutputAnsiReadingValue(false)
 {
     for (uint64_t Index = 0; Index < KEYBOARD_BUFFER_CAPACITY; ++Index)
     {
@@ -618,12 +614,7 @@ int64_t TTY::Ioctl(File* OpenFile, uint64_t Request, uint64_t Argument, LogicLay
         }
 
         LinuxTermios Termios = {
-            TermiosInputFlags,
-            TermiosOutputFlags,
-            TermiosControlFlags,
-            TermiosLocalFlags,
-            TermiosLineDiscipline,
-            {},
+                TermiosInputFlags, TermiosOutputFlags, TermiosControlFlags, TermiosLocalFlags, TermiosLineDiscipline, {},
         };
         memcpy(Termios.ControlCharacters, TermiosControlCharacters, sizeof(Termios.ControlCharacters));
         return Logic->CopyFromKernelToUser(&Termios, reinterpret_cast<void*>(Argument), sizeof(Termios)) ? 0 : LINUX_ERR_EFAULT;
@@ -644,11 +635,11 @@ int64_t TTY::Ioctl(File* OpenFile, uint64_t Request, uint64_t Argument, LogicLay
 
         bool WasCanonical = IsCanonicalModeEnabled();
 
-        TermiosInputFlags      = Incoming.InputFlags;
-        TermiosOutputFlags     = Incoming.OutputFlags;
-        TermiosControlFlags    = Incoming.ControlFlags;
-        TermiosLocalFlags      = Incoming.LocalFlags;
-        TermiosLineDiscipline  = Incoming.LineDiscipline;
+        TermiosInputFlags     = Incoming.InputFlags;
+        TermiosOutputFlags    = Incoming.OutputFlags;
+        TermiosControlFlags   = Incoming.ControlFlags;
+        TermiosLocalFlags     = Incoming.LocalFlags;
+        TermiosLineDiscipline = Incoming.LineDiscipline;
         memcpy(TermiosControlCharacters, Incoming.ControlCharacters, sizeof(TermiosControlCharacters));
 
         if (!WasCanonical && IsCanonicalModeEnabled())

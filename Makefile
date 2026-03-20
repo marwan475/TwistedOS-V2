@@ -253,7 +253,7 @@ gdb-kernel: all
 debug:
 	./scripts/debug-kernel.sh
 
-ALL_SOURCE_FILES := $(shell find . -type f \( -name '*.c' -o -name '*.cpp' -o -name '*.h' -o -name '*.hpp' \))
+ALL_SOURCE_FILES := $(shell find . -type f \( -name '*.c' -o -name '*.cpp' -o -name '*.h' -o -name '*.hpp' \) -not -path './busybox/*')
 
 .PHONY: format qemu qemu-basic qemu-debug qemu-basic-debug gdb-kernel debug busybox-rootfs
 

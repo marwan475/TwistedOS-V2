@@ -13,13 +13,13 @@
 
 namespace
 {
-constexpr char     PATH_SEPARATOR          = '/';
-constexpr char     PATH_DOT                = '.';
-constexpr char     STRING_TERMINATOR       = '\0';
-constexpr uint64_t CHILDREN_GROWTH_ONE     = 1;
-constexpr uint64_t ROOT_FILE_SIZE          = 0;
-constexpr uint64_t ROOT_TREE_DEPTH         = 0;
-constexpr uint64_t INDENT_SPACES_PER_LEVEL = 2;
+constexpr char     PATH_SEPARATOR           = '/';
+constexpr char     PATH_DOT                 = '.';
+constexpr char     STRING_TERMINATOR        = '\0';
+constexpr uint64_t CHILDREN_GROWTH_ONE      = 1;
+constexpr uint64_t ROOT_FILE_SIZE           = 0;
+constexpr uint64_t ROOT_TREE_DEPTH          = 0;
+constexpr uint64_t INDENT_SPACES_PER_LEVEL  = 2;
 constexpr uint64_t MAX_SYMLINK_FOLLOW_DEPTH = 40;
 
 constexpr int64_t LINUX_ERR_EFAULT = -14;
@@ -33,7 +33,7 @@ typedef struct
     bool    IsSuccessful;
 } MountInitRamFileSystemContext;
 
-bool   IsRootAliasPath(const char* NormalizedPath);
+bool    IsRootAliasPath(const char* NormalizedPath);
 Dentry* FindChildBySegment(Dentry* Parent, const char* SegmentStart, uint64_t SegmentLength);
 
 int64_t DefaultReadFileOperation(File* OpenFile, void* Buffer, uint64_t Count)
@@ -150,11 +150,7 @@ int64_t DefaultIoctlFileOperation(File* OpenFile, uint64_t Request, uint64_t Arg
 }
 
 FileOperations DefaultFileOperations = {
-        &DefaultReadFileOperation,
-        &DefaultWriteFileOperation,
-        &DefaultSeekFileOperation,
-        &DefaultMemoryMapFileOperation,
-        &DefaultIoctlFileOperation,
+        &DefaultReadFileOperation, &DefaultWriteFileOperation, &DefaultSeekFileOperation, &DefaultMemoryMapFileOperation, &DefaultIoctlFileOperation,
 };
 
 /**

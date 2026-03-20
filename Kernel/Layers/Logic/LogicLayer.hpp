@@ -51,6 +51,8 @@ public:
     void               InitializeSynchronizationManager();
     void               InitializeELFManager();
     void               InitializeVirtualFileSystem();
+    bool               RegisterPartitionDevices();
+    bool               InitializeRootFileSystem(const char* DevicePath);
     uint8_t            CreateNullProcess();
     uint8_t            CreateKernelProcess(void (*EntryPoint)());
     uint8_t            CreateUserProcess(uint64_t CodeAddr, uint64_t CodeSize);

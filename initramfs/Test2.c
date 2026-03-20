@@ -69,9 +69,9 @@ static void write_u64(long fd, u64 value)
 
     for (u64 left = 0, right = (index == 0 ? 0 : index - 1); left < right; ++left, --right)
     {
-        char temp      = buffer[left];
-        buffer[left]   = buffer[right];
-        buffer[right]  = temp;
+        char temp     = buffer[left];
+        buffer[left]  = buffer[right];
+        buffer[right] = temp;
     }
 
     syscall3(1 /* write */, (u64) fd, (u64) buffer, index);

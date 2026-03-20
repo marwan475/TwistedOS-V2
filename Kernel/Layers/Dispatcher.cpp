@@ -12,11 +12,11 @@
 
 namespace
 {
-constexpr uint64_t TIMER_INTERRUPT_VECTOR    = 32;
-constexpr uint64_t KEYBOARD_INTERRUPT_VECTOR = 33;
+constexpr uint64_t TIMER_INTERRUPT_VECTOR       = 32;
+constexpr uint64_t KEYBOARD_INTERRUPT_VECTOR    = 33;
 constexpr uint64_t IDE_PRIMARY_INTERRUPT_VECTOR = 46;
-constexpr uint64_t SYSCALL_INTERRUPT_VECTOR  = 128;
-constexpr uint64_t SCHEDULER_TICK_INTERVAL   = 5;
+constexpr uint64_t SYSCALL_INTERRUPT_VECTOR     = 128;
+constexpr uint64_t SCHEDULER_TICK_INTERVAL      = 5;
 } // namespace
 
 Dispatcher* Dispatcher::ActiveDispatcher = nullptr;
@@ -78,6 +78,7 @@ void Dispatcher::InitResourceLayer(const DispatcherParameters& Params)
     Resource.InitializeKeyboard();
     Resource.InitializeTTY();
     Resource.InitializeDeviceManager();
+    Resource.InitPartitionManager();
 }
 
 /**
@@ -173,7 +174,7 @@ void Dispatcher::InterruptHandler(uint64_t InterruptNumber)
         case IDE_PRIMARY_INTERRUPT_VECTOR:
         {
             DeviceManager* DeviceManagerInstance = Resource.GetDeviceManager();
-            IDEController* DiskController = (DeviceManagerInstance == nullptr) ? nullptr : DeviceManagerInstance->GetDiskController();
+            IDEController* DiskController        = (DeviceManagerInstance == nullptr) ? nullptr : DeviceManagerInstance->GetDiskController();
             if (DiskController == nullptr || !DiskController->HandleInterrupt())
             {
                 Resource.GetTTY()->printf_("IDE interrupt with no active IDE driver\n");
@@ -218,8 +219,7 @@ int64_t Dispatcher::HandleSystemCall(uint64_t SystemCallNumber, uint64_t Arg1, u
     TTY* Terminal = Resource.GetTTY();
     if (Terminal != nullptr)
     {
-        Terminal->printf_("syscall: n=%lu a1=%p a2=%p a3=%p a4=%p a5=%p a6=%p\n", SystemCallNumber, (void*) Arg1, (void*) Arg2, (void*) Arg3, (void*) Arg4, (void*) Arg5,
-                          (void*) Arg6);
+        Terminal->printf_("syscall: n=%lu a1=%p a2=%p a3=%p a4=%p a5=%p a6=%p\n", SystemCallNumber, (void*) Arg1, (void*) Arg2, (void*) Arg3, (void*) Arg4, (void*) Arg5, (void*) Arg6);
     }
 #endif
 

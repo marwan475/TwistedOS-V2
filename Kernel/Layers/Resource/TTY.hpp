@@ -49,16 +49,16 @@ private:
     uint8_t        OutputAnsiCurrentValue;
     bool           OutputAnsiReadingValue;
 
-    void ClearScreen();
-    void DrawChar(uint32_t X, uint32_t Y, char Character);
-    void PutChar(char Character);
-    void ResetAnsiParser();
-    void HandleOutputChar(char Character);
-    bool IsCanonicalModeEnabled() const;
-    bool IsEchoEnabled() const;
-    uint8_t GetControlCharacter(uint64_t Index) const;
+    void     ClearScreen();
+    void     DrawChar(uint32_t X, uint32_t Y, char Character);
+    void     PutChar(char Character);
+    void     ResetAnsiParser();
+    void     HandleOutputChar(char Character);
+    bool     IsCanonicalModeEnabled() const;
+    bool     IsEchoEnabled() const;
+    uint8_t  GetControlCharacter(uint64_t Index) const;
     uint64_t GetReadableBytes() const;
-    void NotifyInputAvailable();
+    void     NotifyInputAvailable();
 
     static FileOperations TerminalFileOperations;
 

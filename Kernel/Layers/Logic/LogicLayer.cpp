@@ -7,16 +7,17 @@
 #include "LogicLayer.hpp"
 
 #include "Layers/Resource/ResourceLayer.hpp"
+#include "Layers/Resource/PartitionManager.hpp"
 #include "Layers/Resource/TTY.hpp"
 
 #include <CommonUtils.hpp>
 
 namespace
 {
-constexpr uint64_t INITIAL_PROCESS_RFLAGS = 0x202;
-constexpr uint64_t USER_MODE_FLAG_MASK    = 0x3;
-constexpr uint64_t STACK_ALIGNMENT_MASK   = 0xFULL;
-constexpr uint64_t STACK_RETURN_SLOT_SIZE = 8;
+constexpr uint64_t INITIAL_PROCESS_RFLAGS  = 0x202;
+constexpr uint64_t USER_MODE_FLAG_MASK     = 0x3;
+constexpr uint64_t STACK_ALIGNMENT_MASK    = 0xFULL;
+constexpr uint64_t STACK_RETURN_SLOT_SIZE  = 8;
 constexpr uint64_t EXECVE_MAX_VECTOR_COUNT = 128;
 constexpr uint64_t AUXV_AT_NULL            = 0;
 constexpr uint64_t AUXV_AT_PHDR            = 3;
@@ -117,8 +118,8 @@ void SetKernelSystemCallStackTop(uint64_t StackTop)
     KernelTSS.RSP0_upper = static_cast<uint32_t>((StackTop >> 32) & 0xFFFFFFFF);
 }
 
-bool InitializeExecveUserEntry(ResourceLayer* Resource, VirtualAddressSpace* AddressSpace, CpuState* State, const char* const* Argv, uint64_t Argc, const char* const* Envp,
-                               uint64_t Envc, uint64_t AuxProgramHeaderAddress, uint64_t AuxProgramHeaderEntrySize, uint64_t AuxProgramHeaderCount, uint64_t AuxEntryPoint)
+bool InitializeExecveUserEntry(ResourceLayer* Resource, VirtualAddressSpace* AddressSpace, CpuState* State, const char* const* Argv, uint64_t Argc, const char* const* Envp, uint64_t Envc,
+                               uint64_t AuxProgramHeaderAddress, uint64_t AuxProgramHeaderEntrySize, uint64_t AuxProgramHeaderCount, uint64_t AuxEntryPoint)
 {
     if (Resource == nullptr || AddressSpace == nullptr || State == nullptr)
     {
@@ -160,7 +161,7 @@ bool InitializeExecveUserEntry(ResourceLayer* Resource, VirtualAddressSpace* Add
         }
     }
 
-    uint64_t UserPageTable = AddressSpace->GetPageMapL4TableAddr();
+    uint64_t UserPageTable     = AddressSpace->GetPageMapL4TableAddr();
     uint64_t PreviousPageTable = Resource->ReadCurrentPageTable();
     if (UserPageTable == 0 || PreviousPageTable == 0)
     {
@@ -253,8 +254,8 @@ bool InitializeExecveUserEntry(ResourceLayer* Resource, VirtualAddressSpace* Add
             AuxvEntryCount += 1;
         }
 
-        uint64_t StackWordCount  = 1 + ArgvVectorCount + EnvpVectorCount + (AuxvEntryCount * 2);
-        uint64_t StackBytes      = StackWordCount * sizeof(uint64_t);
+        uint64_t StackWordCount = 1 + ArgvVectorCount + EnvpVectorCount + (AuxvEntryCount * 2);
+        uint64_t StackBytes     = StackWordCount * sizeof(uint64_t);
 
         if (StackBytes > (StackCursor - StackBottom))
         {
@@ -326,7 +327,7 @@ bool InitializeExecveUserEntry(ResourceLayer* Resource, VirtualAddressSpace* Add
 #ifdef DEBUG_BUILD
         if (Resource->GetTTY() != nullptr)
         {
-            uint64_t StackArgc = 0;
+            uint64_t StackArgc         = 0;
             uint64_t StackArgv0Pointer = 0;
             memcpy(&StackArgc, reinterpret_cast<const void*>(StackCursor), sizeof(StackArgc));
             memcpy(&StackArgv0Pointer, reinterpret_cast<const void*>(StackCursor + sizeof(uint64_t)), sizeof(StackArgv0Pointer));
@@ -338,7 +339,7 @@ bool InitializeExecveUserEntry(ResourceLayer* Resource, VirtualAddressSpace* Add
                 uint64_t Limit       = (MaxReadable < (sizeof(StackArgv0) - 1)) ? MaxReadable : (sizeof(StackArgv0) - 1);
                 for (uint64_t Index = 0; Index < Limit; ++Index)
                 {
-                    char CurrentChar = *(reinterpret_cast<const char*>(StackArgv0Pointer + Index));
+                    char CurrentChar  = *(reinterpret_cast<const char*>(StackArgv0Pointer + Index));
                     StackArgv0[Index] = CurrentChar;
                     if (CurrentChar == '\0')
                     {
@@ -855,6 +856,62 @@ void LogicLayer::InitializeVirtualFileSystem()
     Resource->GetTTY()->printf_("Virtual File System Initialized\n");
 }
 
+bool LogicLayer::RegisterPartitionDevices()
+{
+    if (Resource == nullptr || VFS == nullptr)
+    {
+        return false;
+    }
+
+    DeviceManager* DeviceManagerInstance = Resource->GetDeviceManager();
+    PartitionManager* PartitionManagerInstance = Resource->GetPartitionManager();
+    if (DeviceManagerInstance == nullptr || PartitionManagerInstance == nullptr)
+    {
+        return false;
+    }
+
+    return PartitionManagerInstance->RegisterPartitionDevices(DeviceManagerInstance, VFS);
+}
+
+bool LogicLayer::InitializeRootFileSystem(const char* DevicePath)
+{
+    if (Resource == nullptr)
+    {
+        return false;
+    }
+
+    PartitionManager* PartitionManagerInstance = Resource->GetPartitionManager();
+    TTY*              Terminal                 = Resource->GetTTY();
+    if (PartitionManagerInstance == nullptr || DevicePath == nullptr)
+    {
+        return false;
+    }
+
+    RootFileSystemPartitionInfo RootPartitionInfo = {};
+    bool                        RootFileSystemReady
+            = PartitionManagerInstance->GetPartitionByDevicePath(DevicePath, &RootPartitionInfo) && Resource->InitializeRootFileSystemManager(&RootPartitionInfo);
+
+    if (!RootFileSystemReady && Terminal != nullptr)
+    {
+        Terminal->printf_("root filesystem init fallback: trying auto-detected root partition\n");
+    }
+
+    if (!RootFileSystemReady)
+    {
+        RootFileSystemPartitionInfo AutoPartitionInfo = {};
+        if (Resource->LocateRootFileSystemPartition(&AutoPartitionInfo))
+        {
+            RootFileSystemReady = Resource->InitializeRootFileSystemManager(&AutoPartitionInfo);
+        }
+        else if (Terminal != nullptr)
+        {
+            Terminal->printf_("root filesystem partition not found: %s\n", DevicePath);
+        }
+    }
+
+    return RootFileSystemReady;
+}
+
 /**
  * Function: LogicLayer::CreateNullProcess
  * Description: Creates idle kernel process and marks it running for initial scheduling.
@@ -967,10 +1024,10 @@ uint8_t LogicLayer::ChangeProcessExecution(uint8_t Id, const char* FilePath, con
     kmemset(CopiedImage, 0, Pages * PAGE_SIZE);
     memcpy(CopiedImage, Entry->inode->NodeData, static_cast<size_t>(CodeSize));
 
-    ELFHeader            Header            = {};
-    VirtualAddressSpace* NewAddressSpace   = nullptr;
-    bool                 IsELF             = false;
-    uint64_t             NewUserEntryPoint = USER_PROCESS_VIRTUAL_BASE;
+    ELFHeader            Header                    = {};
+    VirtualAddressSpace* NewAddressSpace           = nullptr;
+    bool                 IsELF                     = false;
+    uint64_t             NewUserEntryPoint         = USER_PROCESS_VIRTUAL_BASE;
     uint64_t             AuxProgramHeaderAddress   = 0;
     uint64_t             AuxProgramHeaderEntrySize = 0;
     uint64_t             AuxProgramHeaderCount     = 0;
@@ -1015,8 +1072,7 @@ uint8_t LogicLayer::ChangeProcessExecution(uint8_t Id, const char* FilePath, con
     NewState.cs       = USER_CS;
     NewState.ss       = USER_SS;
 
-    if (!InitializeExecveUserEntry(Resource, NewAddressSpace, &NewState, Argv, Argc, Envp, Envc, AuxProgramHeaderAddress, AuxProgramHeaderEntrySize, AuxProgramHeaderCount,
-                                   AuxEntryPoint))
+    if (!InitializeExecveUserEntry(Resource, NewAddressSpace, &NewState, Argv, Argc, Envp, Envc, AuxProgramHeaderAddress, AuxProgramHeaderEntrySize, AuxProgramHeaderCount, AuxEntryPoint))
     {
         if (IsELF)
         {
@@ -1031,9 +1087,9 @@ uint8_t LogicLayer::ChangeProcessExecution(uint8_t Id, const char* FilePath, con
         return PROCESS_ID_INVALID;
     }
 
-    VirtualAddressSpace* OldAddressSpace = TargetProcess->AddressSpace;
-    FILE_TYPE            OldFileType     = TargetProcess->FileType;
-    bool                 SkipOldAddressSpaceCleanup = false;
+    VirtualAddressSpace* OldAddressSpace             = TargetProcess->AddressSpace;
+    FILE_TYPE            OldFileType                 = TargetProcess->FileType;
+    bool                 SkipOldAddressSpaceCleanup  = false;
     bool                 SkipAnonymousMappingCleanup = false;
 
     if (TargetProcess->IsVforkChild && TargetProcess->VforkParentId != PROCESS_ID_INVALID)
@@ -1041,7 +1097,7 @@ uint8_t LogicLayer::ChangeProcessExecution(uint8_t Id, const char* FilePath, con
         Process* ParentProcess = PM->GetProcessById(TargetProcess->VforkParentId);
         if (ParentProcess != nullptr && ParentProcess->AddressSpace == OldAddressSpace)
         {
-            SkipOldAddressSpaceCleanup = true;
+            SkipOldAddressSpaceCleanup  = true;
             SkipAnonymousMappingCleanup = true;
         }
     }
@@ -1061,10 +1117,10 @@ uint8_t LogicLayer::ChangeProcessExecution(uint8_t Id, const char* FilePath, con
         }
     }
 
-    TargetProcess->AddressSpace              = NewAddressSpace;
-    TargetProcess->FileType                  = IsELF ? FILE_TYPE_ELF : FILE_TYPE_RAW_BINARY;
-    TargetProcess->StackPointer              = reinterpret_cast<void*>(NewAddressSpace->GetStackVirtualAddressStart());
-    TargetProcess->State                     = NewState;
+    TargetProcess->AddressSpace = NewAddressSpace;
+    TargetProcess->FileType     = IsELF ? FILE_TYPE_ELF : FILE_TYPE_RAW_BINARY;
+    TargetProcess->StackPointer = reinterpret_cast<void*>(NewAddressSpace->GetStackVirtualAddressStart());
+    TargetProcess->State        = NewState;
 
     Process* RunningProcess = PM->GetRunningProcess();
     if (RunningProcess == TargetProcess)
@@ -1582,7 +1638,7 @@ VirtualAddressSpace* LogicLayer::MapELF(uint64_t CodeAddr, uint64_t CodeSize, co
 
             if (BssRemaining != 0)
             {
-                uint64_t BssPages = (BssRemaining + PAGE_SIZE - 1) / PAGE_SIZE;
+                uint64_t BssPages    = (BssRemaining + PAGE_SIZE - 1) / PAGE_SIZE;
                 void*    BssPhysical = Resource->GetPMM()->AllocatePagesFromDescriptor(BssPages);
                 if (BssPhysical == nullptr)
                 {
@@ -1802,9 +1858,9 @@ void LogicLayer::CleanUpELF(VirtualAddressSpace* AddressSpace)
  */
 void LogicLayer::KillProcess(uint8_t Id, int32_t ExitStatus)
 {
-    Process* TargetProcess = PM->GetProcessById(Id);
+    Process* TargetProcess  = PM->GetProcessById(Id);
     Process* RunningProcess = PM->GetRunningProcess();
-    uint8_t  ParentId      = PROCESS_ID_INVALID;
+    uint8_t  ParentId       = PROCESS_ID_INVALID;
 
     if (TargetProcess != nullptr)
     {
@@ -2018,8 +2074,8 @@ bool LogicLayer::RunProcess(uint8_t Id)
         return false;
     }
 
-    Process* CurrentProcess = PM->GetCurrentProcess();
-    bool ResumeTargetInKernelContext = (TargetProcess->Level == PROCESS_LEVEL_USER && TargetProcess->WaitingForSystemCallReturn && TargetProcess->HasSavedSystemCallFrame
+    Process* CurrentProcess              = PM->GetCurrentProcess();
+    bool     ResumeTargetInKernelContext = (TargetProcess->Level == PROCESS_LEVEL_USER && TargetProcess->WaitingForSystemCallReturn && TargetProcess->HasSavedSystemCallFrame
                                         && TargetProcess->State.cs == KERNEL_CS && TargetProcess->State.ss == KERNEL_SS);
 
     if (CurrentProcess == nullptr)

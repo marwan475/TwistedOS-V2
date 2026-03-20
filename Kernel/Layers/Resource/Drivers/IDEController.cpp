@@ -10,14 +10,14 @@
 
 namespace
 {
-constexpr uint8_t ATA_STATUS_ERROR           = 0x01;
-constexpr uint8_t ATA_STATUS_DATA_REQUEST    = 0x08;
-constexpr uint8_t ATA_STATUS_DEVICE_FAULT    = 0x20;
-constexpr uint8_t ATA_STATUS_BUSY            = 0x80;
+constexpr uint8_t ATA_STATUS_ERROR        = 0x01;
+constexpr uint8_t ATA_STATUS_DATA_REQUEST = 0x08;
+constexpr uint8_t ATA_STATUS_DEVICE_FAULT = 0x20;
+constexpr uint8_t ATA_STATUS_BUSY         = 0x80;
 
-constexpr uint8_t ATA_COMMAND_READ_SECTORS   = 0x20;
-constexpr uint8_t ATA_COMMAND_WRITE_SECTORS  = 0x30;
-constexpr uint8_t ATA_COMMAND_CACHE_FLUSH    = 0xE7;
+constexpr uint8_t ATA_COMMAND_READ_SECTORS  = 0x20;
+constexpr uint8_t ATA_COMMAND_WRITE_SECTORS = 0x30;
+constexpr uint8_t ATA_COMMAND_CACHE_FLUSH   = 0xE7;
 
 constexpr uint8_t ATA_DEVICE_LBA_MASTER_BASE = 0xE0;
 

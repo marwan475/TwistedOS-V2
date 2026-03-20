@@ -26,7 +26,7 @@ struct WaitForTTYInputTag
 class SynchronizationManager
 {
 private:
-    IntrusiveQueue<SleepTag, &SleepTag::Next> SleepQueue;
+    IntrusiveQueue<SleepTag, &SleepTag::Next>                     SleepQueue;
     IntrusiveQueue<WaitForTTYInputTag, &WaitForTTYInputTag::Next> TTYInputWaitQueue;
 
 public:

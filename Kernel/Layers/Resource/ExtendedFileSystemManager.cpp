@@ -25,7 +25,8 @@ uint16_t ReadLE16(const uint8_t* Data)
 
 uint32_t ReadLE32(const uint8_t* Data)
 {
-    return static_cast<uint32_t>(Data[0]) | static_cast<uint32_t>(static_cast<uint32_t>(Data[1]) << 8) | static_cast<uint32_t>(static_cast<uint32_t>(Data[2]) << 16) | static_cast<uint32_t>(static_cast<uint32_t>(Data[3]) << 24);
+    return static_cast<uint32_t>(Data[0]) | static_cast<uint32_t>(static_cast<uint32_t>(Data[1]) << 8) | static_cast<uint32_t>(static_cast<uint32_t>(Data[2]) << 16)
+           | static_cast<uint32_t>(static_cast<uint32_t>(Data[3]) << 24);
 }
 
 const char* Ext2DirectoryEntryTypeToString(uint8_t Type)
@@ -45,8 +46,8 @@ const char* Ext2DirectoryEntryTypeToString(uint8_t Type)
 } // namespace
 
 ExtendedFileSystemManager::ExtendedFileSystemManager(const IDEController* Controller)
-    : Controller(Controller), Initialized(false), PartitionConfigured(false), PartitionStartLBA(0), PartitionSectorCount(0), BlockSizeBytes(0), InodesCount(0), BlocksCount(0),
-    FreeBlocksCount(0), FreeInodesCount(0), FirstDataBlock(0), BlocksPerGroup(0), InodesPerGroup(0), InodeSizeBytes(0), VolumeName{}
+    : Controller(Controller), Initialized(false), PartitionConfigured(false), PartitionStartLBA(0), PartitionSectorCount(0), BlockSizeBytes(0), InodesCount(0), BlocksCount(0), FreeBlocksCount(0),
+      FreeInodesCount(0), FirstDataBlock(0), BlocksPerGroup(0), InodesPerGroup(0), InodeSizeBytes(0), VolumeName{}
 {
 }
 
@@ -100,7 +101,7 @@ bool ExtendedFileSystemManager::ReadBytesFromDisk(uint32_t OffsetBytes, void* Bu
         return false;
     }
 
-    uint64_t StartSector = static_cast<uint64_t>(OffsetBytes) / SectorSize;
+    uint64_t StartSector        = static_cast<uint64_t>(OffsetBytes) / SectorSize;
     uint64_t EndOffsetExclusive = static_cast<uint64_t>(OffsetBytes) + SizeBytes;
     uint64_t EndSectorInclusive = (EndOffsetExclusive - 1) / SectorSize;
 
@@ -128,9 +129,9 @@ bool ExtendedFileSystemManager::ReadBytesFromDisk(uint32_t OffsetBytes, void* Bu
         }
 
         uint32_t SectorStartOffset = (SectorIndex == StartSector) ? (OffsetBytes % SectorSize) : 0;
-        uint32_t SectorAvailable = SectorSize - SectorStartOffset;
-        uint64_t Remaining = static_cast<uint64_t>(SizeBytes) - BytesCopied;
-        uint32_t BytesToCopy = (Remaining < SectorAvailable) ? static_cast<uint32_t>(Remaining) : SectorAvailable;
+        uint32_t SectorAvailable   = SectorSize - SectorStartOffset;
+        uint64_t Remaining         = static_cast<uint64_t>(SizeBytes) - BytesCopied;
+        uint32_t BytesToCopy       = (Remaining < SectorAvailable) ? static_cast<uint32_t>(Remaining) : SectorAvailable;
 
         memcpy(Destination + BytesCopied, SectorBuffer + SectorStartOffset, BytesToCopy);
         BytesCopied += BytesToCopy;
@@ -224,10 +225,10 @@ void ExtendedFileSystemManager::PrintDirectoryTree(uint32_t DirectoryInodeNumber
         uint32_t Offset = 0;
         while (Offset + 8 <= BlockSizeBytes)
         {
-            uint32_t EntryInode = ReadLE32(&BlockData[Offset]);
+            uint32_t EntryInode  = ReadLE32(&BlockData[Offset]);
             uint16_t EntryLength = ReadLE16(&BlockData[Offset + 4]);
-            uint8_t  NameLength = BlockData[Offset + 6];
-            uint8_t  EntryType  = BlockData[Offset + 7];
+            uint8_t  NameLength  = BlockData[Offset + 6];
+            uint8_t  EntryType   = BlockData[Offset + 7];
 
             if (EntryLength < 8 || (Offset + EntryLength) > BlockSizeBytes)
             {
@@ -280,10 +281,10 @@ void ExtendedFileSystemManager::PrintDirectoryTree(uint32_t DirectoryInodeNumber
 
 bool ExtendedFileSystemManager::Initialize()
 {
-    Initialized    = false;
-    BlockSizeBytes = 0;
-    InodesCount    = 0;
-    BlocksCount    = 0;
+    Initialized     = false;
+    BlockSizeBytes  = 0;
+    InodesCount     = 0;
+    BlocksCount     = 0;
     FreeBlocksCount = 0;
     FreeInodesCount = 0;
     FirstDataBlock  = 0;
@@ -315,15 +316,15 @@ bool ExtendedFileSystemManager::Initialize()
 
     const uint32_t LogBlockSize = ReadLE32(&SuperBlock[24]);
 
-    InodesCount    = ReadLE32(&SuperBlock[0]);
-    BlocksCount    = ReadLE32(&SuperBlock[4]);
+    InodesCount     = ReadLE32(&SuperBlock[0]);
+    BlocksCount     = ReadLE32(&SuperBlock[4]);
     FreeBlocksCount = ReadLE32(&SuperBlock[12]);
     FreeInodesCount = ReadLE32(&SuperBlock[16]);
     FirstDataBlock  = ReadLE32(&SuperBlock[20]);
     BlocksPerGroup  = ReadLE32(&SuperBlock[32]);
     InodesPerGroup  = ReadLE32(&SuperBlock[40]);
     InodeSizeBytes  = ReadLE16(&SuperBlock[88]);
-    BlockSizeBytes = 1024u << LogBlockSize;
+    BlockSizeBytes  = 1024u << LogBlockSize;
 
     if (InodeSizeBytes == 0)
     {
@@ -336,7 +337,7 @@ bool ExtendedFileSystemManager::Initialize()
     }
     VolumeName[16] = '\0';
 
-    Initialized    = true;
+    Initialized = true;
     return true;
 }
 

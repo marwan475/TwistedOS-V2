@@ -41,14 +41,14 @@ private:
 public:
     explicit ExtendedFileSystemManager(const IDEController* Controller);
 
-    bool ConfigurePartition(uint64_t StartLBA, uint64_t SectorCount);
-    bool Initialize();
-    bool IsInitialized() const;
+    bool     ConfigurePartition(uint64_t StartLBA, uint64_t SectorCount);
+    bool     Initialize();
+    bool     IsInitialized() const;
     uint64_t GetPartitionStartLBA() const;
     uint64_t GetPartitionSectorCount() const;
     uint32_t GetBlockSizeBytes() const;
     uint32_t GetInodesCount() const;
     uint32_t GetBlocksCount() const;
-    void PrintFileSystem(TTY* Terminal) const;
-    void PrintFileTree(TTY* Terminal) const;
+    void     PrintFileSystem(TTY* Terminal) const;
+    void     PrintFileTree(TTY* Terminal) const;
 };

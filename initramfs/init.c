@@ -34,8 +34,8 @@ static inline long syscall0(u64 number)
 
 void _start()
 {
-    static const char tty[]               = "/dev/tty";
-    static const char shell[]             = "/bin/sh";
+    static const char        tty[]        = "/dev/tty";
+    static const char        shell[]      = "/bin/sh";
     static const char* const shell_argv[] = {shell, 0};
     static const char* const shell_envp[] = {0};
 

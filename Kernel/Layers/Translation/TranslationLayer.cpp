@@ -18,26 +18,26 @@
 
 namespace
 {
-constexpr int64_t LINUX_ERR_EFAULT = -14;
-constexpr int64_t LINUX_ERR_ENOENT = -2;
-constexpr int64_t LINUX_ERR_ENOMEM = -12;
-constexpr int64_t LINUX_ERR_EAGAIN = -11;
-constexpr int64_t LINUX_ERR_EMFILE = -24;
-constexpr int64_t LINUX_ERR_EINVAL = -22;
-constexpr int64_t LINUX_ERR_EBADF  = -9;
-constexpr int64_t LINUX_ERR_ENOSYS = -38;
-constexpr int64_t LINUX_ERR_ENOTTY = -25;
-constexpr int64_t LINUX_ERR_ECHILD = -10;
-constexpr int64_t LINUX_ERR_ENODEV = -19;
+constexpr int64_t LINUX_ERR_EFAULT  = -14;
+constexpr int64_t LINUX_ERR_ENOENT  = -2;
+constexpr int64_t LINUX_ERR_ENOMEM  = -12;
+constexpr int64_t LINUX_ERR_EAGAIN  = -11;
+constexpr int64_t LINUX_ERR_EMFILE  = -24;
+constexpr int64_t LINUX_ERR_EINVAL  = -22;
+constexpr int64_t LINUX_ERR_EBADF   = -9;
+constexpr int64_t LINUX_ERR_ENOSYS  = -38;
+constexpr int64_t LINUX_ERR_ENOTTY  = -25;
+constexpr int64_t LINUX_ERR_ECHILD  = -10;
+constexpr int64_t LINUX_ERR_ENODEV  = -19;
 constexpr int64_t LINUX_ERR_ENOTDIR = -20;
-constexpr int64_t LINUX_ERR_EPERM  = -1;
-constexpr int64_t LINUX_ERR_ERANGE = -34;
+constexpr int64_t LINUX_ERR_EPERM   = -1;
+constexpr int64_t LINUX_ERR_ERANGE  = -34;
 
-constexpr uint64_t SYSCALL_COPY_CHUNK_SIZE = 4096;
-constexpr uint64_t SYSCALL_PATH_MAX        = 4096;
-constexpr uint64_t SYSCALL_EXEC_MAX_VECTOR = 128;
+constexpr uint64_t SYSCALL_COPY_CHUNK_SIZE   = 4096;
+constexpr uint64_t SYSCALL_PATH_MAX          = 4096;
+constexpr uint64_t SYSCALL_EXEC_MAX_VECTOR   = 128;
 constexpr uint64_t SYSCALL_MAX_PATH_SEGMENTS = 256;
-constexpr uint64_t SYSCALL_IOV_MAX = 1024;
+constexpr uint64_t SYSCALL_IOV_MAX           = 1024;
 
 struct LinuxIOVec
 {
@@ -89,25 +89,25 @@ constexpr int64_t LINUX_PROT_NONE  = 0x0;
 
 constexpr uint64_t MMAP_DEFAULT_BASE = 0x0000000001000000;
 
-constexpr uint64_t LINUX_O_ACCMODE = 0x3;
-constexpr uint64_t LINUX_O_APPEND  = 0x400;
+constexpr uint64_t LINUX_O_ACCMODE  = 0x3;
+constexpr uint64_t LINUX_O_APPEND   = 0x400;
 constexpr uint64_t LINUX_O_NONBLOCK = 0x800;
-constexpr uint64_t LINUX_O_ASYNC   = 0x2000;
-constexpr uint64_t LINUX_O_DIRECT  = 0x4000;
-constexpr uint64_t LINUX_O_NOATIME = 0x40000;
-constexpr uint64_t LINUX_O_CLOEXEC = 0x80000;
+constexpr uint64_t LINUX_O_ASYNC    = 0x2000;
+constexpr uint64_t LINUX_O_DIRECT   = 0x4000;
+constexpr uint64_t LINUX_O_NOATIME  = 0x40000;
+constexpr uint64_t LINUX_O_CLOEXEC  = 0x80000;
 
-constexpr uint64_t LINUX_F_DUPFD          = 0;
-constexpr uint64_t LINUX_F_GETFD          = 1;
-constexpr uint64_t LINUX_F_SETFD          = 2;
-constexpr uint64_t LINUX_F_GETFL          = 3;
-constexpr uint64_t LINUX_F_SETFL          = 4;
-constexpr uint64_t LINUX_F_DUPFD_CLOEXEC  = 1030;
-constexpr uint64_t LINUX_FD_CLOEXEC       = 0x1;
+constexpr uint64_t LINUX_F_DUPFD         = 0;
+constexpr uint64_t LINUX_F_GETFD         = 1;
+constexpr uint64_t LINUX_F_SETFD         = 2;
+constexpr uint64_t LINUX_F_GETFL         = 3;
+constexpr uint64_t LINUX_F_SETFL         = 4;
+constexpr uint64_t LINUX_F_DUPFD_CLOEXEC = 1030;
+constexpr uint64_t LINUX_FD_CLOEXEC      = 0x1;
 
 constexpr uint64_t LINUX_FCNTL_SETFL_ALLOWED = (LINUX_O_APPEND | LINUX_O_NONBLOCK | LINUX_O_ASYNC | LINUX_O_DIRECT | LINUX_O_NOATIME);
 
-constexpr int64_t LINUX_AT_FDCWD          = -100;
+constexpr int64_t LINUX_AT_FDCWD            = -100;
 constexpr int64_t LINUX_AT_SYMLINK_NOFOLLOW = 0x100;
 constexpr int64_t LINUX_AT_NO_AUTOMOUNT     = 0x800;
 constexpr int64_t LINUX_AT_EMPTY_PATH       = 0x1000;
@@ -127,13 +127,13 @@ constexpr int64_t LINUX_SIG_SETMASK = 2;
 constexpr int64_t LINUX_SIG_DFL = 0;
 constexpr int64_t LINUX_SIG_IGN = 1;
 
-constexpr uint64_t LINUX_RT_SIGSET_SIZE = sizeof(uint64_t);
+constexpr uint64_t LINUX_RT_SIGSET_SIZE    = sizeof(uint64_t);
 constexpr uint64_t LINUX_RT_SIGACTION_SIZE = sizeof(uint64_t) * 4;
-constexpr int64_t  LINUX_SIGNAL_MIN = 1;
-constexpr int64_t  LINUX_SIGNAL_MAX = static_cast<int64_t>(MAX_POSIX_SIGNALS_PER_PROCESS);
+constexpr int64_t  LINUX_SIGNAL_MIN        = 1;
+constexpr int64_t  LINUX_SIGNAL_MAX        = static_cast<int64_t>(MAX_POSIX_SIGNALS_PER_PROCESS);
 
-constexpr uint64_t LINUX_SIGKILL_MASK = (1ULL << (9 - 1));
-constexpr uint64_t LINUX_SIGSTOP_MASK = (1ULL << (19 - 1));
+constexpr uint64_t LINUX_SIGKILL_MASK            = (1ULL << (9 - 1));
+constexpr uint64_t LINUX_SIGSTOP_MASK            = (1ULL << (19 - 1));
 constexpr uint64_t LINUX_UNBLOCKABLE_SIGNAL_MASK = (LINUX_SIGKILL_MASK | LINUX_SIGSTOP_MASK);
 
 constexpr int64_t LINUX_SIGNAL_SIGKILL = 9;
@@ -287,7 +287,7 @@ void PopulateLinuxStatFromNode(const INode* Node, LinuxStat* KernelStat)
         return;
     }
 
-    *KernelStat                        = {};
+    *KernelStat                       = {};
     KernelStat->Device                = 1;
     KernelStat->Inode                 = reinterpret_cast<uint64_t>(Node);
     KernelStat->HardLinkCount         = (Node->NodeType == INODE_DIR) ? 2 : 1;
@@ -329,13 +329,13 @@ int64_t AllocateProcessFileDescriptor(Process* CurrentProcess, Dentry* NodeDentr
                 return LINUX_ERR_ENOMEM;
             }
 
-            NewFile->FileDescriptor = FileDescriptor;
-            NewFile->Node           = NodeDentry->inode;
-            NewFile->CurrentOffset  = 0;
-            NewFile->AccessFlags    = DecodeAccessFlags(Flags);
-            NewFile->OpenFlags      = Flags;
+            NewFile->FileDescriptor  = FileDescriptor;
+            NewFile->Node            = NodeDentry->inode;
+            NewFile->CurrentOffset   = 0;
+            NewFile->AccessFlags     = DecodeAccessFlags(Flags);
+            NewFile->OpenFlags       = Flags;
             NewFile->DescriptorFlags = ((Flags & LINUX_O_CLOEXEC) != 0) ? LINUX_FD_CLOEXEC : 0;
-            NewFile->DirectoryEntry = NodeDentry;
+            NewFile->DirectoryEntry  = NodeDentry;
 
             CurrentProcess->FileTable[FileDescriptor] = NewFile;
             return static_cast<int64_t>(FileDescriptor);
@@ -393,7 +393,7 @@ bool CopyUserStringVector(LogicLayer* Logic, const char* const* UserVector, char
 
     for (uint64_t Index = 0; Index < SYSCALL_EXEC_MAX_VECTOR; ++Index)
     {
-        const char* UserEntry = nullptr;
+        const char* UserEntry        = nullptr;
         const void* UserEntryAddress = reinterpret_cast<const void*>(reinterpret_cast<uint64_t>(UserVector) + (Index * sizeof(const char*)));
         if (!Logic->CopyFromUserToKernel(UserEntryAddress, &UserEntry, sizeof(UserEntry)))
         {
@@ -464,7 +464,7 @@ bool BuildAbsolutePathFromDentry(const Dentry* Node, char* Buffer, uint64_t Buff
     }
 
     const char* SegmentStack[SYSCALL_MAX_PATH_SEGMENTS] = {};
-    uint64_t    SegmentCount = 0;
+    uint64_t    SegmentCount                            = 0;
 
     const Dentry* Current = Node;
     while (Current != nullptr && Current->parent != nullptr)
@@ -480,10 +480,10 @@ bool BuildAbsolutePathFromDentry(const Dentry* Node, char* Buffer, uint64_t Buff
         }
 
         SegmentStack[SegmentCount++] = Current->name;
-        Current = Current->parent;
+        Current                      = Current->parent;
     }
 
-    uint64_t Cursor = 0;
+    uint64_t Cursor  = 0;
     Buffer[Cursor++] = '/';
 
     if (SegmentCount == 0)
@@ -499,8 +499,8 @@ bool BuildAbsolutePathFromDentry(const Dentry* Node, char* Buffer, uint64_t Buff
 
     for (uint64_t SegmentIndex = SegmentCount; SegmentIndex > 0; --SegmentIndex)
     {
-        const char* Segment = SegmentStack[SegmentIndex - 1];
-        uint64_t SegmentLength = CStrLength(Segment);
+        const char* Segment       = SegmentStack[SegmentIndex - 1];
+        uint64_t    SegmentLength = CStrLength(Segment);
         if (SegmentLength == 0)
         {
             continue;
@@ -558,7 +558,7 @@ void ReleaseVforkParentIfNeeded(LogicLayer* Logic, Process* ChildProcess)
         return;
     }
 
-    bool ShouldUnblockParent = ParentProcess->WaitingForVforkChild && ParentProcess->VforkChildId == ChildProcess->Id;
+    bool ShouldUnblockParent            = ParentProcess->WaitingForVforkChild && ParentProcess->VforkChildId == ChildProcess->Id;
     ParentProcess->WaitingForVforkChild = false;
     ParentProcess->VforkChildId         = PROCESS_ID_INVALID;
 
@@ -698,7 +698,7 @@ bool IsVirtualAddressMapped(uint64_t PageMapL4TableAddr, uint64_t Address)
     VirtualAddress Vaddr;
     Vaddr.value = Address;
 
-    PageTableEntry* PML4 = reinterpret_cast<PageTableEntry*>(PageMapL4TableAddr);
+    PageTableEntry* PML4      = reinterpret_cast<PageTableEntry*>(PageMapL4TableAddr);
     PageTableEntry  PML4Entry = PML4[Vaddr.fields.pml4_index];
     if (!PML4Entry.fields.present)
     {
@@ -1099,7 +1099,7 @@ int64_t TranslationLayer::HandleWritevSystemCall(uint64_t FileDescriptor, const 
 
     for (uint64_t Index = 0; Index < IovCount; ++Index)
     {
-        LinuxIOVec KernelIOVec = {};
+        LinuxIOVec  KernelIOVec      = {};
         const void* UserIOVecAddress = reinterpret_cast<const void*>(reinterpret_cast<uint64_t>(Iov) + (Index * sizeof(LinuxIOVec)));
         if (!Logic->CopyFromUserToKernel(UserIOVecAddress, &KernelIOVec, sizeof(KernelIOVec)))
         {
@@ -1234,8 +1234,8 @@ int64_t TranslationLayer::HandleOpenSystemCall(const char* Path, uint64_t Flags)
         return LINUX_ERR_EFAULT;
     }
 
-    char EffectivePath[SYSCALL_PATH_MAX] = {};
-    const char* LookupPath               = KernelPath;
+    char        EffectivePath[SYSCALL_PATH_MAX] = {};
+    const char* LookupPath                      = KernelPath;
 
     if (KernelPath[0] != '/')
     {
@@ -1269,7 +1269,7 @@ int64_t TranslationLayer::HandleOpenSystemCall(const char* Path, uint64_t Flags)
 
         memcpy(EffectivePath + Cursor, KernelPath, static_cast<size_t>(RelativeLength));
         EffectivePath[Cursor + RelativeLength] = '\0';
-        LookupPath = EffectivePath;
+        LookupPath                             = EffectivePath;
     }
 
     Dentry* NodeDentry = VFS->Lookup(LookupPath);
@@ -1360,11 +1360,11 @@ int64_t TranslationLayer::HandleOpenAtSystemCall(int64_t DirectoryFileDescriptor
             return LINUX_ERR_EFAULT;
         }
 
-        char AbsolutePath[SYSCALL_PATH_MAX] = {};
-        uint64_t BasePathLength  = CStrLength(BasePath);
-        uint64_t RelativeLength  = CStrLength(KernelPath);
-        uint64_t NeedsSeparator  = (BasePathLength > 1) ? 1 : 0;
-        uint64_t RequiredBytes   = BasePathLength + NeedsSeparator + RelativeLength + 1;
+        char     AbsolutePath[SYSCALL_PATH_MAX] = {};
+        uint64_t BasePathLength                 = CStrLength(BasePath);
+        uint64_t RelativeLength                 = CStrLength(KernelPath);
+        uint64_t NeedsSeparator                 = (BasePathLength > 1) ? 1 : 0;
+        uint64_t RequiredBytes                  = BasePathLength + NeedsSeparator + RelativeLength + 1;
 
         if (RequiredBytes > sizeof(AbsolutePath))
         {
@@ -1423,8 +1423,8 @@ int64_t TranslationLayer::HandleStatSystemCall(const char* Path, void* Buffer)
         return LINUX_ERR_EFAULT;
     }
 
-    char EffectivePath[SYSCALL_PATH_MAX] = {};
-    const char* LookupPath               = KernelPath;
+    char        EffectivePath[SYSCALL_PATH_MAX] = {};
+    const char* LookupPath                      = KernelPath;
 
     if (KernelPath[0] != '/')
     {
@@ -1458,7 +1458,7 @@ int64_t TranslationLayer::HandleStatSystemCall(const char* Path, void* Buffer)
 
         memcpy(EffectivePath + Cursor, KernelPath, static_cast<size_t>(RelativeLength));
         EffectivePath[Cursor + RelativeLength] = '\0';
-        LookupPath = EffectivePath;
+        LookupPath                             = EffectivePath;
     }
 
     Dentry* NodeDentry = VFS->Lookup(LookupPath);
@@ -1509,8 +1509,8 @@ int64_t TranslationLayer::HandleLstatSystemCall(const char* Path, void* Buffer)
         return LINUX_ERR_EFAULT;
     }
 
-    char EffectivePath[SYSCALL_PATH_MAX] = {};
-    const char* LookupPath               = KernelPath;
+    char        EffectivePath[SYSCALL_PATH_MAX] = {};
+    const char* LookupPath                      = KernelPath;
 
     if (KernelPath[0] != '/')
     {
@@ -1544,7 +1544,7 @@ int64_t TranslationLayer::HandleLstatSystemCall(const char* Path, void* Buffer)
 
         memcpy(EffectivePath + Cursor, KernelPath, static_cast<size_t>(RelativeLength));
         EffectivePath[Cursor + RelativeLength] = '\0';
-        LookupPath = EffectivePath;
+        LookupPath                             = EffectivePath;
     }
 
     Dentry* NodeDentry = VFS->LookupNoFollowFinal(LookupPath);
@@ -1675,11 +1675,11 @@ int64_t TranslationLayer::HandleNewFstatatSystemCall(int64_t DirectoryFileDescri
                 return LINUX_ERR_EFAULT;
             }
 
-            char AbsolutePath[SYSCALL_PATH_MAX] = {};
-            uint64_t BasePathLength = CStrLength(BasePath);
-            uint64_t RelativeLength = CStrLength(KernelPath);
-            uint64_t NeedsSeparator = (BasePathLength > 1) ? 1 : 0;
-            uint64_t RequiredBytes  = BasePathLength + NeedsSeparator + RelativeLength + 1;
+            char     AbsolutePath[SYSCALL_PATH_MAX] = {};
+            uint64_t BasePathLength                 = CStrLength(BasePath);
+            uint64_t RelativeLength                 = CStrLength(KernelPath);
+            uint64_t NeedsSeparator                 = (BasePathLength > 1) ? 1 : 0;
+            uint64_t RequiredBytes                  = BasePathLength + NeedsSeparator + RelativeLength + 1;
 
             if (RequiredBytes > sizeof(AbsolutePath))
             {
@@ -1816,10 +1816,10 @@ int64_t TranslationLayer::HandleGetdents64SystemCall(uint64_t FileDescriptor, vo
         }
 
         LinuxDirent64Header Header = {};
-        Header.Inode       = reinterpret_cast<uint64_t>(EntryNode);
-        Header.Offset      = EntryIndex + 1;
-        Header.RecordLength = static_cast<uint16_t>(RecordLength);
-        Header.Type        = BuildLinuxDirentTypeFromNode(EntryNode);
+        Header.Inode               = reinterpret_cast<uint64_t>(EntryNode);
+        Header.Offset              = EntryIndex + 1;
+        Header.RecordLength        = static_cast<uint16_t>(RecordLength);
+        Header.Type                = BuildLinuxDirentTypeFromNode(EntryNode);
 
         memcpy(KernelBuffer + Cursor, &Header, sizeof(Header));
         memcpy(KernelBuffer + Cursor + sizeof(Header), EntryName, static_cast<size_t>(NameLength));
@@ -1903,8 +1903,8 @@ int64_t TranslationLayer::HandleFcntlSystemCall(uint64_t FileDescriptor, uint64_
                 return LINUX_ERR_ENOMEM;
             }
 
-            *DuplicatedFile                  = *SourceFile;
-            DuplicatedFile->FileDescriptor   = CandidateDescriptor;
+            *DuplicatedFile                 = *SourceFile;
+            DuplicatedFile->FileDescriptor  = CandidateDescriptor;
             DuplicatedFile->DescriptorFlags = SetCloseOnExec ? LINUX_FD_CLOEXEC : 0;
 
             CurrentProcess->FileTable[CandidateDescriptor] = DuplicatedFile;
@@ -1921,69 +1921,69 @@ int64_t TranslationLayer::HandleFcntlSystemCall(uint64_t FileDescriptor, uint64_
         case LINUX_F_DUPFD_CLOEXEC:
             return DuplicateFromMinimum(Argument, true);
         case LINUX_F_GETFD:
+        {
+            if (FileDescriptor >= MAX_OPEN_FILES_PER_PROCESS)
             {
-                    if (FileDescriptor >= MAX_OPEN_FILES_PER_PROCESS)
-                    {
-                        return LINUX_ERR_EBADF;
-                    }
-
-                    File* OpenFile = CurrentProcess->FileTable[FileDescriptor];
-                    if (OpenFile == nullptr)
-                    {
-                        return LINUX_ERR_EBADF;
-                    }
-
-                    return static_cast<int64_t>(OpenFile->DescriptorFlags & LINUX_FD_CLOEXEC);
+                return LINUX_ERR_EBADF;
             }
+
+            File* OpenFile = CurrentProcess->FileTable[FileDescriptor];
+            if (OpenFile == nullptr)
+            {
+                return LINUX_ERR_EBADF;
+            }
+
+            return static_cast<int64_t>(OpenFile->DescriptorFlags & LINUX_FD_CLOEXEC);
+        }
         case LINUX_F_SETFD:
+        {
+            if (FileDescriptor >= MAX_OPEN_FILES_PER_PROCESS)
             {
-                    if (FileDescriptor >= MAX_OPEN_FILES_PER_PROCESS)
-                    {
-                        return LINUX_ERR_EBADF;
-                    }
-
-                    File* OpenFile = CurrentProcess->FileTable[FileDescriptor];
-                    if (OpenFile == nullptr)
-                    {
-                        return LINUX_ERR_EBADF;
-                    }
-
-                    OpenFile->DescriptorFlags = (Argument & LINUX_FD_CLOEXEC);
-                    return 0;
+                return LINUX_ERR_EBADF;
             }
+
+            File* OpenFile = CurrentProcess->FileTable[FileDescriptor];
+            if (OpenFile == nullptr)
+            {
+                return LINUX_ERR_EBADF;
+            }
+
+            OpenFile->DescriptorFlags = (Argument & LINUX_FD_CLOEXEC);
+            return 0;
+        }
         case LINUX_F_GETFL:
+        {
+            if (FileDescriptor >= MAX_OPEN_FILES_PER_PROCESS)
             {
-                    if (FileDescriptor >= MAX_OPEN_FILES_PER_PROCESS)
-                    {
-                        return LINUX_ERR_EBADF;
-                    }
-
-                    File* OpenFile = CurrentProcess->FileTable[FileDescriptor];
-                    if (OpenFile == nullptr)
-                    {
-                        return LINUX_ERR_EBADF;
-                    }
-
-                    return static_cast<int64_t>(OpenFile->OpenFlags);
+                return LINUX_ERR_EBADF;
             }
+
+            File* OpenFile = CurrentProcess->FileTable[FileDescriptor];
+            if (OpenFile == nullptr)
+            {
+                return LINUX_ERR_EBADF;
+            }
+
+            return static_cast<int64_t>(OpenFile->OpenFlags);
+        }
         case LINUX_F_SETFL:
+        {
+            if (FileDescriptor >= MAX_OPEN_FILES_PER_PROCESS)
             {
-                    if (FileDescriptor >= MAX_OPEN_FILES_PER_PROCESS)
-                    {
-                        return LINUX_ERR_EBADF;
-                    }
-
-                    File* OpenFile = CurrentProcess->FileTable[FileDescriptor];
-                    if (OpenFile == nullptr)
-                    {
-                        return LINUX_ERR_EBADF;
-                    }
-
-                    uint64_t PreservedFlags = OpenFile->OpenFlags & ~LINUX_FCNTL_SETFL_ALLOWED;
-                    uint64_t RequestedFlags = Argument & LINUX_FCNTL_SETFL_ALLOWED;
-                    OpenFile->OpenFlags     = (PreservedFlags | RequestedFlags);
-                    return 0;
+                return LINUX_ERR_EBADF;
             }
+
+            File* OpenFile = CurrentProcess->FileTable[FileDescriptor];
+            if (OpenFile == nullptr)
+            {
+                return LINUX_ERR_EBADF;
+            }
+
+            uint64_t PreservedFlags = OpenFile->OpenFlags & ~LINUX_FCNTL_SETFL_ALLOWED;
+            uint64_t RequestedFlags = Argument & LINUX_FCNTL_SETFL_ALLOWED;
+            OpenFile->OpenFlags     = (PreservedFlags | RequestedFlags);
+            return 0;
+        }
         default:
             return LINUX_ERR_ENOSYS;
     }
@@ -2109,8 +2109,8 @@ int64_t TranslationLayer::HandleChdirSystemCall(const char* Path)
         return LINUX_ERR_ENOENT;
     }
 
-    char EffectivePath[SYSCALL_PATH_MAX] = {};
-    const char* LookupPath               = KernelPath;
+    char        EffectivePath[SYSCALL_PATH_MAX] = {};
+    const char* LookupPath                      = KernelPath;
 
     if (KernelPath[0] != '/')
     {
@@ -2144,7 +2144,7 @@ int64_t TranslationLayer::HandleChdirSystemCall(const char* Path)
 
         memcpy(EffectivePath + Cursor, KernelPath, static_cast<size_t>(RelativeLength));
         EffectivePath[Cursor + RelativeLength] = '\0';
-        LookupPath = EffectivePath;
+        LookupPath                             = EffectivePath;
     }
 
     Dentry* NodeDentry = VFS->Lookup(LookupPath);
@@ -2320,7 +2320,7 @@ int64_t TranslationLayer::HandleBrkSystemCall(uint64_t Address)
         return static_cast<int64_t>(CurrentProcess->ProgramBreak);
     }
 
-    uint64_t NewHeapPages = NewHeapSize / PAGE_SIZE;
+    uint64_t NewHeapPages    = NewHeapSize / PAGE_SIZE;
     void*    NewHeapPhysical = PMM->AllocatePagesFromDescriptor(NewHeapPages);
     if (NewHeapPhysical == nullptr)
     {
@@ -2508,9 +2508,9 @@ int64_t TranslationLayer::HandleDup2SystemCall(uint64_t OldFileDescriptor, uint6
         return LINUX_ERR_ENOMEM;
     }
 
-    *DuplicatedFile              = *SourceFile;
-    DuplicatedFile->FileDescriptor = NewFileDescriptor;
-    DuplicatedFile->DescriptorFlags = 0;
+    *DuplicatedFile                              = *SourceFile;
+    DuplicatedFile->FileDescriptor               = NewFileDescriptor;
+    DuplicatedFile->DescriptorFlags              = 0;
     CurrentProcess->FileTable[NewFileDescriptor] = DuplicatedFile;
 
     return static_cast<int64_t>(NewFileDescriptor);
@@ -2576,7 +2576,7 @@ int64_t TranslationLayer::HandleForkSystemCall()
     ChildProcess->State.rsp    = SavedFrame.UserRSP;
     ChildProcess->State.cs     = USER_CS;
     ChildProcess->State.ss     = USER_SS;
-    ChildProcess->State.rax = 0;
+    ChildProcess->State.rax    = 0;
 
     return static_cast<int64_t>(ChildId);
 }
@@ -2636,8 +2636,7 @@ int64_t TranslationLayer::HandleVforkSystemCall()
     ChildState.cs       = USER_CS;
     ChildState.ss       = USER_SS;
 
-    uint8_t ChildId = PM->CreateUserProcess(reinterpret_cast<void*>(ParentProcess->AddressSpace->GetStackVirtualAddressStart()), ChildState, ParentProcess->AddressSpace,
-                                            ParentProcess->FileType);
+    uint8_t ChildId = PM->CreateUserProcess(reinterpret_cast<void*>(ParentProcess->AddressSpace->GetStackVirtualAddressStart()), ChildState, ParentProcess->AddressSpace, ParentProcess->FileType);
     if (ChildId == PROCESS_ID_INVALID)
     {
         return LINUX_ERR_EAGAIN;
@@ -2681,15 +2680,15 @@ int64_t TranslationLayer::HandleVforkSystemCall()
             return LINUX_ERR_ENOMEM;
         }
 
-        *CopiedFile                       = *ParentProcess->FileTable[FileIndex];
+        *CopiedFile                        = *ParentProcess->FileTable[FileIndex];
         ChildProcess->FileTable[FileIndex] = CopiedFile;
     }
 
     ParentProcess->WaitingForVforkChild = true;
     ParentProcess->VforkChildId         = ChildId;
 
-    ChildProcess->IsVforkChild          = true;
-    ChildProcess->VforkParentId         = ParentProcess->Id;
+    ChildProcess->IsVforkChild  = true;
+    ChildProcess->VforkParentId = ParentProcess->Id;
 
     Logic->AddProcessToReadyQueue(ChildId);
 
@@ -2726,7 +2725,7 @@ int64_t TranslationLayer::HandleExitGroupSystemCall(int64_t Status)
     bool    ExitingVforkChild = CurrentProcess->IsVforkChild;
     uint8_t VforkParentId     = CurrentProcess->VforkParentId;
 
-    int32_t WaitStatus = static_cast<int32_t>((static_cast<uint64_t>(Status) & 0xFFULL) << 8);
+    int32_t WaitStatus       = static_cast<int32_t>((static_cast<uint64_t>(Status) & 0xFFULL) << 8);
     uint8_t CurrentProcessId = CurrentProcess->Id;
 
     Logic->KillProcess(CurrentProcessId, WaitStatus);
@@ -2736,7 +2735,7 @@ int64_t TranslationLayer::HandleExitGroupSystemCall(int64_t Status)
         Process* ParentProcess = PM->GetProcessById(VforkParentId);
         if (ParentProcess != nullptr && ParentProcess->Status != PROCESS_TERMINATED)
         {
-            bool ShouldUnblockParent = ParentProcess->WaitingForVforkChild && ParentProcess->VforkChildId == CurrentProcessId;
+            bool ShouldUnblockParent            = ParentProcess->WaitingForVforkChild && ParentProcess->VforkChildId == CurrentProcessId;
             ParentProcess->WaitingForVforkChild = false;
             ParentProcess->VforkChildId         = PROCESS_ID_INVALID;
             if (ShouldUnblockParent)
@@ -3001,8 +3000,8 @@ int64_t TranslationLayer::HandleMmapSystemCall(void* Address, uint64_t Length, i
             return LINUX_ERR_EFAULT;
         }
 
-        PhysicalMemoryManager* PMM      = ActiveDispatcher->GetResourceLayer()->GetPMM();
-        uint64_t               PageCount = MappingLength / PAGE_SIZE;
+        PhysicalMemoryManager* PMM                = ActiveDispatcher->GetResourceLayer()->GetPMM();
+        uint64_t               PageCount          = MappingLength / PAGE_SIZE;
         void*                  PhysicalAllocation = PMM->AllocatePagesFromDescriptor(PageCount);
         if (PhysicalAllocation == nullptr)
         {
@@ -3089,7 +3088,7 @@ int64_t TranslationLayer::HandleMmapSystemCall(void* Address, uint64_t Length, i
 
     if (ActiveDispatcher != nullptr && ActiveDispatcher->GetResourceLayer() != nullptr)
     {
-        uint64_t UserPageTable = CurrentProcess->AddressSpace->GetPageMapL4TableAddr();
+        uint64_t UserPageTable   = CurrentProcess->AddressSpace->GetPageMapL4TableAddr();
         uint64_t ActivePageTable = ActiveDispatcher->GetResourceLayer()->ReadCurrentPageTable();
         if (UserPageTable != 0 && ActivePageTable == UserPageTable)
         {
@@ -3256,9 +3255,9 @@ int64_t TranslationLayer::HandleMunmapSystemCall(void* Address, uint64_t Length)
 
         if (!TrimsLeft && TrimsRight)
         {
-            uint64_t NewLength            = MappingEnd - OverlapEnd;
-            Mapping.VirtualAddressStart    = OverlapEnd;
-            Mapping.Length                 = NewLength;
+            uint64_t NewLength          = MappingEnd - OverlapEnd;
+            Mapping.VirtualAddressStart = OverlapEnd;
+            Mapping.Length              = NewLength;
             if (Mapping.PhysicalAddressStart != 0)
             {
                 Mapping.PhysicalAddressStart = OriginalMapping.PhysicalAddressStart + (OverlapEnd - MappingStart);
@@ -3400,8 +3399,7 @@ int64_t TranslationLayer::HandleRtSigactionSystemCall(int64_t Signal, const void
         CurrentProcess->SignalActions[SignalIndex].Restorer = NewKernelAction.Restorer;
         CurrentProcess->SignalActions[SignalIndex].Mask     = NewKernelAction.Mask;
 
-        if (CurrentProcess->SignalActions[SignalIndex].Handler == static_cast<uint64_t>(LINUX_SIG_DFL)
-            || CurrentProcess->SignalActions[SignalIndex].Handler == static_cast<uint64_t>(LINUX_SIG_IGN))
+        if (CurrentProcess->SignalActions[SignalIndex].Handler == static_cast<uint64_t>(LINUX_SIG_DFL) || CurrentProcess->SignalActions[SignalIndex].Handler == static_cast<uint64_t>(LINUX_SIG_IGN))
         {
             return 0;
         }
@@ -3434,8 +3432,8 @@ int64_t TranslationLayer::HandleRtSigprocmaskSystemCall(int64_t How, const void*
         return LINUX_ERR_EINVAL;
     }
 
-    uint64_t RequestedMask = 0;
-    bool ShouldUpdateMask  = (Set != nullptr);
+    uint64_t RequestedMask    = 0;
+    bool     ShouldUpdateMask = (Set != nullptr);
     if (ShouldUpdateMask)
     {
         if (!Logic->CopyFromUserToKernel(Set, &RequestedMask, sizeof(RequestedMask)))

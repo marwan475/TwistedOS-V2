@@ -15,41 +15,41 @@ namespace
 {
 bool ReadPciConfigDword(uint8_t Bus, uint8_t Device, uint8_t Function, uint8_t RegisterOffset, uint32_t* Value)
 {
-	return X86ReadPCIConfigDword(Bus, Device, Function, RegisterOffset, Value);
+    return X86ReadPCIConfigDword(Bus, Device, Function, RegisterOffset, Value);
 }
 
 bool ReadPciConfigWord(uint8_t Bus, uint8_t Device, uint8_t Function, uint8_t RegisterOffset, uint16_t* Value)
 {
-	if (Value == nullptr)
-	{
-		return false;
-	}
+    if (Value == nullptr)
+    {
+        return false;
+    }
 
-	uint32_t DwordValue = 0;
-	if (!ReadPciConfigDword(Bus, Device, Function, RegisterOffset, &DwordValue))
-	{
-		return false;
-	}
+    uint32_t DwordValue = 0;
+    if (!ReadPciConfigDword(Bus, Device, Function, RegisterOffset, &DwordValue))
+    {
+        return false;
+    }
 
-	*Value = static_cast<uint16_t>((DwordValue >> ((RegisterOffset & 0x2u) * 8)) & 0xFFFFu);
-	return true;
+    *Value = static_cast<uint16_t>((DwordValue >> ((RegisterOffset & 0x2u) * 8)) & 0xFFFFu);
+    return true;
 }
 
 bool ReadPciConfigByte(uint8_t Bus, uint8_t Device, uint8_t Function, uint8_t RegisterOffset, uint8_t* Value)
 {
-	if (Value == nullptr)
-	{
-		return false;
-	}
+    if (Value == nullptr)
+    {
+        return false;
+    }
 
-	uint32_t DwordValue = 0;
-	if (!ReadPciConfigDword(Bus, Device, Function, RegisterOffset, &DwordValue))
-	{
-		return false;
-	}
+    uint32_t DwordValue = 0;
+    if (!ReadPciConfigDword(Bus, Device, Function, RegisterOffset, &DwordValue))
+    {
+        return false;
+    }
 
-	*Value = static_cast<uint8_t>((DwordValue >> ((RegisterOffset & 0x3u) * 8)) & 0xFFu);
-	return true;
+    *Value = static_cast<uint8_t>((DwordValue >> ((RegisterOffset & 0x3u) * 8)) & 0xFFu);
+    return true;
 }
 } // namespace
 
@@ -61,18 +61,17 @@ bool ReadPciConfigByte(uint8_t Bus, uint8_t Device, uint8_t Function, uint8_t Re
  * Returns:
  *   DeviceManager - Constructed device manager instance.
  */
-DeviceManager::DeviceManager()
-	: PciDevices{}, PciDeviceCount(0), PrimaryIDEController(nullptr), LogTerminal(nullptr)
+DeviceManager::DeviceManager() : PciDevices{}, PciDeviceCount(0), PrimaryIDEController(nullptr), LogTerminal(nullptr)
 {
 }
 
 DeviceManager::~DeviceManager()
 {
-	if (PrimaryIDEController != nullptr)
-	{
-		delete PrimaryIDEController;
-		PrimaryIDEController = nullptr;
-	}
+    if (PrimaryIDEController != nullptr)
+    {
+        delete PrimaryIDEController;
+        PrimaryIDEController = nullptr;
+    }
 }
 
 /**
@@ -85,124 +84,123 @@ DeviceManager::~DeviceManager()
  */
 void DeviceManager::Initialize(TTY* Terminal)
 {
-	LogTerminal = Terminal;
-	EnumeratePCI();
+    LogTerminal = Terminal;
+    EnumeratePCI();
 }
 
 void DeviceManager::EnumeratePCI()
 {
-	PciDeviceCount = 0;
+    PciDeviceCount = 0;
 
-	if (PrimaryIDEController != nullptr)
-	{
-		delete PrimaryIDEController;
-		PrimaryIDEController = nullptr;
-	}
+    if (PrimaryIDEController != nullptr)
+    {
+        delete PrimaryIDEController;
+        PrimaryIDEController = nullptr;
+    }
 
-	for (uint16_t Bus = 0; Bus < 256; ++Bus)
-	{
-		for (uint8_t Device = 0; Device < 32; ++Device)
-		{
-			uint16_t VendorId = 0;
-			if (!ReadPciConfigWord(static_cast<uint8_t>(Bus), Device, 0, 0x00, &VendorId) || VendorId == 0xFFFF)
-			{
-				continue;
-			}
+    for (uint16_t Bus = 0; Bus < 256; ++Bus)
+    {
+        for (uint8_t Device = 0; Device < 32; ++Device)
+        {
+            uint16_t VendorId = 0;
+            if (!ReadPciConfigWord(static_cast<uint8_t>(Bus), Device, 0, 0x00, &VendorId) || VendorId == 0xFFFF)
+            {
+                continue;
+            }
 
-			uint8_t HeaderType    = 0;
-			uint8_t FunctionCount = 1;
-			if (ReadPciConfigByte(static_cast<uint8_t>(Bus), Device, 0, 0x0E, &HeaderType) && (HeaderType & 0x80) != 0)
-			{
-				FunctionCount = 8;
-			}
+            uint8_t HeaderType    = 0;
+            uint8_t FunctionCount = 1;
+            if (ReadPciConfigByte(static_cast<uint8_t>(Bus), Device, 0, 0x0E, &HeaderType) && (HeaderType & 0x80) != 0)
+            {
+                FunctionCount = 8;
+            }
 
-			for (uint8_t Function = 0; Function < FunctionCount; ++Function)
-			{
-				if (PciDeviceCount >= MAX_PCI_DEVICES)
-				{
-					return;
-				}
+            for (uint8_t Function = 0; Function < FunctionCount; ++Function)
+            {
+                if (PciDeviceCount >= MAX_PCI_DEVICES)
+                {
+                    return;
+                }
 
-				PciDeviceInfo Info = {};
-				if (!ReadPciConfigWord(static_cast<uint8_t>(Bus), Device, Function, 0x00, &Info.VendorId) || Info.VendorId == 0xFFFF)
-				{
-					continue;
-				}
+                PciDeviceInfo Info = {};
+                if (!ReadPciConfigWord(static_cast<uint8_t>(Bus), Device, Function, 0x00, &Info.VendorId) || Info.VendorId == 0xFFFF)
+                {
+                    continue;
+                }
 
-				Info.Bus      = static_cast<uint8_t>(Bus);
-				Info.Device   = Device;
-				Info.Function = Function;
+                Info.Bus      = static_cast<uint8_t>(Bus);
+                Info.Device   = Device;
+                Info.Function = Function;
 
-				if (!ReadPciConfigWord(static_cast<uint8_t>(Bus), Device, Function, 0x02, &Info.DeviceId)
-					|| !ReadPciConfigByte(static_cast<uint8_t>(Bus), Device, Function, 0x0B, &Info.ClassCode)
-					|| !ReadPciConfigByte(static_cast<uint8_t>(Bus), Device, Function, 0x0A, &Info.SubClass)
-					|| !ReadPciConfigByte(static_cast<uint8_t>(Bus), Device, Function, 0x09, &Info.ProgrammingInterface)
-					|| !ReadPciConfigByte(static_cast<uint8_t>(Bus), Device, Function, 0x08, &Info.RevisionId))
-				{
-					continue;
-				}
+                if (!ReadPciConfigWord(static_cast<uint8_t>(Bus), Device, Function, 0x02, &Info.DeviceId) || !ReadPciConfigByte(static_cast<uint8_t>(Bus), Device, Function, 0x0B, &Info.ClassCode)
+                    || !ReadPciConfigByte(static_cast<uint8_t>(Bus), Device, Function, 0x0A, &Info.SubClass)
+                    || !ReadPciConfigByte(static_cast<uint8_t>(Bus), Device, Function, 0x09, &Info.ProgrammingInterface)
+                    || !ReadPciConfigByte(static_cast<uint8_t>(Bus), Device, Function, 0x08, &Info.RevisionId))
+                {
+                    continue;
+                }
 
-				PciDevices[PciDeviceCount++] = Info;
+                PciDevices[PciDeviceCount++] = Info;
 
-				if (Info.VendorId == QEMU_IDE_VENDOR_ID && Info.DeviceId == QEMU_IDE_DEVICE_ID)
-				{
-					if (LogTerminal != nullptr)
-					{
-						LogTerminal->printf_("Driver match: PCI %u:%u.%u vendor=0x%x device=0x%x\n", Info.Bus, Info.Device, Info.Function, Info.VendorId, Info.DeviceId);
-					}
-					InitializeIDEControllerForDevice(Info);
-				}
-			}
-		}
-	}
+                if (Info.VendorId == QEMU_IDE_VENDOR_ID && Info.DeviceId == QEMU_IDE_DEVICE_ID)
+                {
+                    if (LogTerminal != nullptr)
+                    {
+                        LogTerminal->printf_("Driver match: PCI %u:%u.%u vendor=0x%x device=0x%x\n", Info.Bus, Info.Device, Info.Function, Info.VendorId, Info.DeviceId);
+                    }
+                    InitializeIDEControllerForDevice(Info);
+                }
+            }
+        }
+    }
 }
 
 void DeviceManager::InitializeIDEControllerForDevice(const PciDeviceInfo& Device)
 {
-	if (PrimaryIDEController != nullptr)
-	{
-		return;
-	}
+    if (PrimaryIDEController != nullptr)
+    {
+        return;
+    }
 
-	uint16_t PrimaryIoBase      = 0x1F0;
-	uint16_t PrimaryControlBase = 0x3F6;
+    uint16_t PrimaryIoBase      = 0x1F0;
+    uint16_t PrimaryControlBase = 0x3F6;
 
-	uint32_t Bar0 = 0;
-	if (ReadPciConfigDword(Device.Bus, Device.Device, Device.Function, 0x10, &Bar0) && (Bar0 & 0x1u) != 0)
-	{
-		uint16_t ParsedBase = static_cast<uint16_t>(Bar0 & 0xFFFCu);
-		if (ParsedBase != 0)
-		{
-			PrimaryIoBase = ParsedBase;
-		}
-	}
+    uint32_t Bar0 = 0;
+    if (ReadPciConfigDword(Device.Bus, Device.Device, Device.Function, 0x10, &Bar0) && (Bar0 & 0x1u) != 0)
+    {
+        uint16_t ParsedBase = static_cast<uint16_t>(Bar0 & 0xFFFCu);
+        if (ParsedBase != 0)
+        {
+            PrimaryIoBase = ParsedBase;
+        }
+    }
 
-	uint32_t Bar1 = 0;
-	if (ReadPciConfigDword(Device.Bus, Device.Device, Device.Function, 0x14, &Bar1) && (Bar1 & 0x1u) != 0)
-	{
-		uint16_t ParsedBase = static_cast<uint16_t>(Bar1 & 0xFFFCu);
-		if (ParsedBase != 0)
-		{
-			PrimaryControlBase = static_cast<uint16_t>(ParsedBase + 2);
-		}
-	}
+    uint32_t Bar1 = 0;
+    if (ReadPciConfigDword(Device.Bus, Device.Device, Device.Function, 0x14, &Bar1) && (Bar1 & 0x1u) != 0)
+    {
+        uint16_t ParsedBase = static_cast<uint16_t>(Bar1 & 0xFFFCu);
+        if (ParsedBase != 0)
+        {
+            PrimaryControlBase = static_cast<uint16_t>(ParsedBase + 2);
+        }
+    }
 
-	PrimaryIDEController = new IDEController(PrimaryIoBase, PrimaryControlBase);
-	if (!PrimaryIDEController->Initialize())
-	{
-		if (LogTerminal != nullptr)
-		{
-			LogTerminal->printf_("device driver init failed: ide\n");
-		}
-		delete PrimaryIDEController;
-		PrimaryIDEController = nullptr;
-		return;
-	}
+    PrimaryIDEController = new IDEController(PrimaryIoBase, PrimaryControlBase);
+    if (!PrimaryIDEController->Initialize())
+    {
+        if (LogTerminal != nullptr)
+        {
+            LogTerminal->printf_("device driver init failed: ide\n");
+        }
+        delete PrimaryIDEController;
+        PrimaryIDEController = nullptr;
+        return;
+    }
 
-	if (LogTerminal != nullptr)
-	{
-		LogTerminal->printf_("device driver inited: ide\n");
-	}
+    if (LogTerminal != nullptr)
+    {
+        LogTerminal->printf_("device driver inited: ide\n");
+    }
 }
 
 /**
@@ -225,8 +223,8 @@ void DeviceManager::PrintPCI(TTY* Terminal) const
     for (uint32_t Index = 0; Index < PciDeviceCount; ++Index)
     {
         const PciDeviceInfo& Device = PciDevices[Index];
-        Terminal->printf_("PCI %u:%u.%u vendor=0x%x device=0x%x class=0x%x subclass=0x%x progif=0x%x rev=0x%x\n", Device.Bus, Device.Device, Device.Function,
-                          Device.VendorId, Device.DeviceId, Device.ClassCode, Device.SubClass, Device.ProgrammingInterface, Device.RevisionId);
+        Terminal->printf_("PCI %u:%u.%u vendor=0x%x device=0x%x class=0x%x subclass=0x%x progif=0x%x rev=0x%x\n", Device.Bus, Device.Device, Device.Function, Device.VendorId, Device.DeviceId,
+                          Device.ClassCode, Device.SubClass, Device.ProgrammingInterface, Device.RevisionId);
     }
 }
 
@@ -248,35 +246,35 @@ bool DeviceManager::GetPCIDeviceInfo(uint32_t Index, PciDeviceInfo* Info) const
 
 IDEController* DeviceManager::GetDiskController() const
 {
-	return PrimaryIDEController;
+    return PrimaryIDEController;
 }
 
 TTY* DeviceManager::GetLogTerminal() const
 {
-	return LogTerminal;
+    return LogTerminal;
 }
 
 bool DeviceManager::ReadBlock(uint32_t LBA, void* Buffer) const
 {
-	if (PrimaryIDEController == nullptr)
-	{
-		return false;
-	}
+    if (PrimaryIDEController == nullptr)
+    {
+        return false;
+    }
 
-	return PrimaryIDEController->ReadBlock(LBA, Buffer);
+    return PrimaryIDEController->ReadBlock(LBA, Buffer);
 }
 
 bool DeviceManager::WriteBlock(uint32_t LBA, const void* Buffer) const
 {
-	if (PrimaryIDEController == nullptr)
-	{
-		return false;
-	}
+    if (PrimaryIDEController == nullptr)
+    {
+        return false;
+    }
 
-	return PrimaryIDEController->WriteBlock(LBA, Buffer);
+    return PrimaryIDEController->WriteBlock(LBA, Buffer);
 }
 
 IDEController* DeviceManager::GetPrimaryIDEController() const
 {
-	return PrimaryIDEController;
+    return PrimaryIDEController;
 }

@@ -30,11 +30,7 @@ constexpr uint64_t PAGE_ALIGNMENT_MASK        = PAGE_SIZE_BYTES - 1;
 } // namespace
 
 FileOperations FrameBuffer::FrameBufferFileOperations = {
-        nullptr,
-        &FrameBuffer::WriteFileOperation,
-        &FrameBuffer::SeekFileOperation,
-        &FrameBuffer::MemoryMapFileOperation,
-    &FrameBuffer::IoctlFileOperation,
+        nullptr, &FrameBuffer::WriteFileOperation, &FrameBuffer::SeekFileOperation, &FrameBuffer::MemoryMapFileOperation, &FrameBuffer::IoctlFileOperation,
 };
 
 /**

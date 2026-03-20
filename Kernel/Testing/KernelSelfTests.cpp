@@ -740,8 +740,8 @@ void KernelValidatorTask()
                     }
 
                     LogTestResult(ActiveDispatcher, "User Mode", true);
-                    ActiveDispatcher->GetResourceLayer()->GetTTY()->printf_(
-                            "[SelfTest] [User Mode] child id=%u terminated by validator; parent id=%u should wake from wait()\n", KilledChildId, ParentUserProcessId);
+                    ActiveDispatcher->GetResourceLayer()->GetTTY()->printf_("[SelfTest] [User Mode] child id=%u terminated by validator; parent id=%u should wake from wait()\n", KilledChildId,
+                                                                            ParentUserProcessId);
                     State.UserModeTestResultLogged = true;
                     State.Passed                   = true;
                     State.Phase                    = SELF_TEST_PHASE_COMPLETE;

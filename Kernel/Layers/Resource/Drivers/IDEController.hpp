@@ -22,10 +22,10 @@ private:
 public:
     IDEController(uint16_t PrimaryIoBase, uint16_t PrimaryControlBase);
 
-    bool Initialize();
-    bool IsInitialized() const;
-    bool HandleInterrupt() const;
-    bool ReadBlock(uint32_t LBA, void* Buffer) const;
-    bool WriteBlock(uint32_t LBA, const void* Buffer) const;
+    bool     Initialize();
+    bool     IsInitialized() const;
+    bool     HandleInterrupt() const;
+    bool     ReadBlock(uint32_t LBA, void* Buffer) const;
+    bool     WriteBlock(uint32_t LBA, const void* Buffer) const;
     uint32_t GetBlockSizeBytes() const;
 };
