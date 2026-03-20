@@ -110,7 +110,7 @@ all: bin build $(EFI) $(KERNEL) $(INITRAMFS) $(IMG) $(DRIVE)
 
 clean:
 	rm -rf $(BIN) $(BUILD) $(OUTPUT) *.pcap $(INIT_BIN) $(TEST1_BIN) $(TEST2_BIN) \
-		$(ROOTFS_BUSYBOX) $(ROOTFS_SH) $(ROOTFS_LS) $(ROOTFS_CAT) $(ROOTFS_ECHO)
+		$(ROOTFS_BIN_DIR)/*
 
 build:
 	mkdir $(BUILD)
