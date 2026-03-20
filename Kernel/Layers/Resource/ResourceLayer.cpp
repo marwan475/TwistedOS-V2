@@ -24,7 +24,7 @@ extern "C" void ResourceLayerTaskSwitchUserAsm(CpuState* OldState, const CpuStat
  */
 ResourceLayer::ResourceLayer()
     : PMM(nullptr), VMM(nullptr), Console(nullptr), KernelHeapVirtualAddrStart(0), KernelHeapVirtualAddrEnd(0), KernelPageMapL4TableAddr(0), InitramfsAddress(0), InitramfsSize(0), KHM(0, 0),
-    RFS(0, 0), Terminal(nullptr), InputKeyboard(nullptr), DevManager(nullptr)
+    RFS(0, 0), EFSManager(nullptr), Terminal(nullptr), InputKeyboard(nullptr), DevManager(nullptr)
 {
 }
 
@@ -227,6 +227,12 @@ void ResourceLayer::InitializeKeyboard()
 
 void ResourceLayer::InitializeDeviceManager()
 {
+    if (EFSManager != nullptr)
+    {
+        delete EFSManager;
+        EFSManager = nullptr;
+    }
+
     if (DevManager != nullptr)
     {
         delete DevManager;
@@ -236,11 +242,60 @@ void ResourceLayer::InitializeDeviceManager()
     DevManager = new DeviceManager();
     DevManager->Initialize(Terminal);
     DevManager->PrintPCI(Terminal);
+
+    RootFileSystemPartitionInfo PartitionInfo = {};
+    if (!LocateRootFileSystemPartition(&PartitionInfo))
+    {
+        if (Terminal != nullptr)
+        {
+            Terminal->printf_("root filesystem partition not found\n");
+        }
+        return;
+    }
+
+    IDEController* Controller = DevManager->GetPrimaryIDEController();
+    if (Controller == nullptr)
+    {
+        if (Terminal != nullptr)
+        {
+            Terminal->printf_("root filesystem controller not available\n");
+        }
+        return;
+    }
+
+    EFSManager = new ExtendedFileSystemManager(Controller);
+    if (!EFSManager->ConfigurePartition(PartitionInfo.StartLBA, PartitionInfo.SectorCount) || !EFSManager->Initialize())
+    {
+        if (Terminal != nullptr)
+        {
+            Terminal->printf_("root filesystem manager init failed\n");
+        }
+
+        delete EFSManager;
+        EFSManager = nullptr;
+        return;
+    }
+
+    if (Terminal != nullptr)
+    {
+        Terminal->printf_("root filesystem found: partition=%u start_lba=%lu sectors=%lu ext2_block=%u\n", PartitionInfo.PartitionIndex,
+                          static_cast<unsigned long>(PartitionInfo.StartLBA), static_cast<unsigned long>(PartitionInfo.SectorCount), EFSManager->GetBlockSizeBytes());
+    }
+}
+
+bool ResourceLayer::LocateRootFileSystemPartition(RootFileSystemPartitionInfo* PartitionInfo) const
+{
+    return PartitionManager::LocateRootFileSystemPartition(DevManager, PartitionInfo);
 }
 
 DeviceManager* ResourceLayer::GetDeviceManager() const
 {
     return DevManager;
+}
+
+ExtendedFileSystemManager* ResourceLayer::GetExtendedFileSystemManager() const
+{
+    return EFSManager;
 }
 
 /**

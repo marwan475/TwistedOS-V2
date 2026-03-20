@@ -74,7 +74,7 @@ static Process* GetCurrentProcessForSystemCallFrame()
     return PM->GetRunningProcess();
 }
 
-static const char* ProcessStateToString(ProcessState State)
+[[maybe_unused]] static const char* ProcessStateToString(ProcessState State)
 {
     switch (State)
     {
@@ -91,7 +91,7 @@ static const char* ProcessStateToString(ProcessState State)
     }
 }
 
-static const char* ProcessLevelToString(ProcessLevel Level)
+[[maybe_unused]] static const char* ProcessLevelToString(ProcessLevel Level)
 {
     switch (Level)
     {
@@ -104,7 +104,7 @@ static const char* ProcessLevelToString(ProcessLevel Level)
     }
 }
 
-static const char* ProcessFileTypeToString(FILE_TYPE FileType)
+[[maybe_unused]] static const char* ProcessFileTypeToString(FILE_TYPE FileType)
 {
     switch (FileType)
     {

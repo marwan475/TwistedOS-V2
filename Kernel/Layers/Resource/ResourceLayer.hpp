@@ -9,7 +9,9 @@
 #include "FrameBuffer.hpp"
 #include "KernelHeapManager.hpp"
 #include "Keyboard.hpp"
+#include "PartitionManager.hpp"
 #include "RamFileSystemManager.hpp"
+#include "ExtendedFileSystemManager.hpp"
 #include "TTY.hpp"
 #include "DeviceManager.hpp"
 
@@ -36,6 +38,7 @@ private:
     FrameBuffer            FB;
     KernelHeapManager      KHM;
     RamFileSystemManager   RFS;
+    ExtendedFileSystemManager* EFSManager;
     TTY*                   Terminal;
     Keyboard*              InputKeyboard;
     DeviceManager*          DevManager;
@@ -60,7 +63,9 @@ public:
     void                   InitializeTTY();
     void                   InitializeKeyboard();
     void                   InitializeDeviceManager();
+    bool                   LocateRootFileSystemPartition(RootFileSystemPartitionInfo* PartitionInfo) const;
     DeviceManager*         GetDeviceManager() const;
+    ExtendedFileSystemManager* GetExtendedFileSystemManager() const;
     void*                  kmalloc(size_t Size);
     void                   kfree(void* Ptr);
     uint64_t               ReadCurrentPageTable() const;
