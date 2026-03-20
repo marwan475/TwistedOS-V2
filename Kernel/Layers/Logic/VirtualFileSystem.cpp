@@ -36,10 +36,10 @@ typedef struct
 
 typedef struct
 {
-    Dentry*      RootDentry;
-    const char*  MountPath;
-    const void*  FileSystemManager;
-    bool         IsSuccessful;
+    Dentry*     RootDentry;
+    const char* MountPath;
+    const void* FileSystemManager;
+    bool        IsSuccessful;
 } MountEXTFileSystemContext;
 
 bool    IsRootAliasPath(const char* NormalizedPath);
@@ -351,9 +351,8 @@ char* ComposeMountPath(const char* MountPath, const char* EntryPath)
     uint64_t MountLength = GetStringLength(MountPath);
     uint64_t EntryLength = GetStringLength(RelativePath);
 
-    bool MountIsRoot = (MountLength == 1 && MountPath[0] == PATH_SEPARATOR);
-    bool NeedsSeparator
-            = (MountLength > 0 && !MountIsRoot && MountPath[MountLength - 1] != PATH_SEPARATOR && EntryLength > 0);
+    bool MountIsRoot    = (MountLength == 1 && MountPath[0] == PATH_SEPARATOR);
+    bool NeedsSeparator = (MountLength > 0 && !MountIsRoot && MountPath[MountLength - 1] != PATH_SEPARATOR && EntryLength > 0);
 
     uint64_t CombinedLength = MountLength + (NeedsSeparator ? 1 : 0) + EntryLength;
     char*    CombinedPath   = new char[CombinedLength + 1];

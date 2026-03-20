@@ -6,8 +6,8 @@
 
 #include "LogicLayer.hpp"
 
-#include "Layers/Resource/ResourceLayer.hpp"
 #include "Layers/Resource/PartitionManager.hpp"
+#include "Layers/Resource/ResourceLayer.hpp"
 #include "Layers/Resource/TTY.hpp"
 
 #include <Arch/x86.hpp>
@@ -690,7 +690,7 @@ namespace
 void NullProcessEntry()
 {
     while (1)
-    X86Halt();
+        X86Halt();
 }
 } // namespace
 
@@ -945,7 +945,7 @@ bool LogicLayer::RegisterPartitionDevices()
         return false;
     }
 
-    DeviceManager* DeviceManagerInstance = Resource->GetDeviceManager();
+    DeviceManager*    DeviceManagerInstance    = Resource->GetDeviceManager();
     PartitionManager* PartitionManagerInstance = Resource->GetPartitionManager();
     if (DeviceManagerInstance == nullptr || PartitionManagerInstance == nullptr)
     {
@@ -955,16 +955,16 @@ bool LogicLayer::RegisterPartitionDevices()
     return PartitionManagerInstance->RegisterPartitionDevices(DeviceManagerInstance, VFS);
 }
 
-bool LogicLayer::InitializeExtendedFileSystem(const char* DevicePath)
+bool LogicLayer::InitializeExtendedFileSystem(const char* DevicePath, const char* MountLocation)
 {
-    if (Resource == nullptr)
+    if (Resource == nullptr || VFS == nullptr)
     {
         return false;
     }
 
     PartitionManager* PartitionManagerInstance = Resource->GetPartitionManager();
     TTY*              Terminal                 = Resource->GetTTY();
-    if (PartitionManagerInstance == nullptr || DevicePath == nullptr)
+    if (PartitionManagerInstance == nullptr || DevicePath == nullptr || MountLocation == nullptr)
     {
         if (Terminal != nullptr)
         {
@@ -988,6 +988,15 @@ bool LogicLayer::InitializeExtendedFileSystem(const char* DevicePath)
         if (Terminal != nullptr)
         {
             Terminal->printf_("ext filesystem init failed: %s\n", DevicePath);
+        }
+        return false;
+    }
+
+    if (!VFS->MountEXTFileSystem(Resource->GetExtendedFileSystemManager(), MountLocation))
+    {
+        if (Terminal != nullptr)
+        {
+            Terminal->printf_("ext filesystem mount failed: device=%s mount=%s\n", DevicePath, MountLocation);
         }
         return false;
     }

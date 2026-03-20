@@ -419,11 +419,7 @@ int64_t PartitionIoctlFileOperation(File* OpenFile, uint64_t Request, uint64_t A
 }
 
 FileOperations PartitionBlockDeviceFileOperations = {
-        &PartitionReadFileOperation,
-        &PartitionWriteFileOperation,
-        &PartitionSeekFileOperation,
-        &PartitionMemoryMapFileOperation,
-        &PartitionIoctlFileOperation,
+        &PartitionReadFileOperation, &PartitionWriteFileOperation, &PartitionSeekFileOperation, &PartitionMemoryMapFileOperation, &PartitionIoctlFileOperation,
 };
 } // namespace
 
@@ -438,7 +434,7 @@ PartitionManager::PartitionManager() : CachedPartitionCount(0)
 bool PartitionManager::RefreshPartitionCache(const DeviceManager* DeviceManagerInstance)
 {
     RootFileSystemPartitionInfo Scratch[MAX_PARTITION_DEVICE_COUNT] = {};
-    uint32_t                    DiscoveredCount                      = 0;
+    uint32_t                    DiscoveredCount                     = 0;
     return EnumeratePartitions(DeviceManagerInstance, Scratch, MAX_PARTITION_DEVICE_COUNT, &DiscoveredCount);
 }
 
@@ -477,8 +473,7 @@ uint32_t PartitionManager::GetCachedPartitionCount() const
     return CachedPartitionCount;
 }
 
-bool PartitionManager::EnumeratePartitions(const DeviceManager* DeviceManagerInstance, RootFileSystemPartitionInfo* PartitionInfos, uint32_t MaxPartitionCount,
-                                          uint32_t* PartitionCount)
+bool PartitionManager::EnumeratePartitions(const DeviceManager* DeviceManagerInstance, RootFileSystemPartitionInfo* PartitionInfos, uint32_t MaxPartitionCount, uint32_t* PartitionCount)
 {
     TTY* Terminal = (DeviceManagerInstance == nullptr) ? nullptr : DeviceManagerInstance->GetLogTerminal();
 
@@ -491,7 +486,7 @@ bool PartitionManager::EnumeratePartitions(const DeviceManager* DeviceManagerIns
         return false;
     }
 
-    *PartitionCount = 0;
+    *PartitionCount      = 0;
     CachedPartitionCount = 0;
 
     IDEController* Controller = DeviceManagerInstance->GetPrimaryIDEController();
@@ -519,9 +514,9 @@ bool PartitionManager::EnumeratePartitions(const DeviceManager* DeviceManagerIns
     {
         if (Terminal != nullptr)
         {
-            Terminal->printf_("partition scan: enumerate invalid GPT header sig=%c%c%c%c%c%c%c%c entry_size=%u entries=%u\n", Header->Signature[0], Header->Signature[1],
-                              Header->Signature[2], Header->Signature[3], Header->Signature[4], Header->Signature[5], Header->Signature[6], Header->Signature[7],
-                              Header->SizeOfPartitionEntry, Header->NumberOfPartitionEntries);
+            Terminal->printf_("partition scan: enumerate invalid GPT header sig=%c%c%c%c%c%c%c%c entry_size=%u entries=%u\n", Header->Signature[0], Header->Signature[1], Header->Signature[2],
+                              Header->Signature[3], Header->Signature[4], Header->Signature[5], Header->Signature[6], Header->Signature[7], Header->SizeOfPartitionEntry,
+                              Header->NumberOfPartitionEntries);
         }
         return false;
     }
@@ -829,9 +824,9 @@ bool PartitionManager::LocateRootFileSystemPartition(const DeviceManager* Device
 
         RootFileSystemPartitionInfo Candidate = {};
         ++DiscoveredPartitionOrdinal;
-        Candidate.StartLBA                    = Entry->FirstLBA;
-        Candidate.SectorCount                 = (Entry->LastLBA - Entry->FirstLBA) + 1;
-        Candidate.PartitionIndex              = DiscoveredPartitionOrdinal;
+        Candidate.StartLBA       = Entry->FirstLBA;
+        Candidate.SectorCount    = (Entry->LastLBA - Entry->FirstLBA) + 1;
+        Candidate.PartitionIndex = DiscoveredPartitionOrdinal;
         if (!BuildPartitionDevicePath(Candidate.PartitionIndex, Candidate.DevicePath, sizeof(Candidate.DevicePath)))
         {
             Candidate.DevicePath[0] = '\0';
@@ -857,8 +852,7 @@ bool PartitionManager::LocateRootFileSystemPartition(const DeviceManager* Device
             *PartitionInfo = Candidate;
             if (Terminal != nullptr)
             {
-                Terminal->printf_("partition scan: selected ROOTFS ext2 partition idx=%u dev=%s\n", Candidate.PartitionIndex,
-                                  (Candidate.DevicePath[0] != '\0') ? Candidate.DevicePath : "<none>");
+                Terminal->printf_("partition scan: selected ROOTFS ext2 partition idx=%u dev=%s\n", Candidate.PartitionIndex, (Candidate.DevicePath[0] != '\0') ? Candidate.DevicePath : "<none>");
             }
             return true;
         }
@@ -886,8 +880,7 @@ bool PartitionManager::LocateRootFileSystemPartition(const DeviceManager* Device
         *PartitionInfo = Ext2Fallback;
         if (Terminal != nullptr)
         {
-            Terminal->printf_("partition scan: selected ext2 fallback idx=%u dev=%s\n", Ext2Fallback.PartitionIndex,
-                              (Ext2Fallback.DevicePath[0] != '\0') ? Ext2Fallback.DevicePath : "<none>");
+            Terminal->printf_("partition scan: selected ext2 fallback idx=%u dev=%s\n", Ext2Fallback.PartitionIndex, (Ext2Fallback.DevicePath[0] != '\0') ? Ext2Fallback.DevicePath : "<none>");
         }
         return true;
     }

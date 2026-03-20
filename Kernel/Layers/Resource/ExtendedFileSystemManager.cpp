@@ -263,15 +263,15 @@ bool ExtendedFileSystemManager::EnumerateDirectoryEntries(uint32_t DirectoryInod
                 bool IsDotDot = (NameLength == 2 && Name[0] == '.' && Name[1] == '.');
                 if (!IsDot && !IsDotDot)
                 {
-                    uint64_t EntrySize      = 0;
-                    bool     IsDirectory    = false;
+                    uint64_t EntrySize           = 0;
+                    bool     IsDirectory         = false;
                     uint8_t  ChildInodeData[256] = {};
 
                     if (EntryInode <= InodesCount && InodeSizeBytes <= sizeof(ChildInodeData) && ReadInode(EntryInode, ChildInodeData, sizeof(ChildInodeData)))
                     {
-                        EntrySize   = ReadLE32(&ChildInodeData[4]);
+                        EntrySize          = ReadLE32(&ChildInodeData[4]);
                         uint16_t ChildMode = ReadLE16(&ChildInodeData[0]);
-                        IsDirectory = ((ChildMode & EXT2_INODE_MODE_DIRECTORY) != 0);
+                        IsDirectory        = ((ChildMode & EXT2_INODE_MODE_DIRECTORY) != 0);
                     }
 
                     uint64_t DirectoryPathLength = strlen(DirectoryPath);

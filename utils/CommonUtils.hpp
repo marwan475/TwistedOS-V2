@@ -8,7 +8,7 @@
 
 #include <stddef.h>
 
-void  kmemset(void* dest, int value, size_t count);
-char* strcpy(char* dest, const char* src);
+void   kmemset(void* dest, int value, size_t count);
+char*  strcpy(char* dest, const char* src);
 size_t strlen(const char* src);
-void  memcpy(void* dest, const void* src, size_t count);
+void   memcpy(void* dest, const void* src, size_t count);

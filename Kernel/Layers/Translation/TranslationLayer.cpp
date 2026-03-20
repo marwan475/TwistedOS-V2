@@ -195,8 +195,8 @@ bool CopyUserCString(LogicLayer* Logic, const char* UserString, char* KernelBuff
         uint64_t Remaining = KernelBufferSize - Index;
         uint64_t ChunkSize = (Remaining < USER_STRING_COPY_CHUNK_SIZE) ? Remaining : USER_STRING_COPY_CHUNK_SIZE;
 
-        uint64_t UserAddress      = reinterpret_cast<uint64_t>(UserString) + Index;
-        uint64_t OffsetWithinPage = (UserAddress & (PAGE_SIZE - 1));
+        uint64_t UserAddress       = reinterpret_cast<uint64_t>(UserString) + Index;
+        uint64_t OffsetWithinPage  = (UserAddress & (PAGE_SIZE - 1));
         uint64_t BytesUntilPageEnd = PAGE_SIZE - OffsetWithinPage;
         if (ChunkSize > BytesUntilPageEnd)
         {
@@ -258,6 +258,32 @@ uint64_t CStrLength(const char* String)
     }
 
     return Length;
+}
+
+bool CStrEquals(const char* Left, const char* Right)
+{
+    if (Left == nullptr || Right == nullptr)
+    {
+        return false;
+    }
+
+    uint64_t Index = 0;
+    while (Left[Index] != '\0' && Right[Index] != '\0')
+    {
+        if (Left[Index] != Right[Index])
+        {
+            return false;
+        }
+
+        ++Index;
+    }
+
+    return Left[Index] == Right[Index];
+}
+
+bool IsSupportedMountFileSystemType(const char* FileSystemType)
+{
+    return CStrEquals(FileSystemType, "ext2");
 }
 
 uint64_t AlignUpValue(uint64_t Value, uint64_t Alignment)
@@ -2295,6 +2321,101 @@ int64_t TranslationLayer::HandleChdirSystemCall(const char* Path)
 
     CurrentProcess->CurrentFileSystemLocation = NodeDentry;
     return 0;
+}
+
+int64_t TranslationLayer::HandleMountSystemCall(const char* Source, const char* Target, const char* FileSystemType, uint64_t MountFlags, const void* Data)
+{
+    (void) MountFlags;
+    (void) Data;
+
+    if (Logic == nullptr || Source == nullptr || Target == nullptr || FileSystemType == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    constexpr uint64_t SYSCALL_MOUNT_SOURCE_MAX = 256;
+    constexpr uint64_t SYSCALL_MOUNT_TARGET_MAX = 1024;
+
+    char KernelSourcePath[SYSCALL_MOUNT_SOURCE_MAX] = {};
+    if (!CopyUserCString(Logic, Source, KernelSourcePath, sizeof(KernelSourcePath)))
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    char KernelTargetPath[SYSCALL_MOUNT_TARGET_MAX] = {};
+    if (!CopyUserCString(Logic, Target, KernelTargetPath, sizeof(KernelTargetPath)))
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    char KernelFileSystemType[64] = {};
+    if (!CopyUserCString(Logic, FileSystemType, KernelFileSystemType, sizeof(KernelFileSystemType)))
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    if (KernelSourcePath[0] == '\0' || KernelTargetPath[0] == '\0' || KernelFileSystemType[0] == '\0')
+    {
+        return LINUX_ERR_EINVAL;
+    }
+
+    if (!IsSupportedMountFileSystemType(KernelFileSystemType))
+    {
+        return LINUX_ERR_ENODEV;
+    }
+
+    ProcessManager* PM = Logic->GetProcessManager();
+    if (PM == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    Process* CurrentProcess = PM->GetRunningProcess();
+    if (CurrentProcess == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    const char* MountLocation = KernelTargetPath;
+
+    if (KernelTargetPath[0] != '/')
+    {
+        Dentry* BaseDirectory = CurrentProcess->CurrentFileSystemLocation;
+        if (BaseDirectory == nullptr)
+        {
+            return LINUX_ERR_ENOENT;
+        }
+
+        char BasePath[SYSCALL_MOUNT_TARGET_MAX] = {};
+        if (!BuildAbsolutePathFromDentry(BaseDirectory, BasePath, sizeof(BasePath)))
+        {
+            return LINUX_ERR_EFAULT;
+        }
+
+        char AbsoluteMountPath[SYSCALL_MOUNT_TARGET_MAX] = {};
+
+        uint64_t BasePathLength = CStrLength(BasePath);
+        uint64_t RelativeLength = CStrLength(KernelTargetPath);
+        uint64_t NeedsSeparator = (BasePathLength > 1) ? 1 : 0;
+        uint64_t RequiredBytes  = BasePathLength + NeedsSeparator + RelativeLength + 1;
+        if (RequiredBytes > sizeof(AbsoluteMountPath))
+        {
+            return LINUX_ERR_EINVAL;
+        }
+
+        memcpy(AbsoluteMountPath, BasePath, static_cast<size_t>(BasePathLength));
+        uint64_t Cursor = BasePathLength;
+        if (NeedsSeparator != 0)
+        {
+            AbsoluteMountPath[Cursor++] = '/';
+        }
+
+        memcpy(AbsoluteMountPath + Cursor, KernelTargetPath, static_cast<size_t>(RelativeLength));
+        AbsoluteMountPath[Cursor + RelativeLength] = '\0';
+        return Logic->InitializeExtendedFileSystem(KernelSourcePath, AbsoluteMountPath) ? 0 : LINUX_ERR_ENODEV;
+    }
+
+    return Logic->InitializeExtendedFileSystem(KernelSourcePath, MountLocation) ? 0 : LINUX_ERR_ENODEV;
 }
 
 int64_t TranslationLayer::HandleMprotectSystemCall(void* Address, uint64_t Length, int64_t Protection)

@@ -33,8 +33,7 @@ public:
     bool     GetPartitionByDevicePath(const char* DevicePath, RootFileSystemPartitionInfo* PartitionInfo) const;
     bool     GetCachedPartitionByIndex(uint32_t Index, RootFileSystemPartitionInfo* PartitionInfo) const;
     uint32_t GetCachedPartitionCount() const;
-    bool     EnumeratePartitions(const DeviceManager* DeviceManagerInstance, RootFileSystemPartitionInfo* PartitionInfos, uint32_t MaxPartitionCount,
-                                 uint32_t* PartitionCount);
+    bool     EnumeratePartitions(const DeviceManager* DeviceManagerInstance, RootFileSystemPartitionInfo* PartitionInfos, uint32_t MaxPartitionCount, uint32_t* PartitionCount);
     bool     RegisterPartitionDevices(const DeviceManager* DeviceManagerInstance, VirtualFileSystem* VFS);
     bool     LocateRootFileSystemPartition(const DeviceManager* DeviceManagerInstance, RootFileSystemPartitionInfo* PartitionInfo);
 };

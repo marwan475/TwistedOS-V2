@@ -55,8 +55,8 @@ void ResetProcessSignalActions(Process& ProcessEntry)
     }
 }
 
-void InitializeProcessEntry(Process& ProcessEntry, ProcessState Status, ProcessLevel Level, FILE_TYPE FileType, void* StackPointer, void* KernelSystemCallStackBase,
-                            uint64_t ProgramBreak, VirtualAddressSpace* AddressSpace, const CpuState& State, bool ResetFileTable)
+void InitializeProcessEntry(Process& ProcessEntry, ProcessState Status, ProcessLevel Level, FILE_TYPE FileType, void* StackPointer, void* KernelSystemCallStackBase, uint64_t ProgramBreak,
+                            VirtualAddressSpace* AddressSpace, const CpuState& State, bool ResetFileTable)
 {
     ProcessEntry.ParrentId                  = PROCESS_ID_INVALID;
     ProcessEntry.WaitingForVforkChild       = false;
@@ -221,8 +221,7 @@ uint8_t ProcessManager::CreateKernelProcess(void* StackPointer, CpuState Initial
     {
         if (Processes[index].Status == PROCESS_TERMINATED)
         {
-            InitializeProcessEntry(Processes[index], PROCESS_READY, PROCESS_LEVEL_KERNEL, FILE_TYPE_RAW_BINARY, StackPointer, &ProcessKernelSystemCallStacks[index][0], 0, nullptr,
-                                   InitialState, true);
+            InitializeProcessEntry(Processes[index], PROCESS_READY, PROCESS_LEVEL_KERNEL, FILE_TYPE_RAW_BINARY, StackPointer, &ProcessKernelSystemCallStacks[index][0], 0, nullptr, InitialState, true);
             return Processes[index].Id;
         }
     }
@@ -247,8 +246,8 @@ uint8_t ProcessManager::CreateUserProcess(void* StackPointer, CpuState InitialSt
         if (Processes[index].Status == PROCESS_TERMINATED)
         {
             uint64_t ProgramBreak = (AddressSpace != nullptr) ? AddressSpace->GetHeapVirtualAddressStart() : 0;
-            InitializeProcessEntry(Processes[index], PROCESS_READY, PROCESS_LEVEL_USER, FileType, StackPointer, &ProcessKernelSystemCallStacks[index][0], ProgramBreak, AddressSpace,
-                                   InitialState, true);
+            InitializeProcessEntry(Processes[index], PROCESS_READY, PROCESS_LEVEL_USER, FileType, StackPointer, &ProcessKernelSystemCallStacks[index][0], ProgramBreak, AddressSpace, InitialState,
+                                   true);
             return Processes[index].Id;
         }
     }
@@ -270,8 +269,8 @@ void* ProcessManager::KillProcess(uint8_t Id)
     {
         return nullptr; // Invalid process ID
     }
-    void* StackPointer = Processes[Id].StackPointer;
-    const CpuState EmptyState = {};
+    void*          StackPointer = Processes[Id].StackPointer;
+    const CpuState EmptyState   = {};
 
     ReleaseProcessFileTable(Processes[Id]);
     InitializeProcessEntry(Processes[Id], PROCESS_TERMINATED, PROCESS_LEVEL_KERNEL, FILE_TYPE_RAW_BINARY, nullptr, nullptr, 0, nullptr, EmptyState, true);
