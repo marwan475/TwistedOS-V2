@@ -6,6 +6,7 @@
 
 #include "TTY.hpp"
 
+#include <CommonUtils.hpp>
 #include <Layers/Dispatcher.hpp>
 #include <Layers/Logic/LogicLayer.hpp>
 #include <Layers/Logic/VirtualFileSystem.hpp>
@@ -23,6 +24,9 @@ constexpr int64_t LINUX_ERR_ENODEV = -19;
 constexpr int64_t LINUX_ERR_ENOSPC = -28;
 constexpr int64_t LINUX_ERR_ENOSYS = -38;
 constexpr int64_t LINUX_ERR_ENOTTY = -25;
+constexpr int64_t LINUX_ERR_EAGAIN = -11;
+
+constexpr uint64_t LINUX_O_NONBLOCK = 0x800;
 
 constexpr uint64_t LINUX_IOCTL_TCGETS    = 0x5401;
 constexpr uint64_t LINUX_IOCTL_TCSETS    = 0x5402;
@@ -31,6 +35,17 @@ constexpr uint64_t LINUX_IOCTL_TCSETSF   = 0x5404;
 constexpr uint64_t LINUX_IOCTL_TIOCGWINSZ = 0x5413;
 constexpr uint64_t LINUX_IOCTL_TIOCSWINSZ = 0x5414;
 constexpr uint64_t LINUX_IOCTL_FIONREAD   = 0x541B;
+
+constexpr uint32_t LINUX_TERMIOS_ISIG    = 0x00000001;
+constexpr uint32_t LINUX_TERMIOS_ICANON  = 0x00000002;
+constexpr uint32_t LINUX_TERMIOS_ECHO    = 0x00000008;
+constexpr uint32_t LINUX_TERMIOS_DEFAULT = (LINUX_TERMIOS_ISIG | LINUX_TERMIOS_ICANON | LINUX_TERMIOS_ECHO);
+
+constexpr uint8_t LINUX_CC_VINTR  = 0;
+constexpr uint8_t LINUX_CC_VERASE = 2;
+constexpr uint8_t LINUX_CC_VEOF   = 4;
+constexpr uint8_t LINUX_CC_VTIME  = 5;
+constexpr uint8_t LINUX_CC_VMIN   = 6;
 
 struct LinuxTermios
 {
@@ -120,12 +135,71 @@ FileOperations TTY::TerminalFileOperations = {
 };
 
 TTY::TTY(FrameBuffer* FrameBuffer, uint32_t InitialCursorX, uint32_t InitialCursorY)
-    : FrameBufferDevice(FrameBuffer), CursorX(InitialCursorX), CursorY(InitialCursorY), TextColor(0xFFFFFFFF), BackgroundColor(0x00000000), BufferHead(0), BufferTail(0), BufferedBytes(0), CommittedBytes(0)
+    : FrameBufferDevice(FrameBuffer), CursorX(InitialCursorX), CursorY(InitialCursorY), TextColor(0xFFFFFFFF), BackgroundColor(0x00000000), BufferHead(0), BufferTail(0), BufferedBytes(0), CommittedBytes(0),
+      TermiosInputFlags(0), TermiosOutputFlags(0), TermiosControlFlags(0), TermiosLocalFlags(LINUX_TERMIOS_DEFAULT), TermiosLineDiscipline(0)
 {
     for (uint64_t Index = 0; Index < KEYBOARD_BUFFER_CAPACITY; ++Index)
     {
         KeyboardBuffer[Index] = 0;
     }
+
+    for (uint64_t Index = 0; Index < 19; ++Index)
+    {
+        TermiosControlCharacters[Index] = 0;
+    }
+
+    TermiosControlCharacters[LINUX_CC_VINTR]  = 3;
+    TermiosControlCharacters[LINUX_CC_VERASE] = 127;
+    TermiosControlCharacters[LINUX_CC_VEOF]   = 4;
+    TermiosControlCharacters[LINUX_CC_VTIME]  = 0;
+    TermiosControlCharacters[LINUX_CC_VMIN]   = 1;
+}
+
+bool TTY::IsCanonicalModeEnabled() const
+{
+    return (TermiosLocalFlags & LINUX_TERMIOS_ICANON) != 0;
+}
+
+bool TTY::IsEchoEnabled() const
+{
+    return (TermiosLocalFlags & LINUX_TERMIOS_ECHO) != 0;
+}
+
+uint8_t TTY::GetControlCharacter(uint64_t Index) const
+{
+    if (Index >= 19)
+    {
+        return 0;
+    }
+
+    return TermiosControlCharacters[Index];
+}
+
+uint64_t TTY::GetReadableBytes() const
+{
+    if (IsCanonicalModeEnabled())
+    {
+        return CommittedBytes;
+    }
+
+    return BufferedBytes;
+}
+
+void TTY::NotifyInputAvailable()
+{
+    Dispatcher* ActiveDispatcher = Dispatcher::GetActive();
+    if (ActiveDispatcher == nullptr)
+    {
+        return;
+    }
+
+    LogicLayer* ActiveLogicLayer = ActiveDispatcher->GetLogicLayer();
+    if (ActiveLogicLayer == nullptr)
+    {
+        return;
+    }
+
+    ActiveLogicLayer->NotifyTTYInputAvailable();
 }
 
 int TTY::printf_(const char* Format, ...)
@@ -267,8 +341,35 @@ int64_t TTY::Read(File* OpenFile, void* Buffer, uint64_t Count)
         return 0;
     }
 
-    while (CommittedBytes == 0)
+    bool IsNonBlocking = (OpenFile->OpenFlags & LINUX_O_NONBLOCK) != 0;
+
+    uint8_t VMin  = GetControlCharacter(LINUX_CC_VMIN);
+    uint8_t VTime = GetControlCharacter(LINUX_CC_VTIME);
+
+    uint64_t RequiredBytes = 1;
+    if (!IsCanonicalModeEnabled())
     {
+        RequiredBytes = (VMin == 0) ? 1 : static_cast<uint64_t>(VMin);
+    }
+
+    if (!IsCanonicalModeEnabled() && VMin == 0 && VTime == 0)
+    {
+        RequiredBytes = 0;
+    }
+
+    uint64_t DecisecondsWaited = 0;
+    while (GetReadableBytes() < RequiredBytes)
+    {
+        if (IsNonBlocking)
+        {
+            return LINUX_ERR_EAGAIN;
+        }
+
+        if (!IsCanonicalModeEnabled() && VTime > 0 && DecisecondsWaited >= static_cast<uint64_t>(VTime))
+        {
+            break;
+        }
+
         Dispatcher* ActiveDispatcher = Dispatcher::GetActive();
         if (ActiveDispatcher == nullptr)
         {
@@ -293,19 +394,41 @@ int64_t TTY::Read(File* OpenFile, void* Buffer, uint64_t Count)
             return LINUX_ERR_EFAULT;
         }
 
-        ActiveLogicLayer->BlockProcessForTTYInput(CurrentProcess->Id);
+        if (!IsCanonicalModeEnabled() && VTime > 0)
+        {
+            ActiveLogicLayer->SleepProcess(CurrentProcess->Id, 1);
+            ++DecisecondsWaited;
+        }
+        else
+        {
+            ActiveLogicLayer->BlockProcessForTTYInput(CurrentProcess->Id);
+        }
+    }
+
+    uint64_t AvailableBytes = GetReadableBytes();
+    if (!IsCanonicalModeEnabled() && VMin == 0 && VTime > 0 && AvailableBytes == 0)
+    {
+        return 0;
     }
 
     char*    OutBuffer   = reinterpret_cast<char*>(Buffer);
     uint64_t BytesCopied = 0;
 
-    while (BytesCopied < Count && CommittedBytes > 0)
+    while (BytesCopied < Count && GetReadableBytes() > 0)
     {
         OutBuffer[BytesCopied] = KeyboardBuffer[BufferTail];
         BufferTail             = (BufferTail + 1) % KEYBOARD_BUFFER_CAPACITY;
         --BufferedBytes;
-        --CommittedBytes;
+        if (IsCanonicalModeEnabled() && CommittedBytes > 0)
+        {
+            --CommittedBytes;
+        }
         ++BytesCopied;
+
+        if (!IsCanonicalModeEnabled() && VMin > 0 && BytesCopied >= static_cast<uint64_t>(VMin))
+        {
+            break;
+        }
     }
 
     OpenFile->CurrentOffset += BytesCopied;
@@ -362,7 +485,15 @@ int64_t TTY::Ioctl(File* OpenFile, uint64_t Request, uint64_t Argument, LogicLay
             return LINUX_ERR_EFAULT;
         }
 
-        LinuxTermios Termios = {};
+        LinuxTermios Termios = {
+            TermiosInputFlags,
+            TermiosOutputFlags,
+            TermiosControlFlags,
+            TermiosLocalFlags,
+            TermiosLineDiscipline,
+            {},
+        };
+        memcpy(Termios.ControlCharacters, TermiosControlCharacters, sizeof(Termios.ControlCharacters));
         return Logic->CopyFromKernelToUser(&Termios, reinterpret_cast<void*>(Argument), sizeof(Termios)) ? 0 : LINUX_ERR_EFAULT;
     }
 
@@ -374,7 +505,35 @@ int64_t TTY::Ioctl(File* OpenFile, uint64_t Request, uint64_t Argument, LogicLay
         }
 
         LinuxTermios Incoming = {};
-        return Logic->CopyFromUserToKernel(reinterpret_cast<const void*>(Argument), &Incoming, sizeof(Incoming)) ? 0 : LINUX_ERR_EFAULT;
+        if (!Logic->CopyFromUserToKernel(reinterpret_cast<const void*>(Argument), &Incoming, sizeof(Incoming)))
+        {
+            return LINUX_ERR_EFAULT;
+        }
+
+        bool WasCanonical = IsCanonicalModeEnabled();
+
+        TermiosInputFlags      = Incoming.InputFlags;
+        TermiosOutputFlags     = Incoming.OutputFlags;
+        TermiosControlFlags    = Incoming.ControlFlags;
+        TermiosLocalFlags      = Incoming.LocalFlags;
+        TermiosLineDiscipline  = Incoming.LineDiscipline;
+        memcpy(TermiosControlCharacters, Incoming.ControlCharacters, sizeof(TermiosControlCharacters));
+
+        if (!WasCanonical && IsCanonicalModeEnabled())
+        {
+            CommittedBytes = 0;
+        }
+
+        if (WasCanonical && !IsCanonicalModeEnabled())
+        {
+            CommittedBytes = BufferedBytes;
+            if (CommittedBytes > 0)
+            {
+                NotifyInputAvailable();
+            }
+        }
+
+        return 0;
     }
 
     if (Request == LINUX_IOCTL_TIOCGWINSZ)
@@ -419,7 +578,7 @@ int64_t TTY::Ioctl(File* OpenFile, uint64_t Request, uint64_t Argument, LogicLay
             return LINUX_ERR_EFAULT;
         }
 
-        int32_t BytesAvailable = static_cast<int32_t>(CommittedBytes);
+        int32_t BytesAvailable = static_cast<int32_t>(GetReadableBytes());
         return Logic->CopyFromKernelToUser(&BytesAvailable, reinterpret_cast<void*>(Argument), sizeof(BytesAvailable)) ? 0 : LINUX_ERR_EFAULT;
     }
 
@@ -457,15 +616,22 @@ uint64_t TTY::PushKeyboardInputChar(char Character)
         Character = '\n';
     }
 
-    if (Character == '\b')
+    uint8_t EraseCharacter = GetControlCharacter(LINUX_CC_VERASE);
+    if (Character == '\b' || static_cast<uint8_t>(Character) == EraseCharacter)
     {
-        uint64_t EditableBytes = BufferedBytes - CommittedBytes;
-        if (EditableBytes > 0)
+        if (IsCanonicalModeEnabled())
         {
-            BufferHead = (BufferHead + KEYBOARD_BUFFER_CAPACITY - 1) % KEYBOARD_BUFFER_CAPACITY;
-            --BufferedBytes;
+            uint64_t EditableBytes = BufferedBytes - CommittedBytes;
+            if (EditableBytes > 0)
+            {
+                BufferHead = (BufferHead + KEYBOARD_BUFFER_CAPACITY - 1) % KEYBOARD_BUFFER_CAPACITY;
+                --BufferedBytes;
 
-            PutChar('\b');
+                if (IsEchoEnabled())
+                {
+                    PutChar('\b');
+                }
+            }
         }
 
         return 1;
@@ -480,15 +646,25 @@ uint64_t TTY::PushKeyboardInputChar(char Character)
     if (Character == '\n')
     {
         CommittedBytes = BufferedBytes;
+        NotifyInputAvailable();
     }
 
-    PutChar(Character);
+    if (!IsCanonicalModeEnabled())
+    {
+        NotifyInputAvailable();
+    }
+
+    if (IsEchoEnabled())
+    {
+        PutChar(Character);
+    }
+
     return BytesStored;
 }
 
 uint64_t TTY::GetBufferedInputBytes() const
 {
-    return CommittedBytes;
+    return GetReadableBytes();
 }
 
 FileOperations* TTY::GetFileOperations()

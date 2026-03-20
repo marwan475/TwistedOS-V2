@@ -168,4 +168,5 @@ make format
 - https://wiki.osdev.org/Exceptions
 - https://www.kernel.org/doc/html/v5.4/filesystems/vfs.html
 - https://man7.org/linux/man-pages/
+- https://en.wikipedia.org/wiki/Buddy_memory_allocation
 - CMPT 432 Advanced Operating Systems

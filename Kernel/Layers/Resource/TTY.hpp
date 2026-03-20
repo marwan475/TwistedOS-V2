@@ -31,10 +31,21 @@ private:
     uint64_t     BufferTail;
     uint64_t     BufferedBytes;
     uint64_t     CommittedBytes;
+    uint32_t     TermiosInputFlags;
+    uint32_t     TermiosOutputFlags;
+    uint32_t     TermiosControlFlags;
+    uint32_t     TermiosLocalFlags;
+    uint8_t      TermiosLineDiscipline;
+    uint8_t      TermiosControlCharacters[19];
 
     void ClearScreen();
     void DrawChar(uint32_t X, uint32_t Y, char Character);
     void PutChar(char Character);
+    bool IsCanonicalModeEnabled() const;
+    bool IsEchoEnabled() const;
+    uint8_t GetControlCharacter(uint64_t Index) const;
+    uint64_t GetReadableBytes() const;
+    void NotifyInputAvailable();
 
     static FileOperations TerminalFileOperations;
 

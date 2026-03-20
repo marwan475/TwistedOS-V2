@@ -2181,6 +2181,23 @@ void LogicLayer::BlockProcessForTTYInput(uint8_t Id)
     Schedule();
 }
 
+void LogicLayer::NotifyTTYInputAvailable()
+{
+    if (Sync == nullptr)
+    {
+        return;
+    }
+
+    uint8_t TTYWaiterId = Sync->GetNextTTYInputWaiter();
+    if (TTYWaiterId == PROCESS_ID_INVALID)
+    {
+        return;
+    }
+
+    Sync->RemoveFromTTYInputWaitQueue(TTYWaiterId);
+    UnblockProcess(TTYWaiterId);
+}
+
 /**
  * Function: LogicLayer::BlockProcess
  * Description: Blocks a running process and triggers scheduler.
@@ -2289,20 +2306,6 @@ void LogicLayer::Tick()
         if (IdToWake != PROCESS_ID_INVALID)
         {
             WakeProcess(IdToWake);
-        }
-
-        if (Resource != nullptr)
-        {
-            TTY* Terminal = Resource->GetTTY();
-            if (Terminal != nullptr && Terminal->GetBufferedInputBytes() > 0)
-            {
-                uint8_t TTYWaiterId = Sync->GetNextTTYInputWaiter();
-                if (TTYWaiterId != PROCESS_ID_INVALID)
-                {
-                    Sync->RemoveFromTTYInputWaitQueue(TTYWaiterId);
-                    UnblockProcess(TTYWaiterId);
-                }
-            }
         }
     }
 }

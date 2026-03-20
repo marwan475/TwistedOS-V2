@@ -64,6 +64,7 @@ public:
     void               SleepProcess(uint8_t Id, uint64_t WaitTicks);
     void               WakeProcess(uint8_t Id);
     void               BlockProcessForTTYInput(uint8_t Id);
+    void               NotifyTTYInputAvailable();
     void               BlockProcess(uint8_t Id);
     void               UnblockProcess(uint8_t Id);
     void               AddProcessToReadyQueue(uint8_t Id);
