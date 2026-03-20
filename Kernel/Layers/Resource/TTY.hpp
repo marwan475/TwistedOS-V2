@@ -37,10 +37,23 @@ private:
     uint32_t     TermiosLocalFlags;
     uint8_t      TermiosLineDiscipline;
     uint8_t      TermiosControlCharacters[19];
+    enum class AnsiParseState : uint8_t
+    {
+        Normal,
+        Escape,
+        Csi,
+    };
+    AnsiParseState OutputAnsiState;
+    uint8_t        OutputAnsiParams[4];
+    uint8_t        OutputAnsiParamCount;
+    uint8_t        OutputAnsiCurrentValue;
+    bool           OutputAnsiReadingValue;
 
     void ClearScreen();
     void DrawChar(uint32_t X, uint32_t Y, char Character);
     void PutChar(char Character);
+    void ResetAnsiParser();
+    void HandleOutputChar(char Character);
     bool IsCanonicalModeEnabled() const;
     bool IsEchoEnabled() const;
     uint8_t GetControlCharacter(uint64_t Index) const;

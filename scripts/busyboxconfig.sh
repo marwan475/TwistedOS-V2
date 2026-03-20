@@ -62,6 +62,8 @@ CONFIG_LFS=y
 CONFIG_ECHO=y
 CONFIG_CAT=y
 CONFIG_LS=y
+CONFIG_CLEAR=y
+CONFIG_PWD=y
 CONFIG_ASH=y
 CONFIG_SH_IS_ASH=y
 CONFIG_BASH_IS_NONE=y
@@ -103,16 +105,16 @@ CONFIG_KILLALL=n
 CONFIG_PIDOF=n
 
 # Filesystem / misc mostly off
-CONFIG_TEST=n
-CONFIG_BASENAME=n
-CONFIG_DIRNAME=n
+CONFIG_TEST=y
+CONFIG_BASENAME=y
+CONFIG_DIRNAME=y
 CONFIG_EXPR=n
-CONFIG_ENV=n
-CONFIG_PRINTF=n
-CONFIG_SLEEP=n
+CONFIG_ENV=y
+CONFIG_PRINTF=y
+CONFIG_SLEEP=y
 CONFIG_USLEEP=n
-CONFIG_HEAD=n
-CONFIG_TAIL=n
+CONFIG_HEAD=y
+CONFIG_TAIL=y
 CONFIG_CP=n
 CONFIG_MV=n
 CONFIG_RM=n
@@ -200,6 +202,12 @@ set_config_y CONFIG_STATIC
 set_config_y CONFIG_LS
 set_config_y CONFIG_CAT
 set_config_y CONFIG_ECHO
+set_config_y CONFIG_CLEAR
+set_config_y CONFIG_PWD
+set_config_y CONFIG_TEST
+set_config_y CONFIG_BASENAME
+set_config_y CONFIG_DIRNAME
+set_config_y CONFIG_ENV
 set_config_y CONFIG_SH_IS_ASH
 set_config_y CONFIG_SHELL_ASH
 set_config_n CONFIG_HUSH
@@ -259,6 +267,13 @@ ln -sf busybox "${INSTALL_DIR}/sh"
 ln -sf busybox "${INSTALL_DIR}/ls"
 ln -sf busybox "${INSTALL_DIR}/cat"
 ln -sf busybox "${INSTALL_DIR}/echo"
+ln -sf busybox "${INSTALL_DIR}/clear"
+ln -sf busybox "${INSTALL_DIR}/pwd"
+ln -sf busybox "${INSTALL_DIR}/test"
+ln -sf busybox "${INSTALL_DIR}/basename"
+ln -sf busybox "${INSTALL_DIR}/dirname"
+ln -sf busybox "${INSTALL_DIR}/env"
+
 
 echo "Built: ${BUSYBOX_DIR}/busybox"
 echo "Installed: ${INSTALL_DIR}/busybox and ${INSTALL_DIR}/sh"

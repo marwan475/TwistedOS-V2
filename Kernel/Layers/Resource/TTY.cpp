@@ -136,7 +136,8 @@ FileOperations TTY::TerminalFileOperations = {
 
 TTY::TTY(FrameBuffer* FrameBuffer, uint32_t InitialCursorX, uint32_t InitialCursorY)
     : FrameBufferDevice(FrameBuffer), CursorX(InitialCursorX), CursorY(InitialCursorY), TextColor(0xFFFFFFFF), BackgroundColor(0x00000000), BufferHead(0), BufferTail(0), BufferedBytes(0), CommittedBytes(0),
-      TermiosInputFlags(0), TermiosOutputFlags(0), TermiosControlFlags(0), TermiosLocalFlags(LINUX_TERMIOS_DEFAULT), TermiosLineDiscipline(0)
+    TermiosInputFlags(0), TermiosOutputFlags(0), TermiosControlFlags(0), TermiosLocalFlags(LINUX_TERMIOS_DEFAULT), TermiosLineDiscipline(0), OutputAnsiState(AnsiParseState::Normal),
+    OutputAnsiParams{0, 0, 0, 0}, OutputAnsiParamCount(0), OutputAnsiCurrentValue(0), OutputAnsiReadingValue(false)
 {
     for (uint64_t Index = 0; Index < KEYBOARD_BUFFER_CAPACITY; ++Index)
     {
@@ -153,6 +154,137 @@ TTY::TTY(FrameBuffer* FrameBuffer, uint32_t InitialCursorX, uint32_t InitialCurs
     TermiosControlCharacters[LINUX_CC_VEOF]   = 4;
     TermiosControlCharacters[LINUX_CC_VTIME]  = 0;
     TermiosControlCharacters[LINUX_CC_VMIN]   = 1;
+}
+
+void TTY::ResetAnsiParser()
+{
+    OutputAnsiState        = AnsiParseState::Normal;
+    OutputAnsiParamCount   = 0;
+    OutputAnsiCurrentValue = 0;
+    OutputAnsiReadingValue = false;
+    for (uint8_t Index = 0; Index < 4; ++Index)
+    {
+        OutputAnsiParams[Index] = 0;
+    }
+}
+
+void TTY::HandleOutputChar(char Character)
+{
+    const uint8_t Byte = static_cast<uint8_t>(Character);
+
+    if (OutputAnsiState == AnsiParseState::Normal)
+    {
+        if (Byte == 0x1B)
+        {
+            OutputAnsiState = AnsiParseState::Escape;
+            return;
+        }
+
+        PutChar(Character);
+        return;
+    }
+
+    if (OutputAnsiState == AnsiParseState::Escape)
+    {
+        if (Character == '[')
+        {
+            OutputAnsiState        = AnsiParseState::Csi;
+            OutputAnsiParamCount   = 0;
+            OutputAnsiCurrentValue = 0;
+            OutputAnsiReadingValue = false;
+            for (uint8_t Index = 0; Index < 4; ++Index)
+            {
+                OutputAnsiParams[Index] = 0;
+            }
+            return;
+        }
+
+        PutChar(Character);
+        ResetAnsiParser();
+        return;
+    }
+
+    if (OutputAnsiState == AnsiParseState::Csi)
+    {
+        if (Character >= '0' && Character <= '9')
+        {
+            OutputAnsiReadingValue = true;
+            uint16_t NextValue     = static_cast<uint16_t>(OutputAnsiCurrentValue) * 10U + static_cast<uint16_t>(Character - '0');
+            if (NextValue > 255)
+            {
+                NextValue = 255;
+            }
+            OutputAnsiCurrentValue = static_cast<uint8_t>(NextValue);
+            return;
+        }
+
+        if (Character == ';')
+        {
+            if (OutputAnsiParamCount < 4)
+            {
+                OutputAnsiParams[OutputAnsiParamCount++] = OutputAnsiReadingValue ? OutputAnsiCurrentValue : 0;
+            }
+            OutputAnsiCurrentValue = 0;
+            OutputAnsiReadingValue = false;
+            return;
+        }
+
+        if (OutputAnsiReadingValue && OutputAnsiParamCount < 4)
+        {
+            OutputAnsiParams[OutputAnsiParamCount++] = OutputAnsiCurrentValue;
+        }
+
+        if (Character == 'H' || Character == 'f')
+        {
+            uint8_t Row = 1;
+            uint8_t Col = 1;
+            if (OutputAnsiParamCount >= 1 && OutputAnsiParams[0] != 0)
+            {
+                Row = OutputAnsiParams[0];
+            }
+            if (OutputAnsiParamCount >= 2 && OutputAnsiParams[1] != 0)
+            {
+                Col = OutputAnsiParams[1];
+            }
+
+            uint32_t MaxColumns = FrameBufferDevice->GetWidth() / FONT_WIDTH;
+            uint32_t MaxRows    = FrameBufferDevice->GetHeight() / FONT_HEIGHT;
+
+            if (Row > MaxRows)
+            {
+                Row = static_cast<uint8_t>(MaxRows);
+            }
+            if (Col > MaxColumns)
+            {
+                Col = static_cast<uint8_t>(MaxColumns);
+            }
+
+            CursorY = static_cast<uint32_t>(Row - 1) * FONT_HEIGHT;
+            CursorX = static_cast<uint32_t>(Col - 1) * FONT_WIDTH;
+            ResetAnsiParser();
+            return;
+        }
+
+        if (Character == 'J')
+        {
+            uint8_t Mode = 0;
+            if (OutputAnsiParamCount >= 1)
+            {
+                Mode = OutputAnsiParams[0];
+            }
+
+            if (Mode == 0 || Mode == 2)
+            {
+                ClearScreen();
+            }
+
+            ResetAnsiParser();
+            return;
+        }
+
+        ResetAnsiParser();
+        return;
+    }
 }
 
 bool TTY::IsCanonicalModeEnabled() const
@@ -464,7 +596,7 @@ int64_t TTY::Write(File* OpenFile, const void* Buffer, uint64_t Count)
 
     for (uint64_t Index = 0; Index < Count; ++Index)
     {
-        PutChar(InBuffer[Index]);
+        HandleOutputChar(InBuffer[Index]);
     }
 
     OpenFile->CurrentOffset += Count;
