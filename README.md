@@ -44,8 +44,14 @@ X86_64 OS that boots via UEFI into a higher-half kernel with PMM, VMM, schedulin
             - Tracks allocations using a header before each allocation with size and magic
             - Supports `new` and `delete` operators for C++ object allocations in the kernel
         - Exposes task switching to the logic layer
+        - Creates `DeviceManager`
+            - Enumerates PCI devices and initializes IDE disk access
+        - Creates `PartitionManager`
+            - Locates and exposes disk partitions
         - Creates `RamFileSystemManager`
             - Loads files from initramfs
+        - Creates `ExtendedFileSystemManager`
+            - Mounts and reads EXT2 root filesystem from disk
         - `VirtualAddressSpace`
             - Creates and manages virtual address space for user processes
     - Logic layer
@@ -62,6 +68,7 @@ X86_64 OS that boots via UEFI into a higher-half kernel with PMM, VMM, schedulin
             - Used to parse and map ELFs to user virtual address space
         - VirtualFileSystem
             - Mounts on initramfs
+            - Mounts EXT2 root filesystem from disk
             - Ability to execute binary from vfs (Create user process from vfs)
             - Register devices in vfs (/dev)
     - Translation layer
@@ -69,10 +76,22 @@ X86_64 OS that boots via UEFI into a higher-half kernel with PMM, VMM, schedulin
         - POSIX request translations
             - Implemented syscalls
                 - open
+                - openat
                 - close
                 - read
                 - write
+                - writev
+                - ioctl
+                - stat / lstat / newfstatat
+                - getdents64
+                - getcwd / chdir
+                - fcntl / dup2
+                - mmap / munmap / mprotect / brk
+                - getpid / getppid / getuid / getgid / geteuid / getegid
+                - fork / vfork / wait / exit_group
                 - execve
+                - rt_sigaction / rt_sigprocmask
+                - arch_prctl / set_tid_address
 - Debug support
     - Debug print to QEMU serial (`make DEBUG=1`)
     - Debug kernel source using GDB (`make debug`)
@@ -83,6 +102,7 @@ X86_64 OS that boots via UEFI into a higher-half kernel with PMM, VMM, schedulin
         - Memory
         - ELF and raw binary user creation
             - Syscall instruction validation
+            - User mode process lifecycle validation (`fork` → `execve` → `wait`)
         - Multitasking and sleep
 
 ## Build Dependencies
@@ -102,16 +122,22 @@ X86_64 OS that boots via UEFI into a higher-half kernel with PMM, VMM, schedulin
 - `gdb`
 - `python`
 - `cpio`
+- `musl` / `musl-gcc`
+- `e2fsprogs` (for `mkfs.ext2` and `debugfs`)
 
 ## Build Instructions
 
 Build the full OS image from the repository root:
 
 ```sh
+git clone https://github.com/mirror/busybox.git
+```
+
+```sh
 make
 ```
 
-This produces the bootloader, kernel, initramfs, `TwistedOS.img`, and a persistent `TwistedDrive.img` used by the full QEMU configuration.
+This produces the bootloader, kernel, initramfs, and `TwistedOS.img` (GPT image with an EFI partition and an EXT2 root filesystem partition).
 
 Run the OS in QEMU:
 
@@ -171,5 +197,3 @@ make format
 - https://man7.org/linux/man-pages/
 - https://en.wikipedia.org/wiki/Buddy_memory_allocation
 - CMPT 432 Advanced Operating Systems
-
-git clone https://github.com/mirror/busybox.git
