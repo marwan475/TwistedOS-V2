@@ -75,6 +75,7 @@ void Dispatcher::InitResourceLayer(const DispatcherParameters& Params)
     Resource.InitializeRamFileSystemManager();
     Resource.InitializeKeyboard();
     Resource.InitializeTTY();
+    Resource.InitializeDeviceManager();
 }
 
 /**

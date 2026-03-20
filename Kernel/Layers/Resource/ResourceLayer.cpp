@@ -225,6 +225,19 @@ void ResourceLayer::InitializeKeyboard()
     Console->printf_("Keyboard Initialized\n");
 }
 
+void ResourceLayer::InitializeDeviceManager()
+{
+    if (DevManager != nullptr)
+    {
+        delete DevManager;
+        DevManager = nullptr;
+    }
+
+    DevManager = new DeviceManager();
+    DevManager->Initialize();
+    DevManager->PrintPCI(Terminal);
+}
+
 /**
  * Function: ResourceLayer::kmalloc
  * Description: Allocates memory from the kernel heap manager.

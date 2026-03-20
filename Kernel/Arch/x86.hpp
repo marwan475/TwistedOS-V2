@@ -222,6 +222,7 @@ void          InitGDT();
 void          InitInterrupts();
 void          InitSystemCalls();
 void          InitTimer();
+bool          X86ReadPCIConfigDword(uint8_t Bus, uint8_t Device, uint8_t Function, uint8_t RegisterOffset, uint32_t* Value);
 void          RemapPIC();
 void          SetUserFSBase(uint64_t BaseAddress);
 uint64_t      GetUserFSBase();

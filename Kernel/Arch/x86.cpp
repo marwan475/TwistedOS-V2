@@ -160,6 +160,63 @@ static inline uint8_t inb(uint16_t port)
 }
 
 /**
+ * Function: outl
+ * Description: Writes a 32-bit value to a hardware I/O port.
+ * Parameters:
+ *   uint16_t port - Target I/O port number.
+ *   uint32_t value - Double word value to write.
+ * Returns:
+ *   void - No return value.
+ */
+static inline void outl(uint16_t port, uint32_t value)
+{
+    __asm__ __volatile__("outl %0, %1" : : "a"(value), "Nd"(port));
+}
+
+/**
+ * Function: inl
+ * Description: Reads a 32-bit value from a hardware I/O port.
+ * Parameters:
+ *   uint16_t port - Source I/O port number.
+ * Returns:
+ *   uint32_t - Double word read from the port.
+ */
+static inline uint32_t inl(uint16_t port)
+{
+    uint32_t value = 0;
+    __asm__ __volatile__("inl %1, %0" : "=a"(value) : "Nd"(port));
+    return value;
+}
+
+static uint32_t ReadPciConfigDword(uint8_t Bus, uint8_t Device, uint8_t Function, uint8_t RegisterOffset)
+{
+    constexpr uint16_t PciConfigAddressPort = 0xCF8;
+    constexpr uint16_t PciConfigDataPort    = 0xCFC;
+
+    uint32_t Address = (1u << 31) | (static_cast<uint32_t>(Bus) << 16) | (static_cast<uint32_t>(Device) << 11) | (static_cast<uint32_t>(Function) << 8)
+                       | (static_cast<uint32_t>(RegisterOffset) & 0xFCu);
+
+    outl(PciConfigAddressPort, Address);
+    return inl(PciConfigDataPort);
+}
+
+bool X86ReadPCIConfigDword(uint8_t Bus, uint8_t Device, uint8_t Function, uint8_t RegisterOffset, uint32_t* Value)
+{
+    if (Value == nullptr)
+    {
+        return false;
+    }
+
+    if (Device >= 32 || Function >= 8)
+    {
+        return false;
+    }
+
+    *Value = ReadPciConfigDword(Bus, Device, Function, RegisterOffset);
+    return true;
+}
+
+/**
  * Function: WriteMSR
  * Description: Writes a 64-bit value to a model-specific register.
  * Parameters:

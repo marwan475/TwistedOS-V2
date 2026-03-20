@@ -11,6 +11,7 @@
 #include "Keyboard.hpp"
 #include "RamFileSystemManager.hpp"
 #include "TTY.hpp"
+#include "DeviceManager.hpp"
 
 #include <Arch/x86.hpp>
 #include <Logging/FrameBufferConsole.hpp>
@@ -37,6 +38,7 @@ private:
     RamFileSystemManager   RFS;
     TTY*                   Terminal;
     Keyboard*              InputKeyboard;
+    DeviceManager*          DevManager;
 
 public:
     ResourceLayer();
@@ -57,6 +59,7 @@ public:
     void                   InitializeRamFileSystemManager();
     void                   InitializeTTY();
     void                   InitializeKeyboard();
+    void                   InitializeDeviceManager();
     void*                  kmalloc(size_t Size);
     void                   kfree(void* Ptr);
     uint64_t               ReadCurrentPageTable() const;
