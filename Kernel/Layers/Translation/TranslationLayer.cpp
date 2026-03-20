@@ -2323,6 +2323,49 @@ int64_t TranslationLayer::HandleChdirSystemCall(const char* Path)
     return 0;
 }
 
+int64_t TranslationLayer::HandleChrootSystemCall(const char* Path)
+{
+    if (Logic == nullptr || Path == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    VirtualFileSystem* VFS = Logic->GetVirtualFileSystem();
+    if (VFS == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    char KernelPath[SYSCALL_PATH_MAX] = {};
+    if (!CopyUserCString(Logic, Path, KernelPath, sizeof(KernelPath)))
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    if (KernelPath[0] == '\0')
+    {
+        return LINUX_ERR_ENOENT;
+    }
+
+    Dentry* RootDentry = VFS->Lookup(KernelPath);
+    if (RootDentry == nullptr || RootDentry->inode == nullptr)
+    {
+        return LINUX_ERR_ENOENT;
+    }
+
+    if (RootDentry->inode->NodeType != INODE_DIR)
+    {
+        return LINUX_ERR_ENOTDIR;
+    }
+
+    if (!VFS->SetRoot(RootDentry))
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    return 0;
+}
+
 int64_t TranslationLayer::HandleMountSystemCall(const char* Source, const char* Target, const char* FileSystemType, uint64_t MountFlags, const void* Data)
 {
     (void) MountFlags;

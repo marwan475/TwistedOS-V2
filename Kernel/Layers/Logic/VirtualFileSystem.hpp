@@ -87,6 +87,7 @@ public:
     void    MountInitRamFileSystem(RamFileSystemManager* ramFileSystemManager);
     bool    MountEXTFileSystem(ExtendedFileSystemManager* extendedFileSystemManager, const char* mountPath);
     bool    RegisterDevice(const char* path, void* deviceData, FileOperations* fileOperations);
+    bool    SetRoot(Dentry* RootDentry);
     Dentry* Lookup(const char* path);
     Dentry* LookupNoFollowFinal(const char* path);
     void    PrintVFS(TTY* Terminal);

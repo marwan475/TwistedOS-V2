@@ -123,6 +123,9 @@ int64_t TranslationLayer::HandlePosixSystemCallNumber(uint64_t SystemCallNumber,
         case 158: // arch_prctl
             return HandleArchPrctlSystemCall(Arg1, Arg2);
             break;
+        case 161: // chroot
+            return HandleChrootSystemCall(reinterpret_cast<const char*>(Arg1));
+            break;
         case 165: // mount
             return HandleMountSystemCall(reinterpret_cast<const char*>(Arg1), reinterpret_cast<const char*>(Arg2), reinterpret_cast<const char*>(Arg3), Arg4,
                                          reinterpret_cast<const void*>(Arg5));

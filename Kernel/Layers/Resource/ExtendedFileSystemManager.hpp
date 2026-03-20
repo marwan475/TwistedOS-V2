@@ -56,6 +56,7 @@ private:
 
     bool ReadBytesFromDisk(uint32_t OffsetBytes, void* Buffer, uint32_t SizeBytes) const;
     bool ReadInode(uint32_t InodeNumber, uint8_t* InodeData, uint32_t InodeDataSize) const;
+    bool ReadInodePayload(uint32_t InodeNumber, const uint8_t* InodeData, uint16_t InodeMode, uint64_t PayloadSize, void* DestinationBuffer) const;
     void PrintDirectoryTree(uint32_t DirectoryInodeNumber, TTY* Terminal, uint32_t Depth, uint32_t MaxDepth) const;
     bool EnumerateDirectoryEntries(uint32_t DirectoryInodeNumber, const char* DirectoryPath, ExtendedFileSystemEntryCallback Callback, void* Context) const;
 

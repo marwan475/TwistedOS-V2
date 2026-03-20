@@ -1028,6 +1028,23 @@ bool VirtualFileSystem::RegisterDevice(const char* path, void* deviceData, FileO
     return true;
 }
 
+bool VirtualFileSystem::SetRoot(Dentry* RootDentry)
+{
+    if (RootDentry == nullptr || RootDentry->inode == nullptr)
+    {
+        return false;
+    }
+
+    if (RootDentry->inode->NodeType != INODE_DIR)
+    {
+        return false;
+    }
+
+    RootDentry->parent = nullptr;
+    Root = RootDentry;
+    return true;
+}
+
 /**
  * Function: Lookup
  * Description: Resolves a path to its corresponding dentry in the mounted VFS tree.
