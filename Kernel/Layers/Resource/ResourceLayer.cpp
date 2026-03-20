@@ -8,6 +8,7 @@
 
 #include "VirtualAddressSpace.hpp"
 
+#include <Arch/x86.hpp>
 #include <CommonUtils.hpp>
 #include <Memory/PhysicalMemoryManager.hpp>
 
@@ -380,9 +381,7 @@ void ResourceLayer::kfree(void* Ptr)
 
 uint64_t ResourceLayer::ReadCurrentPageTable() const
 {
-    uint64_t PageTableAddress = 0;
-    __asm__ __volatile__("mov %%cr3, %0" : "=r"(PageTableAddress));
-    return PageTableAddress;
+    return X86ReadCR3();
 }
 
 void ResourceLayer::LoadPageTable(uint64_t PageMapL4TableAddr)
@@ -392,7 +391,7 @@ void ResourceLayer::LoadPageTable(uint64_t PageMapL4TableAddr)
         return;
     }
 
-    __asm__ __volatile__("mov %0, %%cr3" : : "r"(PageMapL4TableAddr) : "memory");
+    X86WriteCR3(PageMapL4TableAddr);
 }
 
 void ResourceLayer::LoadKernelPageTable()

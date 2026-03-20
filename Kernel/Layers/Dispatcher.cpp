@@ -6,6 +6,7 @@
 
 #include "Dispatcher.hpp"
 
+#include <Arch/x86.hpp>
 #include <Layers/Resource/Drivers/IDEController.hpp>
 #include <Memory/KernelHeapAllocations.hpp>
 #include <Testing/KernelSelfTests.hpp>
@@ -190,7 +191,7 @@ void Dispatcher::InterruptHandler(uint64_t InterruptNumber)
             Resource.GetTTY()->printf_("Unhandled interrupt: %lu\n", InterruptNumber);
             while (1)
             {
-                __asm__ __volatile__("hlt");
+                X86Halt();
             }
 
             break;

@@ -8,6 +8,8 @@
 
 #include "TTY.hpp"
 
+#include <Arch/x86.hpp>
+
 namespace
 {
 constexpr uint16_t KEYBOARD_DATA_PORT                 = 0x60;
@@ -19,13 +21,6 @@ constexpr uint8_t KEYBOARD_SCANCODE_RIGHT_SHIFT_PRESS   = 0x36;
 constexpr uint8_t KEYBOARD_SCANCODE_LEFT_SHIFT_RELEASE  = 0xAA;
 constexpr uint8_t KEYBOARD_SCANCODE_RIGHT_SHIFT_RELEASE = 0xB6;
 constexpr uint8_t KEYBOARD_SCANCODE_CAPS_LOCK           = 0x3A;
-
-static inline uint8_t inb(uint16_t port)
-{
-    uint8_t value = 0;
-    __asm__ __volatile__("inb %1, %0" : "=a"(value) : "Nd"(port));
-    return value;
-}
 
 bool IsAlphabeticalCharacter(char Character)
 {
@@ -69,9 +64,9 @@ void Keyboard::Initialize(TTY* Terminal)
     RightShiftPressed = false;
     CapsLockEnabled   = false;
 
-    while ((inb(KEYBOARD_STATUS_PORT) & KEYBOARD_STATUS_OUTPUT_BUFFER_FULL) != 0)
+    while ((X86InB(KEYBOARD_STATUS_PORT) & KEYBOARD_STATUS_OUTPUT_BUFFER_FULL) != 0)
     {
-        (void) inb(KEYBOARD_DATA_PORT);
+        (void) X86InB(KEYBOARD_DATA_PORT);
     }
 }
 
@@ -82,12 +77,12 @@ void Keyboard::SetTTY(TTY* Terminal)
 
 void Keyboard::HandleInterrupt()
 {
-    if ((inb(KEYBOARD_STATUS_PORT) & KEYBOARD_STATUS_OUTPUT_BUFFER_FULL) == 0)
+    if ((X86InB(KEYBOARD_STATUS_PORT) & KEYBOARD_STATUS_OUTPUT_BUFFER_FULL) == 0)
     {
         return;
     }
 
-    uint8_t ScanCode = inb(KEYBOARD_DATA_PORT);
+    uint8_t ScanCode = X86InB(KEYBOARD_DATA_PORT);
 
     if (ScanCode == KEYBOARD_SCANCODE_LEFT_SHIFT_PRESS)
     {

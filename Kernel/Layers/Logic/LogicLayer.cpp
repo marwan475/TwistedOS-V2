@@ -10,6 +10,7 @@
 #include "Layers/Resource/PartitionManager.hpp"
 #include "Layers/Resource/TTY.hpp"
 
+#include <Arch/x86.hpp>
 #include <CommonUtils.hpp>
 
 namespace
@@ -608,7 +609,7 @@ namespace
 void NullProcessEntry()
 {
     while (1)
-        __asm__ __volatile__("hlt");
+    X86Halt();
 }
 } // namespace
 

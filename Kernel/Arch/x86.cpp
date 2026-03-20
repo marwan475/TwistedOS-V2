@@ -280,6 +280,23 @@ uint64_t GetUserFSBase()
     return ReadMSR(IA32_FS_BASE_MSR);
 }
 
+void X86Halt()
+{
+    __asm__ __volatile__("hlt");
+}
+
+uint64_t X86ReadCR3()
+{
+    uint64_t PageTableAddress = 0;
+    __asm__ __volatile__("mov %%cr3, %0" : "=r"(PageTableAddress));
+    return PageTableAddress;
+}
+
+void X86WriteCR3(uint64_t PageMapL4TableAddr)
+{
+    __asm__ __volatile__("mov %0, %%cr3" : : "r"(PageMapL4TableAddr) : "memory");
+}
+
 /**
  * Function: SetIDTEntry
  * Description: Populates one IDT entry with handler address, selector, and flags.

@@ -230,6 +230,9 @@ bool          X86ReadPCIConfigDword(uint8_t Bus, uint8_t Device, uint8_t Functio
 void          RemapPIC();
 void          SetUserFSBase(uint64_t BaseAddress);
 uint64_t      GetUserFSBase();
+void          X86Halt();
+uint64_t      X86ReadCR3();
+void          X86WriteCR3(uint64_t PageMapL4TableAddr);
 
 extern "C"
 {

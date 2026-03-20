@@ -54,6 +54,44 @@ void ResetProcessSignalActions(Process& ProcessEntry)
         ProcessEntry.SignalActions[SignalIndex] = {};
     }
 }
+
+void InitializeProcessEntry(Process& ProcessEntry, ProcessState Status, ProcessLevel Level, FILE_TYPE FileType, void* StackPointer, void* KernelSystemCallStackBase,
+                            uint64_t ProgramBreak, VirtualAddressSpace* AddressSpace, const CpuState& State, bool ResetFileTable)
+{
+    ProcessEntry.ParrentId                  = PROCESS_ID_INVALID;
+    ProcessEntry.WaitingForVforkChild       = false;
+    ProcessEntry.VforkChildId               = PROCESS_ID_INVALID;
+    ProcessEntry.IsVforkChild               = false;
+    ProcessEntry.VforkParentId              = PROCESS_ID_INVALID;
+    ProcessEntry.WaitingForChild            = false;
+    ProcessEntry.WaitingForSystemCallReturn = false;
+    ProcessEntry.HasSavedSystemCallFrame    = false;
+    ProcessEntry.HasPendingChildExit        = false;
+    ProcessEntry.PendingChildId             = PROCESS_ID_INVALID;
+    ProcessEntry.PendingChildStatus         = 0;
+    ProcessEntry.SavedSystemCallFrame       = {};
+    ProcessEntry.Status                     = Status;
+    ProcessEntry.Level                      = Level;
+    ProcessEntry.FileType                   = FileType;
+    ProcessEntry.StackPointer               = StackPointer;
+    ProcessEntry.KernelSystemCallStackBase  = KernelSystemCallStackBase;
+    ProcessEntry.KernelSystemCallStackTop   = ComputeKernelSystemCallStackTop(ProcessEntry.KernelSystemCallStackBase);
+    ProcessEntry.UserFSBase                 = 0;
+    ProcessEntry.BlockedSignalMask          = 0;
+    ProcessEntry.ClearChildTidAddress       = nullptr;
+    ProcessEntry.ProgramBreak               = ProgramBreak;
+    ProcessEntry.AddressSpace               = AddressSpace;
+    ProcessEntry.CurrentFileSystemLocation  = nullptr;
+    ProcessEntry.State                      = State;
+
+    if (ResetFileTable)
+    {
+        ResetProcessFileTable(ProcessEntry);
+    }
+
+    ResetProcessSignalActions(ProcessEntry);
+    ResetProcessMemoryMappings(ProcessEntry);
+}
 } // namespace
 
 /**
@@ -66,37 +104,12 @@ void ResetProcessSignalActions(Process& ProcessEntry)
  */
 ProcessManager::ProcessManager() : CurrentProcessId(PROCESS_ID_INVALID)
 {
+    const CpuState EmptyState = {};
+
     for (size_t index = 0; index < MaxProcesses; ++index)
     {
-        Processes[index].Id                         = static_cast<uint8_t>(index);
-        Processes[index].ParrentId                  = PROCESS_ID_INVALID;
-        Processes[index].WaitingForVforkChild       = false;
-        Processes[index].VforkChildId               = PROCESS_ID_INVALID;
-        Processes[index].IsVforkChild               = false;
-        Processes[index].VforkParentId              = PROCESS_ID_INVALID;
-        Processes[index].WaitingForChild            = false;
-        Processes[index].WaitingForSystemCallReturn = false;
-        Processes[index].HasSavedSystemCallFrame    = false;
-        Processes[index].HasPendingChildExit        = false;
-        Processes[index].PendingChildId             = PROCESS_ID_INVALID;
-        Processes[index].PendingChildStatus         = 0;
-        Processes[index].SavedSystemCallFrame       = {};
-        Processes[index].Status                     = PROCESS_TERMINATED;
-        Processes[index].Level                      = PROCESS_LEVEL_KERNEL;
-        Processes[index].FileType                   = FILE_TYPE_RAW_BINARY;
-        Processes[index].StackPointer               = nullptr;
-        Processes[index].KernelSystemCallStackBase  = nullptr;
-        Processes[index].KernelSystemCallStackTop   = 0;
-        Processes[index].UserFSBase                 = 0;
-        Processes[index].BlockedSignalMask          = 0;
-        Processes[index].ClearChildTidAddress       = nullptr;
-        Processes[index].ProgramBreak               = 0;
-        Processes[index].AddressSpace               = nullptr;
-        Processes[index].CurrentFileSystemLocation  = nullptr;
-        Processes[index].State                      = {};
-        ResetProcessFileTable(Processes[index]);
-        ResetProcessSignalActions(Processes[index]);
-        ResetProcessMemoryMappings(Processes[index]);
+        Processes[index].Id = static_cast<uint8_t>(index);
+        InitializeProcessEntry(Processes[index], PROCESS_TERMINATED, PROCESS_LEVEL_KERNEL, FILE_TYPE_RAW_BINARY, nullptr, nullptr, 0, nullptr, EmptyState, true);
     }
 
     CurrentProcessId = 0;
@@ -208,34 +221,8 @@ uint8_t ProcessManager::CreateKernelProcess(void* StackPointer, CpuState Initial
     {
         if (Processes[index].Status == PROCESS_TERMINATED)
         {
-            Processes[index].ParrentId                  = PROCESS_ID_INVALID;
-            Processes[index].WaitingForVforkChild       = false;
-            Processes[index].VforkChildId               = PROCESS_ID_INVALID;
-            Processes[index].IsVforkChild               = false;
-            Processes[index].VforkParentId              = PROCESS_ID_INVALID;
-            Processes[index].WaitingForChild            = false;
-            Processes[index].WaitingForSystemCallReturn = false;
-            Processes[index].HasSavedSystemCallFrame    = false;
-            Processes[index].HasPendingChildExit        = false;
-            Processes[index].PendingChildId             = PROCESS_ID_INVALID;
-            Processes[index].PendingChildStatus         = 0;
-            Processes[index].SavedSystemCallFrame       = {};
-            Processes[index].Status                     = PROCESS_READY;
-            Processes[index].Level                      = PROCESS_LEVEL_KERNEL;
-            Processes[index].FileType                   = FILE_TYPE_RAW_BINARY;
-            Processes[index].StackPointer               = StackPointer;
-            Processes[index].KernelSystemCallStackBase  = &ProcessKernelSystemCallStacks[index][0];
-            Processes[index].KernelSystemCallStackTop   = ComputeKernelSystemCallStackTop(Processes[index].KernelSystemCallStackBase);
-            Processes[index].UserFSBase                 = 0;
-            Processes[index].BlockedSignalMask          = 0;
-            Processes[index].ClearChildTidAddress       = nullptr;
-            Processes[index].ProgramBreak               = 0;
-            Processes[index].AddressSpace               = nullptr;
-            Processes[index].CurrentFileSystemLocation  = nullptr;
-            Processes[index].State                      = InitialState;
-            ResetProcessFileTable(Processes[index]);
-            ResetProcessSignalActions(Processes[index]);
-            ResetProcessMemoryMappings(Processes[index]);
+            InitializeProcessEntry(Processes[index], PROCESS_READY, PROCESS_LEVEL_KERNEL, FILE_TYPE_RAW_BINARY, StackPointer, &ProcessKernelSystemCallStacks[index][0], 0, nullptr,
+                                   InitialState, true);
             return Processes[index].Id;
         }
     }
@@ -259,34 +246,9 @@ uint8_t ProcessManager::CreateUserProcess(void* StackPointer, CpuState InitialSt
     {
         if (Processes[index].Status == PROCESS_TERMINATED)
         {
-            Processes[index].ParrentId                  = PROCESS_ID_INVALID;
-            Processes[index].WaitingForVforkChild       = false;
-            Processes[index].VforkChildId               = PROCESS_ID_INVALID;
-            Processes[index].IsVforkChild               = false;
-            Processes[index].VforkParentId              = PROCESS_ID_INVALID;
-            Processes[index].WaitingForChild            = false;
-            Processes[index].WaitingForSystemCallReturn = false;
-            Processes[index].HasSavedSystemCallFrame    = false;
-            Processes[index].HasPendingChildExit        = false;
-            Processes[index].PendingChildId             = PROCESS_ID_INVALID;
-            Processes[index].PendingChildStatus         = 0;
-            Processes[index].SavedSystemCallFrame       = {};
-            Processes[index].Status                     = PROCESS_READY;
-            Processes[index].Level                      = PROCESS_LEVEL_USER;
-            Processes[index].FileType                   = FileType;
-            Processes[index].StackPointer               = StackPointer;
-            Processes[index].KernelSystemCallStackBase  = &ProcessKernelSystemCallStacks[index][0];
-            Processes[index].KernelSystemCallStackTop   = ComputeKernelSystemCallStackTop(Processes[index].KernelSystemCallStackBase);
-            Processes[index].UserFSBase                 = 0;
-            Processes[index].BlockedSignalMask          = 0;
-            Processes[index].ClearChildTidAddress       = nullptr;
-            Processes[index].ProgramBreak               = (AddressSpace != nullptr) ? AddressSpace->GetHeapVirtualAddressStart() : 0;
-            Processes[index].AddressSpace               = AddressSpace;
-            Processes[index].CurrentFileSystemLocation  = nullptr;
-            Processes[index].State                      = InitialState;
-            ResetProcessFileTable(Processes[index]);
-            ResetProcessSignalActions(Processes[index]);
-            ResetProcessMemoryMappings(Processes[index]);
+            uint64_t ProgramBreak = (AddressSpace != nullptr) ? AddressSpace->GetHeapVirtualAddressStart() : 0;
+            InitializeProcessEntry(Processes[index], PROCESS_READY, PROCESS_LEVEL_USER, FileType, StackPointer, &ProcessKernelSystemCallStacks[index][0], ProgramBreak, AddressSpace,
+                                   InitialState, true);
             return Processes[index].Id;
         }
     }
@@ -309,33 +271,9 @@ void* ProcessManager::KillProcess(uint8_t Id)
         return nullptr; // Invalid process ID
     }
     void* StackPointer = Processes[Id].StackPointer;
+    const CpuState EmptyState = {};
 
     ReleaseProcessFileTable(Processes[Id]);
-    Processes[Id].ParrentId                  = PROCESS_ID_INVALID;
-    Processes[Id].WaitingForVforkChild       = false;
-    Processes[Id].VforkChildId               = PROCESS_ID_INVALID;
-    Processes[Id].IsVforkChild               = false;
-    Processes[Id].VforkParentId              = PROCESS_ID_INVALID;
-    Processes[Id].WaitingForChild            = false;
-    Processes[Id].WaitingForSystemCallReturn = false;
-    Processes[Id].HasSavedSystemCallFrame    = false;
-    Processes[Id].HasPendingChildExit        = false;
-    Processes[Id].PendingChildId             = PROCESS_ID_INVALID;
-    Processes[Id].PendingChildStatus         = 0;
-    Processes[Id].SavedSystemCallFrame       = {};
-    Processes[Id].Status                     = PROCESS_TERMINATED;
-    Processes[Id].FileType                   = FILE_TYPE_RAW_BINARY;
-    Processes[Id].StackPointer               = nullptr;
-    Processes[Id].KernelSystemCallStackBase  = nullptr;
-    Processes[Id].KernelSystemCallStackTop   = 0;
-    Processes[Id].UserFSBase                 = 0;
-    Processes[Id].BlockedSignalMask          = 0;
-    Processes[Id].ClearChildTidAddress       = nullptr;
-    Processes[Id].ProgramBreak               = 0;
-    Processes[Id].AddressSpace               = nullptr;
-    Processes[Id].CurrentFileSystemLocation  = nullptr;
-    Processes[Id].State                      = {};
-    ResetProcessSignalActions(Processes[Id]);
-    ResetProcessMemoryMappings(Processes[Id]);
+    InitializeProcessEntry(Processes[Id], PROCESS_TERMINATED, PROCESS_LEVEL_KERNEL, FILE_TYPE_RAW_BINARY, nullptr, nullptr, 0, nullptr, EmptyState, true);
     return StackPointer;
 }
