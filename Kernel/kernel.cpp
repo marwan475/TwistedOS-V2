@@ -151,7 +151,7 @@ extern "C"
 
         ActiveDispatcher->GetLogicLayer()->RegisterPartitionDevices();
 
-        ActiveDispatcher->GetLogicLayer()->InitializeRootFileSystem("/dev/sda1");
+        ActiveDispatcher->GetLogicLayer()->InitializeRootFileSystem("/dev/sda2");
 
         ActiveDispatcher->GetLogicLayer()->GetVirtualFileSystem()->PrintVFS(ActiveDispatcher->GetResourceLayer()->GetTTY());
 
