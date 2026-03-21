@@ -3155,7 +3155,41 @@ int64_t TranslationLayer::HandleExitGroupSystemCall(int64_t Status)
     int32_t WaitStatus       = static_cast<int32_t>((static_cast<uint64_t>(Status) & 0xFFULL) << 8);
     uint8_t CurrentProcessId = CurrentProcess->Id;
 
+#ifdef DEBUG_BUILD
+    {
+        Dispatcher* ActiveDispatcher = Dispatcher::GetActive();
+        if (ActiveDispatcher != nullptr)
+        {
+            TTY* Terminal = ActiveDispatcher->GetResourceLayer()->GetTTY();
+            if (Terminal != nullptr)
+            {
+                Terminal->Serialprintf("exit_group_dbg: enter pid=%u status=%lld wait_status=%d is_vfork=%u parent=%u waiting_sysret=%u saved_syscall=%u\n", CurrentProcessId,
+                                       static_cast<long long>(Status), static_cast<int>(WaitStatus), ExitingVforkChild ? 1U : 0U, VforkParentId,
+                                       CurrentProcess->WaitingForSystemCallReturn ? 1U : 0U, CurrentProcess->HasSavedSystemCallFrame ? 1U : 0U);
+            }
+        }
+    }
+#endif
+
     Logic->KillProcess(CurrentProcessId, WaitStatus);
+
+#ifdef DEBUG_BUILD
+    {
+        Dispatcher* ActiveDispatcher = Dispatcher::GetActive();
+        if (ActiveDispatcher != nullptr)
+        {
+            TTY* Terminal = ActiveDispatcher->GetResourceLayer()->GetTTY();
+            if (Terminal != nullptr)
+            {
+                Process* KilledProcess = PM->GetProcessById(CurrentProcessId);
+                Process* CurrentAfterKill = PM->GetCurrentProcess();
+                Terminal->Serialprintf("exit_group_dbg: after_kill pid=%u status=%s current_pid=%d\n", CurrentProcessId,
+                                       (KilledProcess == nullptr) ? "<null>" : ((KilledProcess->Status == PROCESS_TERMINATED) ? "terminated" : "not-terminated"),
+                                       (CurrentAfterKill == nullptr) ? -1 : static_cast<int>(CurrentAfterKill->Id));
+            }
+        }
+    }
+#endif
 
     if (ExitingVforkChild)
     {
@@ -3173,6 +3207,21 @@ int64_t TranslationLayer::HandleExitGroupSystemCall(int64_t Status)
     }
 
     Logic->Schedule();
+
+#ifdef DEBUG_BUILD
+    {
+        Dispatcher* ActiveDispatcher = Dispatcher::GetActive();
+        if (ActiveDispatcher != nullptr)
+        {
+            TTY* Terminal = ActiveDispatcher->GetResourceLayer()->GetTTY();
+            if (Terminal != nullptr)
+            {
+                Process* CurrentAfterSchedule = PM->GetCurrentProcess();
+                Terminal->Serialprintf("exit_group_dbg: after_schedule current_pid=%d\n", (CurrentAfterSchedule == nullptr) ? -1 : static_cast<int>(CurrentAfterSchedule->Id));
+            }
+        }
+    }
+#endif
 
     while (true)
     {
