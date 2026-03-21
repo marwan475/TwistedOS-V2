@@ -378,8 +378,8 @@ void Dispatcher::HandleException(const Registers* Regs)
         case 29:
         case 30:
         case 31:
-            Terminal->Serialprintf("CPU exception: vec=%lu (%s) err=%p rip=%p cs=%p rflags=%p rsp=%p ss=%p\n", ExceptionVector, ExceptionName(ExceptionVector),
-                                   (void*) Regs->error_code, (void*) Regs->rip, (void*) Regs->cs, (void*) Regs->rflags, (void*) Regs->rsp, (void*) Regs->ss);
+            Terminal->Serialprintf("CPU exception: vec=%lu (%s) err=%p rip=%p cs=%p rflags=%p rsp=%p ss=%p\n", ExceptionVector, ExceptionName(ExceptionVector), (void*) Regs->error_code,
+                                   (void*) Regs->rip, (void*) Regs->cs, (void*) Regs->rflags, (void*) Regs->rsp, (void*) Regs->ss);
             break;
         default:
             Terminal->Serialprintf("CPU exception: vec=%lu (out of architected range) err=%p rip=%p\n", ExceptionVector, (void*) Regs->error_code, (void*) Regs->rip);
@@ -390,17 +390,16 @@ void Dispatcher::HandleException(const Registers* Regs)
     {
         uint64_t FaultAddress = 0;
         __asm__ __volatile__("mov %%cr2, %0" : "=r"(FaultAddress));
-        Terminal->Serialprintf("#PF detail: cr2=%p P=%u W/R=%u U/S=%u RSVD=%u I/D=%u\n", (void*) FaultAddress, (uint32_t) (Regs->error_code & 0x1ULL),
-                               (uint32_t) ((Regs->error_code >> 1) & 0x1ULL), (uint32_t) ((Regs->error_code >> 2) & 0x1ULL),
-                               (uint32_t) ((Regs->error_code >> 3) & 0x1ULL), (uint32_t) ((Regs->error_code >> 4) & 0x1ULL));
+        Terminal->Serialprintf("#PF detail: cr2=%p P=%u W/R=%u U/S=%u RSVD=%u I/D=%u\n", (void*) FaultAddress, (uint32_t) (Regs->error_code & 0x1ULL), (uint32_t) ((Regs->error_code >> 1) & 0x1ULL),
+                               (uint32_t) ((Regs->error_code >> 2) & 0x1ULL), (uint32_t) ((Regs->error_code >> 3) & 0x1ULL), (uint32_t) ((Regs->error_code >> 4) & 0x1ULL));
     }
 
-    Terminal->Serialprintf("Exception regs: rax=%p rbx=%p rcx=%p rdx=%p rbp=%p rsi=%p rdi=%p\n", (void*) Regs->rax, (void*) Regs->rbx, (void*) Regs->rcx, (void*) Regs->rdx,
-                           (void*) Regs->rbp, (void*) Regs->rsi, (void*) Regs->rdi);
-    Terminal->Serialprintf("Exception regs: r8=%p r9=%p r10=%p r11=%p r12=%p r13=%p r14=%p r15=%p\n", (void*) Regs->r8, (void*) Regs->r9, (void*) Regs->r10, (void*) Regs->r11,
-                           (void*) Regs->r12, (void*) Regs->r13, (void*) Regs->r14, (void*) Regs->r15);
+    Terminal->Serialprintf("Exception regs: rax=%p rbx=%p rcx=%p rdx=%p rbp=%p rsi=%p rdi=%p\n", (void*) Regs->rax, (void*) Regs->rbx, (void*) Regs->rcx, (void*) Regs->rdx, (void*) Regs->rbp,
+                           (void*) Regs->rsi, (void*) Regs->rdi);
+    Terminal->Serialprintf("Exception regs: r8=%p r9=%p r10=%p r11=%p r12=%p r13=%p r14=%p r15=%p\n", (void*) Regs->r8, (void*) Regs->r9, (void*) Regs->r10, (void*) Regs->r11, (void*) Regs->r12,
+                           (void*) Regs->r13, (void*) Regs->r14, (void*) Regs->r15);
 
-    ProcessManager* PM = Logic.GetProcessManager();
+    ProcessManager* PM             = Logic.GetProcessManager();
     Process*        CurrentProcess = (PM == nullptr) ? nullptr : PM->GetCurrentProcess();
     if (CurrentProcess == nullptr)
     {
@@ -430,9 +429,9 @@ void Dispatcher::HandleException(const Registers* Regs)
         uint64_t ActivePageTable = Resource.ReadCurrentPageTable();
 
         Terminal->Serialprintf("Exception process: id=%u parent=%u state=%s level=%s type=%s waiting_sysret=%u saved_syscall=%u addrspace=%p cr3=%p proc_cr3=%p\n", CurrentProcess->Id,
-                               CurrentProcess->ParrentId, ProcessStateToString(CurrentProcess->Status), ProcessLevelToString(CurrentProcess->Level),
-                               ProcessFileTypeToString(CurrentProcess->FileType), CurrentProcess->WaitingForSystemCallReturn ? 1U : 0U,
-                               CurrentProcess->HasSavedSystemCallFrame ? 1U : 0U, CurrentProcess->AddressSpace, (void*) ActivePageTable, (void*) ProcessPageTable);
+                               CurrentProcess->ParrentId, ProcessStateToString(CurrentProcess->Status), ProcessLevelToString(CurrentProcess->Level), ProcessFileTypeToString(CurrentProcess->FileType),
+                               CurrentProcess->WaitingForSystemCallReturn ? 1U : 0U, CurrentProcess->HasSavedSystemCallFrame ? 1U : 0U, CurrentProcess->AddressSpace, (void*) ActivePageTable,
+                               (void*) ProcessPageTable);
         Terminal->Serialprintf("Exception process FS: live=%p saved=%p\n", (void*) LiveFSBase, (void*) CurrentProcess->UserFSBase);
         Terminal->Serialprintf("Exception process ranges: code=[%p..%p) heap=[%p..%p) stack=[%p..%p)\n", (void*) CodeStart, (void*) (CodeStart + CodeSize), (void*) HeapStart,
                                (void*) (HeapStart + HeapSize), (void*) StackStart, (void*) (StackStart + StackSize));

@@ -15,15 +15,9 @@ constexpr uint16_t LARGE_CLASS_SENTINEL = 0xFFFF;
 constexpr int32_t  INVALID_LIST_INDEX   = -1;
 
 constexpr size_t SLAB_CLASS_SIZES[7] = {
-    64,
-    128,
-    256,
-    512,
-    1024,
-    2048,
-    4096,
+        64, 128, 256, 512, 1024, 2048, 4096,
 };
-}
+} // namespace
 
 /**
  * Function: KernelHeapManager::KernelHeapManager
@@ -197,7 +191,7 @@ void KernelHeapManager::LinkSlabIntoClassList(size_t SlabIndex, size_t ClassInde
         return;
     }
 
-    int32_t HeadIndex = ClassAvailableHead[ClassIndex];
+    int32_t HeadIndex        = ClassAvailableHead[ClassIndex];
     Descriptor.PrevAvailable = INVALID_LIST_INDEX;
     Descriptor.NextAvailable = HeadIndex;
     if (HeadIndex != INVALID_LIST_INDEX)
@@ -451,7 +445,7 @@ void* KernelHeapManager::kmalloc(size_t Size)
         return nullptr;
     }
 
-    size_t LargeSlabIndex = static_cast<size_t>(StartSlab);
+    size_t LargeSlabIndex               = static_cast<size_t>(StartSlab);
     Slabs[LargeSlabIndex].State         = SlabLargeHead;
     Slabs[LargeSlabIndex].ClassIndex    = 0;
     Slabs[LargeSlabIndex].Reserved      = 0;
@@ -507,8 +501,8 @@ void KernelHeapManager::kfree(void* Ptr)
         return;
     }
 
-    uintptr_t HeapBase    = static_cast<uintptr_t>(HeapStart);
-    uintptr_t HeapLimit   = HeapBase + (SlabCount * static_cast<size_t>(SLAB_PAGE_SIZE));
+    uintptr_t HeapBase  = static_cast<uintptr_t>(HeapStart);
+    uintptr_t HeapLimit = HeapBase + (SlabCount * static_cast<size_t>(SLAB_PAGE_SIZE));
     if (UserAddress < (HeapBase + sizeof(AllocationHeader)) || UserAddress >= HeapLimit)
     {
         return;

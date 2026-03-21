@@ -2150,8 +2150,8 @@ void LogicLayer::KillProcess(uint8_t Id, int32_t ExitStatus)
     if (DebugTerminal != nullptr)
     {
         DebugTerminal->Serialprintf("kill_dbg: enter id=%u target=%p running=%p target_level=%d target_status=%d exit_status=%d\n", Id, TargetProcess, RunningProcess,
-                                   (TargetProcess == nullptr) ? -1 : static_cast<int>(TargetProcess->Level), (TargetProcess == nullptr) ? -1 : static_cast<int>(TargetProcess->Status),
-                                   static_cast<int>(ExitStatus));
+                                    (TargetProcess == nullptr) ? -1 : static_cast<int>(TargetProcess->Level), (TargetProcess == nullptr) ? -1 : static_cast<int>(TargetProcess->Status),
+                                    static_cast<int>(ExitStatus));
     }
 #endif
 
@@ -2192,13 +2192,13 @@ void LogicLayer::KillProcess(uint8_t Id, int32_t ExitStatus)
 
         PM->KillProcess(Id);
 
-    #ifdef DEBUG_BUILD
+#ifdef DEBUG_BUILD
         if (DebugTerminal != nullptr)
         {
             Process* KilledProcess = PM->GetProcessById(Id);
             DebugTerminal->Serialprintf("kill_dbg: user_kill_done id=%u status=%d\n", Id, (KilledProcess == nullptr) ? -1 : static_cast<int>(KilledProcess->Status));
         }
-    #endif
+#endif
 
         if (IsELFProcess)
         {
