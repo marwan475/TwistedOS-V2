@@ -18,6 +18,122 @@ constexpr uint64_t KEYBOARD_INTERRUPT_VECTOR    = 33;
 constexpr uint64_t IDE_PRIMARY_INTERRUPT_VECTOR = 46;
 constexpr uint64_t SYSCALL_INTERRUPT_VECTOR     = 128;
 constexpr uint64_t SCHEDULER_TICK_INTERVAL      = 5;
+
+const char* ExceptionName(uint64_t ExceptionVector)
+{
+    switch (ExceptionVector)
+    {
+        case 0:
+            return "#DE Divide Error";
+        case 1:
+            return "#DB Debug";
+        case 2:
+            return "NMI Interrupt";
+        case 3:
+            return "#BP Breakpoint";
+        case 4:
+            return "#OF Overflow";
+        case 5:
+            return "#BR BOUND Range Exceeded";
+        case 6:
+            return "#UD Invalid Opcode";
+        case 7:
+            return "#NM Device Not Available";
+        case 8:
+            return "#DF Double Fault";
+        case 9:
+            return "Coprocessor Segment Overrun";
+        case 10:
+            return "#TS Invalid TSS";
+        case 11:
+            return "#NP Segment Not Present";
+        case 12:
+            return "#SS Stack-Segment Fault";
+        case 13:
+            return "#GP General Protection Fault";
+        case 14:
+            return "#PF Page Fault";
+        case 15:
+            return "Reserved";
+        case 16:
+            return "#MF x87 Floating-Point Exception";
+        case 17:
+            return "#AC Alignment Check";
+        case 18:
+            return "#MC Machine Check";
+        case 19:
+            return "#XM SIMD Floating-Point Exception";
+        case 20:
+            return "#VE Virtualization Exception";
+        case 21:
+            return "#CP Control Protection Exception";
+        case 22:
+            return "Reserved";
+        case 23:
+            return "Reserved";
+        case 24:
+            return "Reserved";
+        case 25:
+            return "Reserved";
+        case 26:
+            return "Reserved";
+        case 27:
+            return "Reserved";
+        case 28:
+            return "#HV Hypervisor Injection Exception";
+        case 29:
+            return "#VC VMM Communication Exception";
+        case 30:
+            return "#SX Security Exception";
+        case 31:
+            return "Reserved";
+        default:
+            return "Unknown Exception";
+    }
+}
+
+const char* ProcessStateToString(ProcessState State)
+{
+    switch (State)
+    {
+        case PROCESS_RUNNING:
+            return "running";
+        case PROCESS_READY:
+            return "ready";
+        case PROCESS_BLOCKED:
+            return "blocked";
+        case PROCESS_TERMINATED:
+            return "terminated";
+        default:
+            return "unknown";
+    }
+}
+
+const char* ProcessLevelToString(ProcessLevel Level)
+{
+    switch (Level)
+    {
+        case PROCESS_LEVEL_KERNEL:
+            return "kernel";
+        case PROCESS_LEVEL_USER:
+            return "user";
+        default:
+            return "unknown";
+    }
+}
+
+const char* ProcessFileTypeToString(FILE_TYPE FileType)
+{
+    switch (FileType)
+    {
+        case FILE_TYPE_RAW_BINARY:
+            return "raw";
+        case FILE_TYPE_ELF:
+            return "elf";
+        default:
+            return "unknown";
+    }
+}
 } // namespace
 
 Dispatcher* Dispatcher::ActiveDispatcher = nullptr;
@@ -195,6 +311,136 @@ void Dispatcher::InterruptHandler(uint64_t InterruptNumber)
             }
 
             break;
+    }
+}
+
+/**
+ * Function: Dispatcher::HandleException
+ * Description: Handles CPU exceptions with verbose diagnostics and halts execution.
+ * Parameters:
+ *   const Registers* Regs - Captured interrupt register state.
+ * Returns:
+ *   void - No return value.
+ */
+void Dispatcher::HandleException(const Registers* Regs)
+{
+    TTY* Terminal = Resource.GetTTY();
+    if (Terminal == nullptr)
+    {
+        while (1)
+        {
+            X86Halt();
+        }
+    }
+
+    if (Regs == nullptr)
+    {
+        Terminal->printf_("CPU exception: <null register frame>\n");
+        while (1)
+        {
+            X86Halt();
+        }
+    }
+
+    uint64_t ExceptionVector = Regs->interrupt_number;
+
+    switch (ExceptionVector)
+    {
+        case 0:
+        case 1:
+        case 2:
+        case 3:
+        case 4:
+        case 5:
+        case 6:
+        case 7:
+        case 8:
+        case 9:
+        case 10:
+        case 11:
+        case 12:
+        case 13:
+        case 14:
+        case 15:
+        case 16:
+        case 17:
+        case 18:
+        case 19:
+        case 20:
+        case 21:
+        case 22:
+        case 23:
+        case 24:
+        case 25:
+        case 26:
+        case 27:
+        case 28:
+        case 29:
+        case 30:
+        case 31:
+            Terminal->Serialprintf("CPU exception: vec=%lu (%s) err=%p rip=%p cs=%p rflags=%p rsp=%p ss=%p\n", ExceptionVector, ExceptionName(ExceptionVector),
+                                   (void*) Regs->error_code, (void*) Regs->rip, (void*) Regs->cs, (void*) Regs->rflags, (void*) Regs->rsp, (void*) Regs->ss);
+            break;
+        default:
+            Terminal->Serialprintf("CPU exception: vec=%lu (out of architected range) err=%p rip=%p\n", ExceptionVector, (void*) Regs->error_code, (void*) Regs->rip);
+            break;
+    }
+
+    if (ExceptionVector == 14)
+    {
+        uint64_t FaultAddress = 0;
+        __asm__ __volatile__("mov %%cr2, %0" : "=r"(FaultAddress));
+        Terminal->Serialprintf("#PF detail: cr2=%p P=%u W/R=%u U/S=%u RSVD=%u I/D=%u\n", (void*) FaultAddress, (uint32_t) (Regs->error_code & 0x1ULL),
+                               (uint32_t) ((Regs->error_code >> 1) & 0x1ULL), (uint32_t) ((Regs->error_code >> 2) & 0x1ULL),
+                               (uint32_t) ((Regs->error_code >> 3) & 0x1ULL), (uint32_t) ((Regs->error_code >> 4) & 0x1ULL));
+    }
+
+    Terminal->Serialprintf("Exception regs: rax=%p rbx=%p rcx=%p rdx=%p rbp=%p rsi=%p rdi=%p\n", (void*) Regs->rax, (void*) Regs->rbx, (void*) Regs->rcx, (void*) Regs->rdx,
+                           (void*) Regs->rbp, (void*) Regs->rsi, (void*) Regs->rdi);
+    Terminal->Serialprintf("Exception regs: r8=%p r9=%p r10=%p r11=%p r12=%p r13=%p r14=%p r15=%p\n", (void*) Regs->r8, (void*) Regs->r9, (void*) Regs->r10, (void*) Regs->r11,
+                           (void*) Regs->r12, (void*) Regs->r13, (void*) Regs->r14, (void*) Regs->r15);
+
+    ProcessManager* PM = Logic.GetProcessManager();
+    Process*        CurrentProcess = (PM == nullptr) ? nullptr : PM->GetCurrentProcess();
+    if (CurrentProcess == nullptr)
+    {
+        Terminal->Serialprintf("Exception process: <none>\n");
+    }
+    else
+    {
+        uint64_t ProcessPageTable = 0;
+        uint64_t CodeStart        = 0;
+        uint64_t CodeSize         = 0;
+        uint64_t HeapStart        = 0;
+        uint64_t HeapSize         = 0;
+        uint64_t StackStart       = 0;
+        uint64_t StackSize        = 0;
+        if (CurrentProcess->AddressSpace != nullptr)
+        {
+            ProcessPageTable = CurrentProcess->AddressSpace->GetPageMapL4TableAddr();
+            CodeStart        = CurrentProcess->AddressSpace->GetCodeVirtualAddressStart();
+            CodeSize         = CurrentProcess->AddressSpace->GetCodeSize();
+            HeapStart        = CurrentProcess->AddressSpace->GetHeapVirtualAddressStart();
+            HeapSize         = CurrentProcess->AddressSpace->GetHeapSize();
+            StackStart       = CurrentProcess->AddressSpace->GetStackVirtualAddressStart();
+            StackSize        = CurrentProcess->AddressSpace->GetStackSize();
+        }
+
+        uint64_t LiveFSBase      = GetUserFSBase();
+        uint64_t ActivePageTable = Resource.ReadCurrentPageTable();
+
+        Terminal->Serialprintf("Exception process: id=%u parent=%u state=%s level=%s type=%s waiting_sysret=%u saved_syscall=%u addrspace=%p cr3=%p proc_cr3=%p\n", CurrentProcess->Id,
+                               CurrentProcess->ParrentId, ProcessStateToString(CurrentProcess->Status), ProcessLevelToString(CurrentProcess->Level),
+                               ProcessFileTypeToString(CurrentProcess->FileType), CurrentProcess->WaitingForSystemCallReturn ? 1U : 0U,
+                               CurrentProcess->HasSavedSystemCallFrame ? 1U : 0U, CurrentProcess->AddressSpace, (void*) ActivePageTable, (void*) ProcessPageTable);
+        Terminal->Serialprintf("Exception process FS: live=%p saved=%p\n", (void*) LiveFSBase, (void*) CurrentProcess->UserFSBase);
+        Terminal->Serialprintf("Exception process ranges: code=[%p..%p) heap=[%p..%p) stack=[%p..%p)\n", (void*) CodeStart, (void*) (CodeStart + CodeSize), (void*) HeapStart,
+                               (void*) (HeapStart + HeapSize), (void*) StackStart, (void*) (StackStart + StackSize));
+    }
+
+    while (1)
+    {
+        X86Halt();
     }
 }
 

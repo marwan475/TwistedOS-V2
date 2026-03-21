@@ -438,95 +438,34 @@ void RemapPIC()
  */
 extern "C" void ISRHANDLER(Registers* reg)
 {
+    Dispatcher* ActiveDispatcher = Dispatcher::GetActive();
+
     if (reg->interrupt_number < 32)
     {
-        Dispatcher* ActiveDispatcher = Dispatcher::GetActive();
         if (ActiveDispatcher != nullptr)
         {
-            TTY* Terminal = ActiveDispatcher->GetResourceLayer()->GetTTY();
-#ifdef DEBUG_BUILD
-            if (Terminal != nullptr)
-            {
-                Terminal->Serialprintf("CPU exception: int=%lu err=%p rip=%p cs=%p rflags=%p rsp=%p\n", reg->interrupt_number, (void*) reg->error_code, (void*) reg->rip, (void*) reg->cs,
-                                       (void*) reg->rflags, (void*) reg->rsp);
-
-                Process* CurrentProcess = GetCurrentProcessForSystemCallFrame();
-                if (CurrentProcess == nullptr)
-                {
-                    Terminal->Serialprintf("Exception process: <none>\n");
-                }
-                else
-                {
-                    uint64_t ProcessPageTable = 0;
-                    uint64_t CodeStart        = 0;
-                    uint64_t CodeSize         = 0;
-                    uint64_t HeapStart        = 0;
-                    uint64_t HeapSize         = 0;
-                    uint64_t StackStart       = 0;
-                    uint64_t StackSize        = 0;
-                    uint64_t ProcessFSBase    = 0;
-
-                    if (CurrentProcess->AddressSpace != nullptr)
-                    {
-                        ProcessPageTable = CurrentProcess->AddressSpace->GetPageMapL4TableAddr();
-                        CodeStart        = CurrentProcess->AddressSpace->GetCodeVirtualAddressStart();
-                        CodeSize         = CurrentProcess->AddressSpace->GetCodeSize();
-                        HeapStart        = CurrentProcess->AddressSpace->GetHeapVirtualAddressStart();
-                        HeapSize         = CurrentProcess->AddressSpace->GetHeapSize();
-                        StackStart       = CurrentProcess->AddressSpace->GetStackVirtualAddressStart();
-                        StackSize        = CurrentProcess->AddressSpace->GetStackSize();
-                    }
-                    ProcessFSBase = CurrentProcess->UserFSBase;
-
-                    uint64_t LiveFSBase      = GetUserFSBase();
-                    uint64_t ActivePageTable = ActiveDispatcher->GetResourceLayer()->ReadCurrentPageTable();
-
-                    Terminal->Serialprintf("Exception process: id=%u parent=%u state=%s level=%s type=%s waiting_sysret=%u saved_syscall=%u addrspace=%p cr3=%p proc_cr3=%p\n", CurrentProcess->Id,
-                                           CurrentProcess->ParrentId, ProcessStateToString(CurrentProcess->Status), ProcessLevelToString(CurrentProcess->Level),
-                                           ProcessFileTypeToString(CurrentProcess->FileType), CurrentProcess->WaitingForSystemCallReturn ? 1U : 0U, CurrentProcess->HasSavedSystemCallFrame ? 1U : 0U,
-                                           CurrentProcess->AddressSpace, (void*) ActivePageTable, (void*) ProcessPageTable);
-
-                    Terminal->Serialprintf("Exception process FS: live=%p saved=%p\n", (void*) LiveFSBase, (void*) ProcessFSBase);
-
-                    Terminal->Serialprintf("Exception process ranges: code=[%p..%p) heap=[%p..%p) stack=[%p..%p)\n", (void*) CodeStart, (void*) (CodeStart + CodeSize), (void*) HeapStart,
-                                           (void*) (HeapStart + HeapSize), (void*) StackStart, (void*) (StackStart + StackSize));
-                }
-            }
-#else
-            (void) Terminal;
-#endif
+            ActiveDispatcher->HandleException(reg);
         }
-
-        if (reg->interrupt_number == 14)
+        else
         {
-            uint64_t FaultAddress = 0;
-            __asm__ __volatile__("mov %%cr2, %0" : "=r"(FaultAddress));
-
-            if (ActiveDispatcher != nullptr)
-            {
-                ActiveDispatcher->GetResourceLayer()->GetTTY()->printf_("Page fault: cr2=%p rip=%p err=%p cs=%p rsp=%p\n", (void*) FaultAddress, (void*) reg->rip, (void*) reg->error_code,
-                                                                        (void*) reg->cs, (void*) reg->rsp);
-            }
-
             while (1)
             {
-                __asm__ __volatile__("hlt");
+                X86Halt();
             }
         }
+
+        return;
     }
-    else
+
+    if (reg->interrupt_number >= 32 && reg->interrupt_number <= 47)
     {
-        if (reg->interrupt_number >= 32 && reg->interrupt_number <= 47)
+        outb(PIC1_COMMAND_PORT, PIC_END_OF_INTERRUPT_COMMAND); // Send End of Interrupt (EOI) signal to master PIC
+        if (reg->interrupt_number >= 40)
         {
-            outb(PIC1_COMMAND_PORT, PIC_END_OF_INTERRUPT_COMMAND); // Send End of Interrupt (EOI) signal to master PIC
-            if (reg->interrupt_number >= 40)
-            {
-                outb(PIC2_COMMAND_PORT, PIC_END_OF_INTERRUPT_COMMAND); // Send End of Interrupt (EOI) signal to slave PIC
-            }
+            outb(PIC2_COMMAND_PORT, PIC_END_OF_INTERRUPT_COMMAND); // Send End of Interrupt (EOI) signal to slave PIC
         }
     }
 
-    Dispatcher* ActiveDispatcher = Dispatcher::GetActive();
     if (ActiveDispatcher != nullptr)
     {
         LogicLayer* ActiveLogicLayer = ActiveDispatcher->GetLogicLayer();

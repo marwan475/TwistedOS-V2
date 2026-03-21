@@ -6,6 +6,7 @@
 
 #pragma once
 
+#include <Arch/x86.hpp>
 #include <Logging/FrameBufferConsole.hpp>
 #include <stdint.h>
 #include <uefi.hpp>
@@ -46,6 +47,7 @@ public:
     void               InitTranslationLayer();
     void               InitializeLayers(const DispatcherParameters& Params);
     void               InterruptHandler(uint64_t InterruptNumber);
+    void               HandleException(const Registers* Regs);
     int64_t            HandleSystemCall(uint64_t SystemCallNumber, uint64_t Arg1, uint64_t Arg2, uint64_t Arg3, uint64_t Arg4, uint64_t Arg5, uint64_t Arg6);
 
     ResourceLayer*    GetResourceLayer();
