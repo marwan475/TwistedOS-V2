@@ -19,6 +19,9 @@ constexpr uint32_t EXT2_GROUP_DESCRIPTOR_SIZE   = 32;
 constexpr uint32_t EXT2_ROOT_INODE_NUMBER       = 2;
 constexpr uint16_t EXT2_INODE_MODE_DIRECTORY    = 0x4000;
 constexpr uint16_t EXT2_INODE_MODE_SYMLINK      = 0xA000;
+constexpr uint32_t EXT2_SUPERBLOCK_FREE_BLOCKS_OFFSET = 12;
+constexpr uint32_t EXT2_SUPERBLOCK_FREE_INODES_OFFSET = 16;
+constexpr uint16_t EXT2_INODE_MODE_DIRECTORY_0755     = 0x41ED;
 
 ExtendedFileSystemEntryType DecodeEntryType(uint8_t Type)
 {
@@ -44,6 +47,25 @@ uint32_t ReadLE32(const uint8_t* Data)
 {
     return static_cast<uint32_t>(Data[0]) | static_cast<uint32_t>(static_cast<uint32_t>(Data[1]) << 8) | static_cast<uint32_t>(static_cast<uint32_t>(Data[2]) << 16)
            | static_cast<uint32_t>(static_cast<uint32_t>(Data[3]) << 24);
+}
+
+void WriteLE16(uint8_t* Data, uint16_t Value)
+{
+    Data[0] = static_cast<uint8_t>(Value & 0xFFu);
+    Data[1] = static_cast<uint8_t>((Value >> 8) & 0xFFu);
+}
+
+void WriteLE32(uint8_t* Data, uint32_t Value)
+{
+    Data[0] = static_cast<uint8_t>(Value & 0xFFu);
+    Data[1] = static_cast<uint8_t>((Value >> 8) & 0xFFu);
+    Data[2] = static_cast<uint8_t>((Value >> 16) & 0xFFu);
+    Data[3] = static_cast<uint8_t>((Value >> 24) & 0xFFu);
+}
+
+uint16_t AlignTo4(uint16_t Value)
+{
+    return static_cast<uint16_t>((Value + 3u) & static_cast<uint16_t>(~3u));
 }
 
 const char* Ext2DirectoryEntryTypeToString(uint8_t Type)
@@ -178,6 +200,71 @@ bool ExtendedFileSystemManager::ReadBytesFromDisk(uint32_t OffsetBytes, void* Bu
 
         memcpy(Destination + BytesCopied, SectorBuffer + SectorStartOffset, BytesToCopy);
         BytesCopied += BytesToCopy;
+    }
+
+    return true;
+}
+
+bool ExtendedFileSystemManager::WriteBytesToDisk(uint32_t OffsetBytes, const void* Buffer, uint32_t SizeBytes) const
+{
+    if (Controller == nullptr || Buffer == nullptr || !Controller->IsInitialized() || !PartitionConfigured)
+    {
+        return false;
+    }
+
+    if (SizeBytes == 0)
+    {
+        return true;
+    }
+
+    uint32_t SectorSize = Controller->GetBlockSizeBytes();
+    if (SectorSize == 0)
+    {
+        return false;
+    }
+
+    uint64_t StartSector        = static_cast<uint64_t>(OffsetBytes) / SectorSize;
+    uint64_t EndOffsetExclusive = static_cast<uint64_t>(OffsetBytes) + SizeBytes;
+    uint64_t EndSectorInclusive = (EndOffsetExclusive - 1) / SectorSize;
+
+    if (StartSector >= PartitionSectorCount || EndSectorInclusive >= PartitionSectorCount)
+    {
+        return false;
+    }
+
+    const uint8_t* Source       = static_cast<const uint8_t*>(Buffer);
+    uint64_t       BytesWritten = 0;
+
+    for (uint64_t SectorIndex = StartSector; SectorIndex <= EndSectorInclusive; ++SectorIndex)
+    {
+        uint64_t AbsoluteSector = PartitionStartLBA + SectorIndex;
+        if (AbsoluteSector > 0xFFFFFFFFu)
+        {
+            return false;
+        }
+
+        uint8_t SectorBuffer[CONTROLLER_SECTOR_SIZE_BYTES] = {};
+
+        uint32_t SectorStartOffset = (SectorIndex == StartSector) ? (OffsetBytes % SectorSize) : 0;
+        uint32_t SectorAvailable   = SectorSize - SectorStartOffset;
+        uint64_t Remaining         = static_cast<uint64_t>(SizeBytes) - BytesWritten;
+        uint32_t BytesToWrite      = (Remaining < SectorAvailable) ? static_cast<uint32_t>(Remaining) : SectorAvailable;
+
+        if (SectorStartOffset != 0 || BytesToWrite != SectorSize)
+        {
+            if (!Controller->ReadBlock(static_cast<uint32_t>(AbsoluteSector), SectorBuffer))
+            {
+                return false;
+            }
+        }
+
+        memcpy(SectorBuffer + SectorStartOffset, Source + BytesWritten, BytesToWrite);
+        if (!Controller->WriteBlock(static_cast<uint32_t>(AbsoluteSector), SectorBuffer))
+        {
+            return false;
+        }
+
+        BytesWritten += BytesToWrite;
     }
 
     return true;
@@ -766,6 +853,690 @@ uint32_t ExtendedFileSystemManager::GetInodesCount() const
 uint32_t ExtendedFileSystemManager::GetBlocksCount() const
 {
     return BlocksCount;
+}
+
+bool ExtendedFileSystemManager::CreateDirectory(const char* Path)
+{
+    if (!Initialized || Path == nullptr || BlockSizeBytes == 0 || InodeSizeBytes == 0 || InodesPerGroup == 0 || BlocksPerGroup == 0)
+    {
+        return false;
+    }
+
+    const char* EffectivePath = Path;
+    while (*EffectivePath == '/')
+    {
+        ++EffectivePath;
+    }
+
+    if (*EffectivePath == '\0')
+    {
+        return false;
+    }
+
+    constexpr uint32_t MAX_PATH_CHARS     = 1024;
+    constexpr uint32_t MAX_PATH_SEGMENTS  = 64;
+    constexpr uint32_t MAX_SEGMENT_CHARS  = 255;
+    char               PathBuffer[MAX_PATH_CHARS];
+    kmemset(PathBuffer, 0, sizeof(PathBuffer));
+
+    uint32_t PathLength = 0;
+    while (EffectivePath[PathLength] != '\0' && PathLength < (MAX_PATH_CHARS - 1))
+    {
+        PathBuffer[PathLength] = EffectivePath[PathLength];
+        ++PathLength;
+    }
+    PathBuffer[PathLength] = '\0';
+
+    while (PathLength > 0 && PathBuffer[PathLength - 1] == '/')
+    {
+        PathBuffer[PathLength - 1] = '\0';
+        --PathLength;
+    }
+
+    if (PathLength == 0)
+    {
+        return false;
+    }
+
+    char     Segments[MAX_PATH_SEGMENTS][MAX_SEGMENT_CHARS + 1];
+    uint32_t SegmentLengths[MAX_PATH_SEGMENTS];
+    kmemset(Segments, 0, sizeof(Segments));
+    kmemset(SegmentLengths, 0, sizeof(SegmentLengths));
+    uint32_t SegmentCount                                        = 0;
+
+    uint32_t Cursor = 0;
+    while (Cursor < PathLength)
+    {
+        while (Cursor < PathLength && PathBuffer[Cursor] == '/')
+        {
+            ++Cursor;
+        }
+
+        if (Cursor >= PathLength)
+        {
+            break;
+        }
+
+        if (SegmentCount >= MAX_PATH_SEGMENTS)
+        {
+            return false;
+        }
+
+        uint32_t SegmentStart = Cursor;
+        while (Cursor < PathLength && PathBuffer[Cursor] != '/')
+        {
+            ++Cursor;
+        }
+
+        uint32_t SegmentLength = Cursor - SegmentStart;
+        if (SegmentLength == 0 || SegmentLength > MAX_SEGMENT_CHARS)
+        {
+            return false;
+        }
+
+        for (uint32_t NameIndex = 0; NameIndex < SegmentLength; ++NameIndex)
+        {
+            Segments[SegmentCount][NameIndex] = PathBuffer[SegmentStart + NameIndex];
+        }
+        Segments[SegmentCount][SegmentLength] = '\0';
+        SegmentLengths[SegmentCount]          = SegmentLength;
+        ++SegmentCount;
+    }
+
+    if (SegmentCount == 0)
+    {
+        return false;
+    }
+
+    const char* NewDirectoryName      = Segments[SegmentCount - 1];
+    uint32_t    NewDirectoryNameBytes = SegmentLengths[SegmentCount - 1];
+
+    if ((NewDirectoryNameBytes == 1 && NewDirectoryName[0] == '.') || (NewDirectoryNameBytes == 2 && NewDirectoryName[0] == '.' && NewDirectoryName[1] == '.'))
+    {
+        return false;
+    }
+
+    auto ReadGroupDescriptor = [&](uint32_t GroupIndex, uint8_t* GroupDescriptor) -> bool
+    {
+        uint32_t GroupDescriptorTableOffset = (BlockSizeBytes == 1024u) ? (2u * BlockSizeBytes) : BlockSizeBytes;
+        uint64_t GroupDescriptorOffset64    = static_cast<uint64_t>(GroupDescriptorTableOffset) + (static_cast<uint64_t>(GroupIndex) * EXT2_GROUP_DESCRIPTOR_SIZE);
+        if (GroupDescriptorOffset64 > 0xFFFFFFFFu)
+        {
+            return false;
+        }
+
+        return ReadBytesFromDisk(static_cast<uint32_t>(GroupDescriptorOffset64), GroupDescriptor, EXT2_GROUP_DESCRIPTOR_SIZE);
+    };
+
+    auto WriteGroupDescriptor = [&](uint32_t GroupIndex, const uint8_t* GroupDescriptor) -> bool
+    {
+        uint32_t GroupDescriptorTableOffset = (BlockSizeBytes == 1024u) ? (2u * BlockSizeBytes) : BlockSizeBytes;
+        uint64_t GroupDescriptorOffset64    = static_cast<uint64_t>(GroupDescriptorTableOffset) + (static_cast<uint64_t>(GroupIndex) * EXT2_GROUP_DESCRIPTOR_SIZE);
+        if (GroupDescriptorOffset64 > 0xFFFFFFFFu)
+        {
+            return false;
+        }
+
+        return WriteBytesToDisk(static_cast<uint32_t>(GroupDescriptorOffset64), GroupDescriptor, EXT2_GROUP_DESCRIPTOR_SIZE);
+    };
+
+    auto WriteUpdatedSuperblockCounters = [&]() -> bool
+    {
+        uint8_t SuperBlock[EXT2_SUPERBLOCK_SIZE_BYTES];
+        kmemset(SuperBlock, 0, sizeof(SuperBlock));
+        if (!ReadBytesFromDisk(EXT2_SUPERBLOCK_OFFSET_BYTES, SuperBlock, EXT2_SUPERBLOCK_SIZE_BYTES))
+        {
+            return false;
+        }
+
+        WriteLE32(&SuperBlock[EXT2_SUPERBLOCK_FREE_BLOCKS_OFFSET], FreeBlocksCount);
+        WriteLE32(&SuperBlock[EXT2_SUPERBLOCK_FREE_INODES_OFFSET], FreeInodesCount);
+        return WriteBytesToDisk(EXT2_SUPERBLOCK_OFFSET_BYTES, SuperBlock, EXT2_SUPERBLOCK_SIZE_BYTES);
+    };
+
+    auto WriteInodeData = [&](uint32_t InodeNumber, const uint8_t* InodeData) -> bool
+    {
+        if (InodeNumber == 0)
+        {
+            return false;
+        }
+
+        uint32_t ZeroBasedInode = InodeNumber - 1;
+        uint32_t GroupIndex     = ZeroBasedInode / InodesPerGroup;
+        uint32_t InodeIndex     = ZeroBasedInode % InodesPerGroup;
+
+        uint8_t GroupDescriptor[EXT2_GROUP_DESCRIPTOR_SIZE];
+        kmemset(GroupDescriptor, 0, sizeof(GroupDescriptor));
+        if (!ReadGroupDescriptor(GroupIndex, GroupDescriptor))
+        {
+            return false;
+        }
+
+        uint32_t InodeTableBlock = ReadLE32(&GroupDescriptor[8]);
+        if (InodeTableBlock == 0)
+        {
+            return false;
+        }
+
+        uint64_t InodeOffset64 = (static_cast<uint64_t>(InodeTableBlock) * BlockSizeBytes) + (static_cast<uint64_t>(InodeIndex) * InodeSizeBytes);
+        if (InodeOffset64 > 0xFFFFFFFFu)
+        {
+            return false;
+        }
+
+        return WriteBytesToDisk(static_cast<uint32_t>(InodeOffset64), InodeData, InodeSizeBytes);
+    };
+
+    auto FindEntryInDirectory = [&](uint32_t DirectoryInode, const char* EntryName, uint32_t EntryNameLength, uint32_t* ChildInodeNumber, bool* IsDirectory, bool* Found) -> bool
+    {
+        if (Found == nullptr)
+        {
+            return false;
+        }
+
+        *Found = false;
+
+        uint8_t DirectoryInodeData[256];
+        kmemset(DirectoryInodeData, 0, sizeof(DirectoryInodeData));
+        if (InodeSizeBytes > sizeof(DirectoryInodeData) || !ReadInode(DirectoryInode, DirectoryInodeData, sizeof(DirectoryInodeData)))
+        {
+            return false;
+        }
+
+        uint16_t DirectoryMode = ReadLE16(&DirectoryInodeData[0]);
+        if ((DirectoryMode & EXT2_INODE_MODE_DIRECTORY) == 0)
+        {
+            return false;
+        }
+
+        for (uint32_t PointerIndex = 0; PointerIndex < 12; ++PointerIndex)
+        {
+            uint32_t BlockNumber = ReadLE32(&DirectoryInodeData[40 + (PointerIndex * 4)]);
+            if (BlockNumber == 0)
+            {
+                continue;
+            }
+
+            uint64_t BlockOffset64 = static_cast<uint64_t>(BlockNumber) * BlockSizeBytes;
+            if (BlockOffset64 > 0xFFFFFFFFu)
+            {
+                return false;
+            }
+
+            uint8_t* BlockData = new uint8_t[BlockSizeBytes];
+            if (BlockData == nullptr)
+            {
+                return false;
+            }
+
+            bool ReadOk = ReadBytesFromDisk(static_cast<uint32_t>(BlockOffset64), BlockData, BlockSizeBytes);
+            if (!ReadOk)
+            {
+                delete[] BlockData;
+                return false;
+            }
+
+            uint32_t EntryOffset = 0;
+            while (EntryOffset + 8 <= BlockSizeBytes)
+            {
+                uint32_t EntryInode  = ReadLE32(&BlockData[EntryOffset]);
+                uint16_t EntryLength = ReadLE16(&BlockData[EntryOffset + 4]);
+                uint8_t  NameLength  = BlockData[EntryOffset + 6];
+                uint8_t  EntryType   = BlockData[EntryOffset + 7];
+
+                if (EntryLength < 8 || (EntryOffset + EntryLength) > BlockSizeBytes)
+                {
+                    break;
+                }
+
+                if (EntryInode != 0 && NameLength == EntryNameLength && (8u + NameLength) <= EntryLength)
+                {
+                    bool Matches = true;
+                    for (uint32_t NameIndex = 0; NameIndex < NameLength; ++NameIndex)
+                    {
+                        if (BlockData[EntryOffset + 8 + NameIndex] != static_cast<uint8_t>(EntryName[NameIndex]))
+                        {
+                            Matches = false;
+                            break;
+                        }
+                    }
+
+                    if (Matches)
+                    {
+                        if (ChildInodeNumber != nullptr)
+                        {
+                            *ChildInodeNumber = EntryInode;
+                        }
+
+                        if (IsDirectory != nullptr)
+                        {
+                            if (EntryType == 2)
+                            {
+                                *IsDirectory = true;
+                            }
+                            else if (EntryType == 1 || EntryType == 7)
+                            {
+                                *IsDirectory = false;
+                            }
+                            else
+                            {
+                                uint8_t ChildInodeData[256];
+                                kmemset(ChildInodeData, 0, sizeof(ChildInodeData));
+                                if (InodeSizeBytes > sizeof(ChildInodeData) || !ReadInode(EntryInode, ChildInodeData, sizeof(ChildInodeData)))
+                                {
+                                    delete[] BlockData;
+                                    return false;
+                                }
+
+                                uint16_t ChildMode = ReadLE16(&ChildInodeData[0]);
+                                *IsDirectory       = ((ChildMode & EXT2_INODE_MODE_DIRECTORY) != 0);
+                            }
+                        }
+
+                        *Found = true;
+                        delete[] BlockData;
+                        return true;
+                    }
+                }
+
+                EntryOffset += EntryLength;
+            }
+
+            delete[] BlockData;
+        }
+
+        return true;
+    };
+
+    auto AllocateInodeInGroup = [&](uint32_t GroupIndex, uint32_t* AllocatedInode) -> bool
+    {
+        if (AllocatedInode == nullptr)
+        {
+            return false;
+        }
+
+        uint8_t GroupDescriptor[EXT2_GROUP_DESCRIPTOR_SIZE];
+        kmemset(GroupDescriptor, 0, sizeof(GroupDescriptor));
+        if (!ReadGroupDescriptor(GroupIndex, GroupDescriptor))
+        {
+            return false;
+        }
+
+        uint16_t GroupFreeInodes = ReadLE16(&GroupDescriptor[14]);
+        if (GroupFreeInodes == 0)
+        {
+            return false;
+        }
+
+        uint32_t InodeBitmapBlock = ReadLE32(&GroupDescriptor[4]);
+        if (InodeBitmapBlock == 0)
+        {
+            return false;
+        }
+
+        uint64_t BitmapOffset64 = static_cast<uint64_t>(InodeBitmapBlock) * BlockSizeBytes;
+        if (BitmapOffset64 > 0xFFFFFFFFu)
+        {
+            return false;
+        }
+
+        uint8_t* InodeBitmap = new uint8_t[BlockSizeBytes];
+        if (InodeBitmap == nullptr)
+        {
+            return false;
+        }
+
+        if (!ReadBytesFromDisk(static_cast<uint32_t>(BitmapOffset64), InodeBitmap, BlockSizeBytes))
+        {
+            delete[] InodeBitmap;
+            return false;
+        }
+
+        for (uint32_t BitIndex = 0; BitIndex < InodesPerGroup; ++BitIndex)
+        {
+            uint32_t InodeNumber = (GroupIndex * InodesPerGroup) + BitIndex + 1;
+            if (InodeNumber > InodesCount)
+            {
+                break;
+            }
+
+            uint32_t ByteIndex = BitIndex / 8;
+            uint8_t  BitMask   = static_cast<uint8_t>(1u << (BitIndex % 8));
+
+            if ((InodeBitmap[ByteIndex] & BitMask) == 0)
+            {
+                InodeBitmap[ByteIndex] = static_cast<uint8_t>(InodeBitmap[ByteIndex] | BitMask);
+
+                if (!WriteBytesToDisk(static_cast<uint32_t>(BitmapOffset64), InodeBitmap, BlockSizeBytes))
+                {
+                    delete[] InodeBitmap;
+                    return false;
+                }
+
+                delete[] InodeBitmap;
+
+                WriteLE16(&GroupDescriptor[14], static_cast<uint16_t>(GroupFreeInodes - 1));
+                uint16_t UsedDirectories = ReadLE16(&GroupDescriptor[16]);
+                WriteLE16(&GroupDescriptor[16], static_cast<uint16_t>(UsedDirectories + 1));
+
+                if (!WriteGroupDescriptor(GroupIndex, GroupDescriptor))
+                {
+                    return false;
+                }
+
+                if (FreeInodesCount == 0)
+                {
+                    return false;
+                }
+                --FreeInodesCount;
+
+                if (!WriteUpdatedSuperblockCounters())
+                {
+                    ++FreeInodesCount;
+                    return false;
+                }
+
+                *AllocatedInode = InodeNumber;
+                return true;
+            }
+        }
+
+        delete[] InodeBitmap;
+        return false;
+    };
+
+    auto AllocateBlockInGroup = [&](uint32_t GroupIndex, uint32_t* AllocatedBlock) -> bool
+    {
+        if (AllocatedBlock == nullptr)
+        {
+            return false;
+        }
+
+        uint8_t GroupDescriptor[EXT2_GROUP_DESCRIPTOR_SIZE];
+        kmemset(GroupDescriptor, 0, sizeof(GroupDescriptor));
+        if (!ReadGroupDescriptor(GroupIndex, GroupDescriptor))
+        {
+            return false;
+        }
+
+        uint16_t GroupFreeBlocks = ReadLE16(&GroupDescriptor[12]);
+        if (GroupFreeBlocks == 0)
+        {
+            return false;
+        }
+
+        uint32_t BlockBitmapBlock = ReadLE32(&GroupDescriptor[0]);
+        if (BlockBitmapBlock == 0)
+        {
+            return false;
+        }
+
+        uint64_t BitmapOffset64 = static_cast<uint64_t>(BlockBitmapBlock) * BlockSizeBytes;
+        if (BitmapOffset64 > 0xFFFFFFFFu)
+        {
+            return false;
+        }
+
+        uint8_t* BlockBitmap = new uint8_t[BlockSizeBytes];
+        if (BlockBitmap == nullptr)
+        {
+            return false;
+        }
+
+        if (!ReadBytesFromDisk(static_cast<uint32_t>(BitmapOffset64), BlockBitmap, BlockSizeBytes))
+        {
+            delete[] BlockBitmap;
+            return false;
+        }
+
+        for (uint32_t BitIndex = 0; BitIndex < BlocksPerGroup; ++BitIndex)
+        {
+            uint32_t BlockNumber = (GroupIndex * BlocksPerGroup) + BitIndex + FirstDataBlock;
+            if (BlockNumber >= BlocksCount)
+            {
+                break;
+            }
+
+            uint32_t ByteIndex = BitIndex / 8;
+            uint8_t  BitMask   = static_cast<uint8_t>(1u << (BitIndex % 8));
+
+            if ((BlockBitmap[ByteIndex] & BitMask) == 0)
+            {
+                BlockBitmap[ByteIndex] = static_cast<uint8_t>(BlockBitmap[ByteIndex] | BitMask);
+
+                if (!WriteBytesToDisk(static_cast<uint32_t>(BitmapOffset64), BlockBitmap, BlockSizeBytes))
+                {
+                    delete[] BlockBitmap;
+                    return false;
+                }
+
+                delete[] BlockBitmap;
+
+                WriteLE16(&GroupDescriptor[12], static_cast<uint16_t>(GroupFreeBlocks - 1));
+                if (!WriteGroupDescriptor(GroupIndex, GroupDescriptor))
+                {
+                    return false;
+                }
+
+                if (FreeBlocksCount == 0)
+                {
+                    return false;
+                }
+                --FreeBlocksCount;
+
+                if (!WriteUpdatedSuperblockCounters())
+                {
+                    ++FreeBlocksCount;
+                    return false;
+                }
+
+                *AllocatedBlock = BlockNumber;
+                return true;
+            }
+        }
+
+        delete[] BlockBitmap;
+        return false;
+    };
+
+    uint32_t ParentInodeNumber = EXT2_ROOT_INODE_NUMBER;
+    for (uint32_t SegmentIndex = 0; SegmentIndex + 1 < SegmentCount; ++SegmentIndex)
+    {
+        uint32_t ChildInode = 0;
+        bool     IsDir      = false;
+        bool     Found      = false;
+
+        if (!FindEntryInDirectory(ParentInodeNumber, Segments[SegmentIndex], SegmentLengths[SegmentIndex], &ChildInode, &IsDir, &Found))
+        {
+            return false;
+        }
+
+        if (!Found || !IsDir)
+        {
+            return false;
+        }
+
+        ParentInodeNumber = ChildInode;
+    }
+
+    {
+        bool Exists      = false;
+        bool ExistsIsDir = false;
+        if (!FindEntryInDirectory(ParentInodeNumber, NewDirectoryName, NewDirectoryNameBytes, nullptr, &ExistsIsDir, &Exists))
+        {
+            return false;
+        }
+
+        if (Exists)
+        {
+            return false;
+        }
+    }
+
+    uint32_t ParentGroupIndex = (ParentInodeNumber - 1) / InodesPerGroup;
+
+    uint32_t NewDirectoryInode = 0;
+    if (!AllocateInodeInGroup(ParentGroupIndex, &NewDirectoryInode))
+    {
+        return false;
+    }
+
+    uint32_t NewDirectoryDataBlock = 0;
+    if (!AllocateBlockInGroup(ParentGroupIndex, &NewDirectoryDataBlock))
+    {
+        return false;
+    }
+
+    uint8_t* NewDirectoryBlock = new uint8_t[BlockSizeBytes];
+    if (NewDirectoryBlock == nullptr)
+    {
+        return false;
+    }
+
+    kmemset(NewDirectoryBlock, 0, BlockSizeBytes);
+
+    WriteLE32(&NewDirectoryBlock[0], NewDirectoryInode);
+    WriteLE16(&NewDirectoryBlock[4], 12);
+    NewDirectoryBlock[6] = 1;
+    NewDirectoryBlock[7] = 2;
+    NewDirectoryBlock[8] = '.';
+
+    WriteLE32(&NewDirectoryBlock[12], ParentInodeNumber);
+    WriteLE16(&NewDirectoryBlock[16], static_cast<uint16_t>(BlockSizeBytes - 12));
+    NewDirectoryBlock[18] = 2;
+    NewDirectoryBlock[19] = 2;
+    NewDirectoryBlock[20] = '.';
+    NewDirectoryBlock[21] = '.';
+
+    uint64_t NewDirectoryBlockOffset64 = static_cast<uint64_t>(NewDirectoryDataBlock) * BlockSizeBytes;
+    if (NewDirectoryBlockOffset64 > 0xFFFFFFFFu || !WriteBytesToDisk(static_cast<uint32_t>(NewDirectoryBlockOffset64), NewDirectoryBlock, BlockSizeBytes))
+    {
+        delete[] NewDirectoryBlock;
+        return false;
+    }
+
+    delete[] NewDirectoryBlock;
+
+    uint8_t* NewInodeData = new uint8_t[InodeSizeBytes];
+    if (NewInodeData == nullptr)
+    {
+        return false;
+    }
+
+    kmemset(NewInodeData, 0, InodeSizeBytes);
+    WriteLE16(&NewInodeData[0], EXT2_INODE_MODE_DIRECTORY_0755);
+    WriteLE32(&NewInodeData[4], BlockSizeBytes);
+    WriteLE16(&NewInodeData[26], 2);
+    WriteLE32(&NewInodeData[28], BlockSizeBytes / 512u);
+    WriteLE32(&NewInodeData[40], NewDirectoryDataBlock);
+
+    if (!WriteInodeData(NewDirectoryInode, NewInodeData))
+    {
+        delete[] NewInodeData;
+        return false;
+    }
+
+    delete[] NewInodeData;
+
+    uint8_t ParentInodeData[256];
+    kmemset(ParentInodeData, 0, sizeof(ParentInodeData));
+    if (InodeSizeBytes > sizeof(ParentInodeData) || !ReadInode(ParentInodeNumber, ParentInodeData, sizeof(ParentInodeData)))
+    {
+        return false;
+    }
+
+    bool AddedToParent = false;
+    uint16_t NewEntryRecordLength = AlignTo4(static_cast<uint16_t>(8u + NewDirectoryNameBytes));
+
+    for (uint32_t PointerIndex = 0; PointerIndex < 12 && !AddedToParent; ++PointerIndex)
+    {
+        uint32_t ParentBlockNumber = ReadLE32(&ParentInodeData[40 + (PointerIndex * 4)]);
+        if (ParentBlockNumber == 0)
+        {
+            continue;
+        }
+
+        uint64_t ParentBlockOffset64 = static_cast<uint64_t>(ParentBlockNumber) * BlockSizeBytes;
+        if (ParentBlockOffset64 > 0xFFFFFFFFu)
+        {
+            return false;
+        }
+
+        uint8_t* ParentBlockData = new uint8_t[BlockSizeBytes];
+        if (ParentBlockData == nullptr)
+        {
+            return false;
+        }
+
+        if (!ReadBytesFromDisk(static_cast<uint32_t>(ParentBlockOffset64), ParentBlockData, BlockSizeBytes))
+        {
+            delete[] ParentBlockData;
+            return false;
+        }
+
+        uint32_t EntryOffset = 0;
+        while (EntryOffset + 8 <= BlockSizeBytes)
+        {
+            uint16_t EntryLength = ReadLE16(&ParentBlockData[EntryOffset + 4]);
+            uint8_t  NameLength  = ParentBlockData[EntryOffset + 6];
+
+            if (EntryLength < 8 || (EntryOffset + EntryLength) > BlockSizeBytes)
+            {
+                break;
+            }
+
+            uint16_t CurrentMinimumLength = AlignTo4(static_cast<uint16_t>(8u + NameLength));
+            if (EntryLength >= static_cast<uint16_t>(CurrentMinimumLength + NewEntryRecordLength))
+            {
+                uint16_t NewEntryOffset = static_cast<uint16_t>(EntryOffset + CurrentMinimumLength);
+                uint16_t RemainingLength = static_cast<uint16_t>(EntryLength - CurrentMinimumLength);
+
+                WriteLE16(&ParentBlockData[EntryOffset + 4], CurrentMinimumLength);
+
+                WriteLE32(&ParentBlockData[NewEntryOffset], NewDirectoryInode);
+                WriteLE16(&ParentBlockData[NewEntryOffset + 4], RemainingLength);
+                ParentBlockData[NewEntryOffset + 6] = static_cast<uint8_t>(NewDirectoryNameBytes);
+                ParentBlockData[NewEntryOffset + 7] = 2;
+
+                for (uint32_t NameIndex = 0; NameIndex < NewDirectoryNameBytes; ++NameIndex)
+                {
+                    ParentBlockData[NewEntryOffset + 8 + NameIndex] = static_cast<uint8_t>(NewDirectoryName[NameIndex]);
+                }
+
+                if (!WriteBytesToDisk(static_cast<uint32_t>(ParentBlockOffset64), ParentBlockData, BlockSizeBytes))
+                {
+                    delete[] ParentBlockData;
+                    return false;
+                }
+
+                AddedToParent = true;
+                delete[] ParentBlockData;
+                break;
+            }
+
+            EntryOffset += EntryLength;
+        }
+
+        if (!AddedToParent)
+        {
+            delete[] ParentBlockData;
+        }
+    }
+
+    if (!AddedToParent)
+    {
+        return false;
+    }
+
+    uint16_t ParentLinks = ReadLE16(&ParentInodeData[26]);
+    WriteLE16(&ParentInodeData[26], static_cast<uint16_t>(ParentLinks + 1));
+
+    if (!WriteInodeData(ParentInodeNumber, ParentInodeData))
+    {
+        return false;
+    }
+
+    return true;
 }
 
 bool ExtendedFileSystemManager::EnumerateEntries(ExtendedFileSystemEntryCallback Callback, void* Context, TTY* Terminal) const

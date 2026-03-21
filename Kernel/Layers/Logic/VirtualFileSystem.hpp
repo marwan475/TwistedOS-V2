@@ -79,7 +79,9 @@ struct Dentry
 class VirtualFileSystem
 {
 private:
-    Dentry* Root;
+    Dentry*                     Root;
+    bool                        isEXT;
+    ExtendedFileSystemManager*  ActiveExtendedFileSystem;
 
 public:
     VirtualFileSystem();
@@ -87,6 +89,7 @@ public:
     void    MountInitRamFileSystem(RamFileSystemManager* ramFileSystemManager);
     bool    MountEXTFileSystem(ExtendedFileSystemManager* extendedFileSystemManager, const char* mountPath);
     bool    RegisterDevice(const char* path, void* deviceData, FileOperations* fileOperations);
+    bool    CreateDirectory(const char* path);
     bool    SetRoot(Dentry* RootDentry);
     Dentry* Lookup(const char* path);
     Dentry* LookupNoFollowFinal(const char* path);

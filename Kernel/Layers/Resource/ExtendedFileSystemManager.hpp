@@ -55,6 +55,7 @@ private:
     char                 VolumeName[17];
 
     bool ReadBytesFromDisk(uint32_t OffsetBytes, void* Buffer, uint32_t SizeBytes) const;
+    bool WriteBytesToDisk(uint32_t OffsetBytes, const void* Buffer, uint32_t SizeBytes) const;
     bool ReadInode(uint32_t InodeNumber, uint8_t* InodeData, uint32_t InodeDataSize) const;
     bool ReadInodePayload(uint32_t InodeNumber, const uint8_t* InodeData, uint16_t InodeMode, uint64_t PayloadSize, void* DestinationBuffer) const;
     void PrintDirectoryTree(uint32_t DirectoryInodeNumber, TTY* Terminal, uint32_t Depth, uint32_t MaxDepth) const;
@@ -71,6 +72,7 @@ public:
     uint32_t GetBlockSizeBytes() const;
     uint32_t GetInodesCount() const;
     uint32_t GetBlocksCount() const;
+    bool     CreateDirectory(const char* Path);
     bool     EnumerateEntries(ExtendedFileSystemEntryCallback Callback, void* Context, TTY* Terminal = nullptr) const;
     void     PrintFileSystem(TTY* Terminal) const;
     void     PrintFileTree(TTY* Terminal) const;

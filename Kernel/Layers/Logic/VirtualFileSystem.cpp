@@ -820,6 +820,11 @@ bool MountEXTEntryCallback(const ExtendedFileSystemEntry& Entry, void* Context)
     FileType NodeType = DecodeNodeType(Entry.Type);
     void*    NodeData = const_cast<void*>(Entry.Data);
 
+    if (NodeType == INODE_DIR)
+    {
+        NodeData = const_cast<void*>(MountContext->FileSystemManager);
+    }
+
     bool IsMountPointRoot = (Entry.Name != nullptr && Entry.Name[0] == PATH_SEPARATOR && Entry.Name[1] == STRING_TERMINATOR);
     if (IsMountPointRoot)
     {
@@ -916,7 +921,7 @@ void PrintDentryTree(const Dentry* Entry, TTY* Terminal, uint64_t Depth)
  * Returns:
  *   void - Does not return a value.
  */
-VirtualFileSystem::VirtualFileSystem() : Root(nullptr)
+VirtualFileSystem::VirtualFileSystem() : Root(nullptr), isEXT(false), ActiveExtendedFileSystem(nullptr)
 {
 }
 
@@ -952,6 +957,8 @@ void VirtualFileSystem::MountInitRamFileSystem(RamFileSystemManager* ramFileSyst
 
     INode* RootNode = CreateINode(INODE_DIR, 0, nullptr);
     Root            = CreateDentry("/", nullptr, RootNode);
+    isEXT                  = false;
+    ActiveExtendedFileSystem = nullptr;
 
     if (ramFileSystemManager == nullptr)
     {
@@ -999,7 +1006,36 @@ bool VirtualFileSystem::MountEXTFileSystem(ExtendedFileSystemManager* extendedFi
         return false;
     }
 
+    isEXT                  = true;
+    ActiveExtendedFileSystem = extendedFileSystemManager;
+
     return true;
+}
+
+bool VirtualFileSystem::CreateDirectory(const char* path)
+{
+    if (Root == nullptr || path == nullptr)
+    {
+        return false;
+    }
+
+    Dentry* Existing = Lookup(path);
+    if (Existing != nullptr)
+    {
+        return false;
+    }
+
+    if (isEXT && ActiveExtendedFileSystem != nullptr)
+    {
+        if (!ActiveExtendedFileSystem->CreateDirectory(path))
+        {
+            return false;
+        }
+
+        return EnsurePathDentry(Root, path, INODE_DIR, 0, ActiveExtendedFileSystem);
+    }
+
+    return EnsurePathDentry(Root, path, INODE_DIR, 0, nullptr);
 }
 
 bool VirtualFileSystem::RegisterDevice(const char* path, void* deviceData, FileOperations* fileOperations)
@@ -1058,6 +1094,16 @@ bool VirtualFileSystem::SetRoot(Dentry* RootDentry)
 
     RootDentry->parent = nullptr;
     Root = RootDentry;
+
+    if (RootDentry->inode->NodeData != nullptr && RootDentry->inode->NodeData == ActiveExtendedFileSystem)
+    {
+        isEXT = true;
+    }
+    else
+    {
+        isEXT = false;
+    }
+
     return true;
 }
 
