@@ -39,6 +39,7 @@ public:
     int64_t HandleMkdirSystemCall(const char* Path, uint64_t Mode);
     int64_t HandleRmdirSystemCall(const char* Path);
     int64_t HandleUnlinkSystemCall(const char* Path);
+    int64_t HandleRenameSystemCall(const char* OldPath, const char* NewPath);
     int64_t HandleUtimeSystemCall(const char* Path, const void* Times);
     int64_t HandleUtimesSystemCall(const char* Path, const void* Times);
     int64_t HandleFutimesatSystemCall(int64_t DirectoryFileDescriptor, const char* Path, const void* Times);

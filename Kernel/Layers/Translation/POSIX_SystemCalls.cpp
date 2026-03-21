@@ -108,6 +108,9 @@ int64_t TranslationLayer::HandlePosixSystemCallNumber(uint64_t SystemCallNumber,
         case 80: // chdir
             return HandleChdirSystemCall(reinterpret_cast<const char*>(Arg1));
             break;
+        case 82: // rename
+            return HandleRenameSystemCall(reinterpret_cast<const char*>(Arg1), reinterpret_cast<const char*>(Arg2));
+            break;
         case 83: // mkdir
             return HandleMkdirSystemCall(reinterpret_cast<const char*>(Arg1), Arg2);
             break;

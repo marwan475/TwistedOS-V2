@@ -2811,6 +2811,190 @@ int64_t TranslationLayer::HandleUnlinkSystemCall(const char* Path)
     return 0;
 }
 
+int64_t TranslationLayer::HandleRenameSystemCall(const char* OldPath, const char* NewPath)
+{
+    if (Logic == nullptr || OldPath == nullptr || NewPath == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    VirtualFileSystem* VFS = Logic->GetVirtualFileSystem();
+    ProcessManager*    PM  = Logic->GetProcessManager();
+    if (VFS == nullptr || PM == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    Process* CurrentProcess = PM->GetRunningProcess();
+    if (CurrentProcess == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    char KernelOldPath[SYSCALL_PATH_MAX] = {};
+    if (!CopyUserCString(Logic, OldPath, KernelOldPath, sizeof(KernelOldPath)))
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    char KernelNewPath[SYSCALL_PATH_MAX] = {};
+    if (!CopyUserCString(Logic, NewPath, KernelNewPath, sizeof(KernelNewPath)))
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    if (KernelOldPath[0] == '\0' || KernelNewPath[0] == '\0')
+    {
+        return LINUX_ERR_ENOENT;
+    }
+
+    char        EffectiveOldPath[SYSCALL_PATH_MAX] = {};
+    const char* RenameOldPath                      = KernelOldPath;
+    if (KernelOldPath[0] != '/')
+    {
+        Dentry* BaseDirectory = CurrentProcess->CurrentFileSystemLocation;
+        if (BaseDirectory == nullptr)
+        {
+            return LINUX_ERR_ENOENT;
+        }
+
+        char BasePath[SYSCALL_PATH_MAX] = {};
+        if (!BuildAbsolutePathFromDentry(BaseDirectory, BasePath, sizeof(BasePath)))
+        {
+            return LINUX_ERR_EFAULT;
+        }
+
+        uint64_t BasePathLength = CStrLength(BasePath);
+        uint64_t RelativeLength = CStrLength(KernelOldPath);
+        uint64_t NeedsSeparator = (BasePathLength > 1) ? 1 : 0;
+        uint64_t RequiredBytes  = BasePathLength + NeedsSeparator + RelativeLength + 1;
+        if (RequiredBytes > sizeof(EffectiveOldPath))
+        {
+            return LINUX_ERR_EINVAL;
+        }
+
+        memcpy(EffectiveOldPath, BasePath, static_cast<size_t>(BasePathLength));
+        uint64_t Cursor = BasePathLength;
+        if (NeedsSeparator != 0)
+        {
+            EffectiveOldPath[Cursor++] = '/';
+        }
+
+        memcpy(EffectiveOldPath + Cursor, KernelOldPath, static_cast<size_t>(RelativeLength));
+        EffectiveOldPath[Cursor + RelativeLength] = '\0';
+        RenameOldPath                             = EffectiveOldPath;
+    }
+
+    char        EffectiveNewPath[SYSCALL_PATH_MAX] = {};
+    const char* RenameNewPath                      = KernelNewPath;
+    if (KernelNewPath[0] != '/')
+    {
+        Dentry* BaseDirectory = CurrentProcess->CurrentFileSystemLocation;
+        if (BaseDirectory == nullptr)
+        {
+            return LINUX_ERR_ENOENT;
+        }
+
+        char BasePath[SYSCALL_PATH_MAX] = {};
+        if (!BuildAbsolutePathFromDentry(BaseDirectory, BasePath, sizeof(BasePath)))
+        {
+            return LINUX_ERR_EFAULT;
+        }
+
+        uint64_t BasePathLength = CStrLength(BasePath);
+        uint64_t RelativeLength = CStrLength(KernelNewPath);
+        uint64_t NeedsSeparator = (BasePathLength > 1) ? 1 : 0;
+        uint64_t RequiredBytes  = BasePathLength + NeedsSeparator + RelativeLength + 1;
+        if (RequiredBytes > sizeof(EffectiveNewPath))
+        {
+            return LINUX_ERR_EINVAL;
+        }
+
+        memcpy(EffectiveNewPath, BasePath, static_cast<size_t>(BasePathLength));
+        uint64_t Cursor = BasePathLength;
+        if (NeedsSeparator != 0)
+        {
+            EffectiveNewPath[Cursor++] = '/';
+        }
+
+        memcpy(EffectiveNewPath + Cursor, KernelNewPath, static_cast<size_t>(RelativeLength));
+        EffectiveNewPath[Cursor + RelativeLength] = '\0';
+        RenameNewPath                             = EffectiveNewPath;
+    }
+
+    if (CStrEquals(RenameOldPath, RenameNewPath))
+    {
+        return 0;
+    }
+
+    Dentry* ExistingSource = VFS->Lookup(RenameOldPath);
+    if (ExistingSource == nullptr || ExistingSource->inode == nullptr)
+    {
+        return LINUX_ERR_ENOENT;
+    }
+
+    FileType EntryType = INODE_FILE;
+    if (ExistingSource->inode->NodeType == INODE_DIR)
+    {
+        EntryType = INODE_DIR;
+    }
+    else if (ExistingSource->inode->NodeType != INODE_FILE)
+    {
+        return LINUX_ERR_EPERM;
+    }
+
+    Dentry* ExistingDestination = VFS->Lookup(RenameNewPath);
+    if (ExistingDestination != nullptr && ExistingDestination != ExistingSource)
+    {
+        if (EntryType == INODE_DIR)
+        {
+            if (ExistingDestination->inode == nullptr || ExistingDestination->inode->NodeType != INODE_DIR)
+            {
+                return LINUX_ERR_ENOTDIR;
+            }
+
+            if (ExistingDestination->child_count != 0)
+            {
+                return LINUX_ERR_ENOTEMPTY;
+            }
+
+            if (!VFS->DeleteFile(RenameNewPath, INODE_DIR))
+            {
+                return LINUX_ERR_EPERM;
+            }
+        }
+        else
+        {
+            if (ExistingDestination->inode == nullptr)
+            {
+                return LINUX_ERR_ENOENT;
+            }
+
+            if (ExistingDestination->inode->NodeType == INODE_DIR)
+            {
+                return LINUX_ERR_EISDIR;
+            }
+
+            if (ExistingDestination->inode->NodeType != INODE_FILE)
+            {
+                return LINUX_ERR_EPERM;
+            }
+
+            if (!VFS->DeleteFile(RenameNewPath, INODE_FILE))
+            {
+                return LINUX_ERR_EPERM;
+            }
+        }
+    }
+
+    if (!VFS->RenameFile(RenameOldPath, RenameNewPath, EntryType))
+    {
+        return LINUX_ERR_EINVAL;
+    }
+
+    return 0;
+}
+
 int64_t TranslationLayer::HandleUtimesSystemCall(const char* Path, const void* Times)
 {
     if (Logic == nullptr || Path == nullptr)
