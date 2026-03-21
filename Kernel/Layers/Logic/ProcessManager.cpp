@@ -258,8 +258,8 @@ uint8_t ProcessManager::CreateKernelProcess(void* StackPointer, CpuState Initial
     {
         if (Processes[index].Status == PROCESS_TERMINATED)
         {
-            if (!InitializeProcessEntry(Processes[index], PROCESS_READY, PROCESS_LEVEL_KERNEL, FILE_TYPE_RAW_BINARY, StackPointer, &ProcessKernelSystemCallStacks[index][0], 0, nullptr,
-                                        InitialState, true))
+            if (!InitializeProcessEntry(Processes[index], PROCESS_READY, PROCESS_LEVEL_KERNEL, FILE_TYPE_RAW_BINARY, StackPointer, &ProcessKernelSystemCallStacks[index][0], 0, nullptr, InitialState,
+                                        true))
             {
                 return PROCESS_ID_INVALID;
             }
@@ -288,8 +288,8 @@ uint8_t ProcessManager::CreateUserProcess(void* StackPointer, CpuState InitialSt
         if (Processes[index].Status == PROCESS_TERMINATED)
         {
             uint64_t ProgramBreak = (AddressSpace != nullptr) ? AddressSpace->GetHeapVirtualAddressStart() : 0;
-            if (!InitializeProcessEntry(Processes[index], PROCESS_READY, PROCESS_LEVEL_USER, FileType, StackPointer, &ProcessKernelSystemCallStacks[index][0], ProgramBreak, AddressSpace,
-                                        InitialState, true))
+            if (!InitializeProcessEntry(Processes[index], PROCESS_READY, PROCESS_LEVEL_USER, FileType, StackPointer, &ProcessKernelSystemCallStacks[index][0], ProgramBreak, AddressSpace, InitialState,
+                                        true))
             {
                 return PROCESS_ID_INVALID;
             }

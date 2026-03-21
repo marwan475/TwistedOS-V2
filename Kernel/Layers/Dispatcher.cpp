@@ -220,8 +220,7 @@ int64_t Dispatcher::HandleSystemCall(uint64_t SystemCallNumber, uint64_t Arg1, u
     TTY* Terminal = Resource.GetTTY();
     if (Terminal != nullptr)
     {
-        Terminal->Serialprintf("syscall: n=%lu a1=%p a2=%p a3=%p a4=%p a5=%p a6=%p\n", SystemCallNumber, (void*) Arg1, (void*) Arg2, (void*) Arg3, (void*) Arg4, (void*) Arg5,
-                              (void*) Arg6);
+        Terminal->Serialprintf("syscall: n=%lu a1=%p a2=%p a3=%p a4=%p a5=%p a6=%p\n", SystemCallNumber, (void*) Arg1, (void*) Arg2, (void*) Arg3, (void*) Arg4, (void*) Arg5, (void*) Arg6);
     }
 #endif
 

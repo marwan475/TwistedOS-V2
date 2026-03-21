@@ -955,9 +955,9 @@ void VirtualFileSystem::MountInitRamFileSystem(RamFileSystemManager* ramFileSyst
         Root = nullptr;
     }
 
-    INode* RootNode = CreateINode(INODE_DIR, 0, nullptr);
-    Root            = CreateDentry("/", nullptr, RootNode);
-    isEXT                  = false;
+    INode* RootNode          = CreateINode(INODE_DIR, 0, nullptr);
+    Root                     = CreateDentry("/", nullptr, RootNode);
+    isEXT                    = false;
     ActiveExtendedFileSystem = nullptr;
 
     if (ramFileSystemManager == nullptr)
@@ -1006,7 +1006,7 @@ bool VirtualFileSystem::MountEXTFileSystem(ExtendedFileSystemManager* extendedFi
         return false;
     }
 
-    isEXT                  = true;
+    isEXT                    = true;
     ActiveExtendedFileSystem = extendedFileSystemManager;
 
     return true;
@@ -1101,7 +1101,7 @@ bool VirtualFileSystem::SetRoot(Dentry* RootDentry)
     }
 
     RootDentry->parent = nullptr;
-    Root = RootDentry;
+    Root               = RootDentry;
 
     if (RootDentry->inode->NodeData != nullptr && RootDentry->inode->NodeData == ActiveExtendedFileSystem)
     {

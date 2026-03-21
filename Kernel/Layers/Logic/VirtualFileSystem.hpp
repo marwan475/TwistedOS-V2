@@ -79,9 +79,9 @@ struct Dentry
 class VirtualFileSystem
 {
 private:
-    Dentry*                     Root;
-    bool                        isEXT;
-    ExtendedFileSystemManager*  ActiveExtendedFileSystem;
+    Dentry*                    Root;
+    bool                       isEXT;
+    ExtendedFileSystemManager* ActiveExtendedFileSystem;
 
 public:
     VirtualFileSystem();

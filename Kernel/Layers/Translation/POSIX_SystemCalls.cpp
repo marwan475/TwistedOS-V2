@@ -127,8 +127,7 @@ int64_t TranslationLayer::HandlePosixSystemCallNumber(uint64_t SystemCallNumber,
             return HandleChrootSystemCall(reinterpret_cast<const char*>(Arg1));
             break;
         case 165: // mount
-            return HandleMountSystemCall(reinterpret_cast<const char*>(Arg1), reinterpret_cast<const char*>(Arg2), reinterpret_cast<const char*>(Arg3), Arg4,
-                                         reinterpret_cast<const void*>(Arg5));
+            return HandleMountSystemCall(reinterpret_cast<const char*>(Arg1), reinterpret_cast<const char*>(Arg2), reinterpret_cast<const char*>(Arg3), Arg4, reinterpret_cast<const void*>(Arg5));
             break;
         case 217: // getdents64
             return HandleGetdents64SystemCall(Arg1, reinterpret_cast<void*>(Arg2), Arg3);

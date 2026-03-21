@@ -447,8 +447,8 @@ extern "C" void ISRHANDLER(Registers* reg)
 #ifdef DEBUG_BUILD
             if (Terminal != nullptr)
             {
-                Terminal->Serialprintf("CPU exception: int=%lu err=%p rip=%p cs=%p rflags=%p rsp=%p\n", reg->interrupt_number, (void*) reg->error_code, (void*) reg->rip,
-                                       (void*) reg->cs, (void*) reg->rflags, (void*) reg->rsp);
+                Terminal->Serialprintf("CPU exception: int=%lu err=%p rip=%p cs=%p rflags=%p rsp=%p\n", reg->interrupt_number, (void*) reg->error_code, (void*) reg->rip, (void*) reg->cs,
+                                       (void*) reg->rflags, (void*) reg->rsp);
 
                 Process* CurrentProcess = GetCurrentProcessForSystemCallFrame();
                 if (CurrentProcess == nullptr)
@@ -481,15 +481,15 @@ extern "C" void ISRHANDLER(Registers* reg)
                     uint64_t LiveFSBase      = GetUserFSBase();
                     uint64_t ActivePageTable = ActiveDispatcher->GetResourceLayer()->ReadCurrentPageTable();
 
-                    Terminal->Serialprintf("Exception process: id=%u parent=%u state=%s level=%s type=%s waiting_sysret=%u saved_syscall=%u addrspace=%p cr3=%p proc_cr3=%p\n",
-                                           CurrentProcess->Id, CurrentProcess->ParrentId, ProcessStateToString(CurrentProcess->Status), ProcessLevelToString(CurrentProcess->Level),
-                                           ProcessFileTypeToString(CurrentProcess->FileType), CurrentProcess->WaitingForSystemCallReturn ? 1U : 0U,
-                                           CurrentProcess->HasSavedSystemCallFrame ? 1U : 0U, CurrentProcess->AddressSpace, (void*) ActivePageTable, (void*) ProcessPageTable);
+                    Terminal->Serialprintf("Exception process: id=%u parent=%u state=%s level=%s type=%s waiting_sysret=%u saved_syscall=%u addrspace=%p cr3=%p proc_cr3=%p\n", CurrentProcess->Id,
+                                           CurrentProcess->ParrentId, ProcessStateToString(CurrentProcess->Status), ProcessLevelToString(CurrentProcess->Level),
+                                           ProcessFileTypeToString(CurrentProcess->FileType), CurrentProcess->WaitingForSystemCallReturn ? 1U : 0U, CurrentProcess->HasSavedSystemCallFrame ? 1U : 0U,
+                                           CurrentProcess->AddressSpace, (void*) ActivePageTable, (void*) ProcessPageTable);
 
                     Terminal->Serialprintf("Exception process FS: live=%p saved=%p\n", (void*) LiveFSBase, (void*) ProcessFSBase);
 
-                    Terminal->Serialprintf("Exception process ranges: code=[%p..%p) heap=[%p..%p) stack=[%p..%p)\n", (void*) CodeStart, (void*) (CodeStart + CodeSize),
-                                           (void*) HeapStart, (void*) (HeapStart + HeapSize), (void*) StackStart, (void*) (StackStart + StackSize));
+                    Terminal->Serialprintf("Exception process ranges: code=[%p..%p) heap=[%p..%p) stack=[%p..%p)\n", (void*) CodeStart, (void*) (CodeStart + CodeSize), (void*) HeapStart,
+                                           (void*) (HeapStart + HeapSize), (void*) StackStart, (void*) (StackStart + StackSize));
                 }
             }
 #else

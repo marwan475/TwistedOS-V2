@@ -3163,8 +3163,8 @@ int64_t TranslationLayer::HandleExecveSystemCall(const char* Path, const char* c
             {
                 const char* Arg0 = (KernelArgv != nullptr && KernelArgc > 0 && KernelArgv[0] != nullptr) ? KernelArgv[0] : "<null>";
                 const char* Arg1 = (KernelArgv != nullptr && KernelArgc > 1 && KernelArgv[1] != nullptr) ? KernelArgv[1] : "<null>";
-                Terminal->Serialprintf("execve_dbg: path='%s' argc=%lu argv0='%s' argv1='%s' argv_ptr=%p envp_ptr=%p argv_ok=%d env_ok=%d\n", KernelPathBuffer, KernelArgc, Arg0,
-                                       Arg1, (void*) Argv, (void*) Envp, IsArgvValid ? 1 : 0, IsEnvpValid ? 1 : 0);
+                Terminal->Serialprintf("execve_dbg: path='%s' argc=%lu argv0='%s' argv1='%s' argv_ptr=%p envp_ptr=%p argv_ok=%d env_ok=%d\n", KernelPathBuffer, KernelArgc, Arg0, Arg1, (void*) Argv,
+                                       (void*) Envp, IsArgvValid ? 1 : 0, IsEnvpValid ? 1 : 0);
             }
         }
     }
@@ -3272,10 +3272,7 @@ int64_t TranslationLayer::HandleWaitSystemCall(int64_t Pid, int* Status, int64_t
         RequestedChildPid = static_cast<uint8_t>(Pid);
     }
 
-    auto IsMatchingChildId = [&](uint8_t ChildId) -> bool
-    {
-        return WaitAnyChild || ChildId == RequestedChildPid;
-    };
+    auto IsMatchingChildId = [&](uint8_t ChildId) -> bool { return WaitAnyChild || ChildId == RequestedChildPid; };
 
     auto HasMatchingLiveChild = [&]() -> bool
     {

@@ -9,16 +9,16 @@
 #include "Drivers/IDEController.hpp"
 #include "TTY.hpp"
 
-#include <Layers/Dispatcher.hpp>
 #include <CommonUtils.hpp>
+#include <Layers/Dispatcher.hpp>
 
 namespace
 {
-constexpr uint32_t CONTROLLER_SECTOR_SIZE_BYTES = 512;
-constexpr uint32_t EXT2_GROUP_DESCRIPTOR_SIZE   = 32;
-constexpr uint32_t EXT2_ROOT_INODE_NUMBER       = 2;
-constexpr uint16_t EXT2_INODE_MODE_DIRECTORY    = 0x4000;
-constexpr uint16_t EXT2_INODE_MODE_SYMLINK      = 0xA000;
+constexpr uint32_t CONTROLLER_SECTOR_SIZE_BYTES       = 512;
+constexpr uint32_t EXT2_GROUP_DESCRIPTOR_SIZE         = 32;
+constexpr uint32_t EXT2_ROOT_INODE_NUMBER             = 2;
+constexpr uint16_t EXT2_INODE_MODE_DIRECTORY          = 0x4000;
+constexpr uint16_t EXT2_INODE_MODE_SYMLINK            = 0xA000;
 constexpr uint32_t EXT2_SUPERBLOCK_FREE_BLOCKS_OFFSET = 12;
 constexpr uint32_t EXT2_SUPERBLOCK_FREE_INODES_OFFSET = 16;
 constexpr uint16_t EXT2_INODE_MODE_DIRECTORY_0755     = 0x41ED;
@@ -522,9 +522,9 @@ bool ExtendedFileSystemManager::EnumerateDirectoryEntries(uint32_t DirectoryInod
 
                     if (EntryInode <= InodesCount && InodeSizeBytes <= sizeof(ChildInodeData) && ReadInode(EntryInode, ChildInodeData, sizeof(ChildInodeData)))
                     {
-                        EntrySize          = ReadLE32(&ChildInodeData[4]);
-                        ChildMode          = ReadLE16(&ChildInodeData[0]);
-                        IsDirectory        = ((ChildMode & EXT2_INODE_MODE_DIRECTORY) != 0);
+                        EntrySize   = ReadLE32(&ChildInodeData[4]);
+                        ChildMode   = ReadLE16(&ChildInodeData[0]);
+                        IsDirectory = ((ChildMode & EXT2_INODE_MODE_DIRECTORY) != 0);
                     }
 
                     uint64_t DirectoryPathLength = strlen(DirectoryPath);
@@ -561,7 +561,7 @@ bool ExtendedFileSystemManager::EnumerateDirectoryEntries(uint32_t DirectoryInod
 
                     if (ShouldLoadData && EntrySize > 0)
                     {
-                        uint8_t* LoadedData    = nullptr;
+                        uint8_t* LoadedData     = nullptr;
                         bool     UsedKernelHeap = false;
                         bool     UsedPMM        = false;
                         uint64_t PMMPages       = 0;
@@ -573,7 +573,7 @@ bool ExtendedFileSystemManager::EnumerateDirectoryEntries(uint32_t DirectoryInod
 
                             if (EntrySize >= (128 * 1024) && Resource->GetPMM() != nullptr)
                             {
-                                PMMPages  = (EntrySize + 4095) / 4096;
+                                PMMPages   = (EntrySize + 4095) / 4096;
                                 LoadedData = reinterpret_cast<uint8_t*>(Resource->GetPMM()->AllocatePagesFromDescriptor(PMMPages));
                                 UsedPMM    = (LoadedData != nullptr);
                             }
@@ -628,10 +628,10 @@ bool ExtendedFileSystemManager::EnumerateDirectoryEntries(uint32_t DirectoryInod
                         EntryData = LoadedData;
                     }
 
-                    Entry.Data                    = EntryData;
-                    Entry.Size                    = EntrySize;
-                    Entry.Type                    = DecodedType;
-                    Entry.InodeNumber             = EntryInode;
+                    Entry.Data        = EntryData;
+                    Entry.Size        = EntrySize;
+                    Entry.Type        = DecodedType;
+                    Entry.InodeNumber = EntryInode;
 
                     bool ContinueEnumeration = Callback(Entry, Context);
 
@@ -881,9 +881,9 @@ bool ExtendedFileSystemManager::CreateFile(const char* Path, ExtendedFileSystemE
         return false;
     }
 
-    constexpr uint32_t MAX_PATH_CHARS     = 1024;
-    constexpr uint32_t MAX_PATH_SEGMENTS  = 64;
-    constexpr uint32_t MAX_SEGMENT_CHARS  = 255;
+    constexpr uint32_t MAX_PATH_CHARS    = 1024;
+    constexpr uint32_t MAX_PATH_SEGMENTS = 64;
+    constexpr uint32_t MAX_SEGMENT_CHARS = 255;
     char               PathBuffer[MAX_PATH_CHARS];
     kmemset(PathBuffer, 0, sizeof(PathBuffer));
 
@@ -910,7 +910,7 @@ bool ExtendedFileSystemManager::CreateFile(const char* Path, ExtendedFileSystemE
     uint32_t SegmentLengths[MAX_PATH_SEGMENTS];
     kmemset(Segments, 0, sizeof(Segments));
     kmemset(SegmentLengths, 0, sizeof(SegmentLengths));
-    uint32_t SegmentCount                                        = 0;
+    uint32_t SegmentCount = 0;
 
     uint32_t Cursor = 0;
     while (Cursor < PathLength)
@@ -1462,7 +1462,7 @@ bool ExtendedFileSystemManager::CreateFile(const char* Path, ExtendedFileSystemE
         return false;
     }
 
-    bool AddedToParent = false;
+    bool     AddedToParent        = false;
     uint16_t NewEntryRecordLength = AlignTo4(static_cast<uint16_t>(8u + NewEntryNameBytes));
 
     for (uint32_t PointerIndex = 0; PointerIndex < 12 && !AddedToParent; ++PointerIndex)
@@ -1505,7 +1505,7 @@ bool ExtendedFileSystemManager::CreateFile(const char* Path, ExtendedFileSystemE
             uint16_t CurrentMinimumLength = AlignTo4(static_cast<uint16_t>(8u + NameLength));
             if (EntryLength >= static_cast<uint16_t>(CurrentMinimumLength + NewEntryRecordLength))
             {
-                uint16_t NewEntryOffset = static_cast<uint16_t>(EntryOffset + CurrentMinimumLength);
+                uint16_t NewEntryOffset  = static_cast<uint16_t>(EntryOffset + CurrentMinimumLength);
                 uint16_t RemainingLength = static_cast<uint16_t>(EntryLength - CurrentMinimumLength);
 
                 WriteLE16(&ParentBlockData[EntryOffset + 4], CurrentMinimumLength);

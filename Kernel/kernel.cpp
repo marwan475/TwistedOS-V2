@@ -151,8 +151,6 @@ extern "C"
 
         ActiveDispatcher->GetLogicLayer()->RegisterPartitionDevices();
 
-        
-
         ActiveDispatcher->GetLogicLayer()->GetVirtualFileSystem()->PrintVFS(ActiveDispatcher->GetResourceLayer()->GetTTY());
 
 #ifdef STEST_BUILD
