@@ -112,6 +112,8 @@ constexpr int64_t LINUX_PROT_NONE  = 0x0;
 constexpr uint64_t MMAP_DEFAULT_BASE = 0x0000000001000000;
 
 constexpr uint64_t LINUX_O_ACCMODE  = 0x3;
+constexpr uint64_t LINUX_O_CREAT    = 0x40;
+constexpr uint64_t LINUX_O_EXCL     = 0x80;
 constexpr uint64_t LINUX_O_APPEND   = 0x400;
 constexpr uint64_t LINUX_O_NONBLOCK = 0x800;
 constexpr uint64_t LINUX_O_ASYNC    = 0x2000;
@@ -1459,9 +1461,28 @@ int64_t TranslationLayer::HandleOpenSystemCall(const char* Path, uint64_t Flags)
     }
 
     Dentry* NodeDentry = VFS->Lookup(LookupPath);
+    if (NodeDentry != nullptr && NodeDentry->inode != nullptr && (Flags & LINUX_O_CREAT) != 0 && (Flags & LINUX_O_EXCL) != 0)
+    {
+        return LINUX_ERR_EEXIST;
+    }
+
     if (NodeDentry == nullptr || NodeDentry->inode == nullptr)
     {
-        return LINUX_ERR_ENOENT;
+        if ((Flags & LINUX_O_CREAT) == 0)
+        {
+            return LINUX_ERR_ENOENT;
+        }
+
+        if (!VFS->CreateFile(LookupPath, INODE_FILE))
+        {
+            return LINUX_ERR_ENOENT;
+        }
+
+        NodeDentry = VFS->Lookup(LookupPath);
+        if (NodeDentry == nullptr || NodeDentry->inode == nullptr)
+        {
+            return LINUX_ERR_ENOENT;
+        }
     }
 
     return AllocateProcessFileDescriptor(CurrentProcess, NodeDentry, Flags);
@@ -1500,11 +1521,18 @@ int64_t TranslationLayer::HandleOpenAtSystemCall(int64_t DirectoryFileDescriptor
         return LINUX_ERR_ENOENT;
     }
 
-    Dentry* NodeDentry = nullptr;
+    Dentry*    NodeDentry = nullptr;
+    const char* LookupPath = nullptr;
 
     if (KernelPath[0] == '/')
     {
-        NodeDentry = VFS->Lookup(KernelPath);
+        LookupPath = KernelPath;
+        NodeDentry = VFS->Lookup(LookupPath);
+
+        if (NodeDentry != nullptr && NodeDentry->inode != nullptr && (Flags & LINUX_O_CREAT) != 0 && (Flags & LINUX_O_EXCL) != 0)
+        {
+            return LINUX_ERR_EEXIST;
+        }
     }
     else
     {
@@ -1567,12 +1595,56 @@ int64_t TranslationLayer::HandleOpenAtSystemCall(int64_t DirectoryFileDescriptor
         memcpy(AbsolutePath + Cursor, KernelPath, static_cast<size_t>(RelativeLength));
         AbsolutePath[Cursor + RelativeLength] = '\0';
 
-        NodeDentry = VFS->Lookup(AbsolutePath);
+        LookupPath = AbsolutePath;
+        NodeDentry = VFS->Lookup(LookupPath);
+
+        if (NodeDentry != nullptr && NodeDentry->inode != nullptr && (Flags & LINUX_O_CREAT) != 0 && (Flags & LINUX_O_EXCL) != 0)
+        {
+            return LINUX_ERR_EEXIST;
+        }
+
+        if (NodeDentry == nullptr || NodeDentry->inode == nullptr)
+        {
+            if ((Flags & LINUX_O_CREAT) == 0)
+            {
+                return LINUX_ERR_ENOENT;
+            }
+
+            if (!VFS->CreateFile(LookupPath, INODE_FILE))
+            {
+                return LINUX_ERR_ENOENT;
+            }
+
+            NodeDentry = VFS->Lookup(LookupPath);
+        }
+
+        if (NodeDentry == nullptr || NodeDentry->inode == nullptr)
+        {
+            return LINUX_ERR_ENOENT;
+        }
+
+        return AllocateProcessFileDescriptor(CurrentProcess, NodeDentry, Flags);
     }
 
     if (NodeDentry == nullptr || NodeDentry->inode == nullptr)
     {
-        return LINUX_ERR_ENOENT;
+        if ((Flags & LINUX_O_CREAT) == 0)
+        {
+            return LINUX_ERR_ENOENT;
+        }
+
+        if (LookupPath == nullptr || !VFS->CreateFile(LookupPath, INODE_FILE))
+        {
+            return LINUX_ERR_ENOENT;
+        }
+
+        NodeDentry = VFS->Lookup(LookupPath);
+        if (NodeDentry == nullptr || NodeDentry->inode == nullptr)
+        {
+            return LINUX_ERR_ENOENT;
+        }
+
+        return AllocateProcessFileDescriptor(CurrentProcess, NodeDentry, Flags);
     }
 
     return AllocateProcessFileDescriptor(CurrentProcess, NodeDentry, Flags);
