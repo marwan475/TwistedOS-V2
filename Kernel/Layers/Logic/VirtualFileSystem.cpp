@@ -17,6 +17,7 @@ namespace
 constexpr char     PATH_SEPARATOR           = '/';
 constexpr char     PATH_DOT                 = '.';
 constexpr char     STRING_TERMINATOR        = '\0';
+constexpr char     DEV_DIRECTORY_NAME[]     = "dev";
 constexpr uint64_t CHILDREN_GROWTH_ONE      = 1;
 constexpr uint64_t ROOT_FILE_SIZE           = 0;
 constexpr uint64_t ROOT_TREE_DEPTH          = 0;
@@ -44,6 +45,10 @@ typedef struct
 
 bool    IsRootAliasPath(const char* NormalizedPath);
 Dentry* FindChildBySegment(Dentry* Parent, const char* SegmentStart, uint64_t SegmentLength);
+bool    AppendChild(Dentry* Parent, Dentry* Child);
+bool    RemoveChild(Dentry* Parent, Dentry* Child);
+bool    IsDescendantDentry(const Dentry* CandidateDescendant, const Dentry* CandidateAncestor);
+void    TransferDevDirectoryIfMissing(Dentry* OldRoot, Dentry* NewRoot);
 
 int64_t DefaultReadFileOperation(File* OpenFile, void* Buffer, uint64_t Count)
 {
@@ -605,6 +610,63 @@ Dentry* FindChildBySegment(Dentry* Parent, const char* SegmentStart, uint64_t Se
     }
 
     return nullptr;
+}
+
+bool IsDescendantDentry(const Dentry* CandidateDescendant, const Dentry* CandidateAncestor)
+{
+    if (CandidateDescendant == nullptr || CandidateAncestor == nullptr)
+    {
+        return false;
+    }
+
+    const Dentry* Current = CandidateDescendant;
+    while (Current != nullptr)
+    {
+        if (Current == CandidateAncestor)
+        {
+            return true;
+        }
+
+        Current = Current->parent;
+    }
+
+    return false;
+}
+
+void TransferDevDirectoryIfMissing(Dentry* OldRoot, Dentry* NewRoot)
+{
+    if (OldRoot == nullptr || NewRoot == nullptr || OldRoot == NewRoot)
+    {
+        return;
+    }
+
+    Dentry* ExistingDevInNewRoot = FindChildBySegment(NewRoot, DEV_DIRECTORY_NAME, 3);
+    if (ExistingDevInNewRoot != nullptr)
+    {
+        return;
+    }
+
+    Dentry* DevInOldRoot = FindChildBySegment(OldRoot, DEV_DIRECTORY_NAME, 3);
+    if (DevInOldRoot == nullptr || DevInOldRoot->parent == nullptr)
+    {
+        return;
+    }
+
+    if (DevInOldRoot == NewRoot || IsDescendantDentry(NewRoot, DevInOldRoot))
+    {
+        return;
+    }
+
+    Dentry* PreviousParent = DevInOldRoot->parent;
+    if (!RemoveChild(PreviousParent, DevInOldRoot))
+    {
+        return;
+    }
+
+    if (!AppendChild(NewRoot, DevInOldRoot))
+    {
+        AppendChild(PreviousParent, DevInOldRoot);
+    }
 }
 
 /**
@@ -1194,6 +1256,9 @@ bool VirtualFileSystem::SetRoot(Dentry* RootDentry)
 
         RootDentry->name = RootName;
     }
+
+    Dentry* PreviousRoot = Root;
+    TransferDevDirectoryIfMissing(PreviousRoot, RootDentry);
 
     RootDentry->parent = nullptr;
     Root               = RootDentry;
