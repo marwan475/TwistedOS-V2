@@ -35,6 +35,7 @@ public:
     int64_t HandleCloseSystemCall(uint64_t FileDescriptor);
     int64_t HandleGetcwdSystemCall(char* Buffer, uint64_t Size);
     int64_t HandleChdirSystemCall(const char* Path);
+    int64_t HandleMkdirSystemCall(const char* Path, uint64_t Mode);
     int64_t HandleChrootSystemCall(const char* Path);
     int64_t HandleMountSystemCall(const char* Source, const char* Target, const char* FileSystemType, uint64_t MountFlags, const void* Data);
     int64_t HandleMprotectSystemCall(void* Address, uint64_t Length, int64_t Protection);

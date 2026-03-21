@@ -2190,7 +2190,7 @@ void LogicLayer::KillProcess(uint8_t Id, int32_t ExitStatus)
     else
     {
         void* StackToFree = PM->KillProcess(Id);
-        if (StackToFree != nullptr)
+        if (StackToFree != nullptr && TargetProcess != nullptr && TargetProcess->Level == PROCESS_LEVEL_KERNEL)
         {
             Resource->kfree(StackToFree);
         }
