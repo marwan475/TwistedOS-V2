@@ -11,35 +11,65 @@
 #include <stdint.h>
 
 #define KERNEL_HEAP_SIZE (KERNEL_HEAP_PAGES * KERNEL_PAGE_SIZE)
-#define BLOCK_SIZE 64
-#define TOTAL_BLOCKS (KERNEL_HEAP_SIZE / BLOCK_SIZE)
-#define BITS_PER_BYTE 8
-#define BITMAP_SIZE (TOTAL_BLOCKS / BITS_PER_BYTE)
+#define SLAB_PAGE_SIZE KERNEL_PAGE_SIZE
 
-// Way to track free memory
-// - Bitmap
-// Way to track allocations
-// - Header before allocation with size and magic
-
-// Slow bitmap allocator for the kernel heap. We can optimize this later if needed
 class KernelHeapManager
 {
+    static constexpr size_t SLAB_CLASS_COUNT = 7;
+    static constexpr size_t MAX_SLAB_COUNT   = ((KERNEL_HEAP_SIZE / SLAB_PAGE_SIZE) > 0) ? (KERNEL_HEAP_SIZE / SLAB_PAGE_SIZE) : 1;
+
     struct AllocationHeader
     {
-        uint32_t BlockCount;
         uint32_t Magic;
+        uint32_t SlabIndex;
+        uint16_t ClassIndex;
+        uint16_t Reserved;
+    };
+
+    struct FreeObject
+    {
+        FreeObject* Next;
+    };
+
+    enum SlabState : uint8_t
+    {
+        SlabFree = 0,
+        SlabSmall,
+        SlabLargeHead,
+        SlabLargeTail,
+    };
+
+    struct SlabDescriptor
+    {
+        uint8_t     State;
+        uint8_t     ClassIndex;
+        uint16_t    Reserved;
+        uint32_t    OwnerOrSpan;
+        uint32_t    TotalObjects;
+        uint32_t    FreeObjects;
+        FreeObject* FreeList;
+        int32_t     PrevAvailable;
+        int32_t     NextAvailable;
     };
 
     uint64_t HeapStart;
     uint64_t HeapEnd;
-    uint8_t  BitMap[BITMAP_SIZE];
+    size_t   ManagedHeapSize;
+    size_t   SlabCount;
+    SlabDescriptor Slabs[MAX_SLAB_COUNT];
+    int32_t  ClassAvailableHead[SLAB_CLASS_COUNT];
 
-    size_t GetManagedHeapSize() const;
-    size_t GetUsableBlockCount() const;
-    bool   IsBlockUsed(size_t BlockIndex) const;
-    void   SetBlockUsed(size_t BlockIndex, bool Used);
-    bool   IsRangeFree(size_t StartBlock, size_t BlockCount) const;
-    void   MarkRange(size_t StartBlock, size_t BlockCount, bool Used);
+    size_t   GetManagedHeapSize() const;
+    size_t   GetEffectiveSlabCount() const;
+    size_t   SelectClassIndex(size_t Size) const;
+    size_t   GetClassObjectSize(size_t ClassIndex) const;
+    uintptr_t GetSlabBaseAddress(size_t SlabIndex) const;
+    void     ResetAllocatorState();
+    void     LinkSlabIntoClassList(size_t SlabIndex, size_t ClassIndex);
+    void     UnlinkSlabFromClassList(size_t SlabIndex, size_t ClassIndex);
+    bool     InitializeSmallSlab(size_t SlabIndex, size_t ClassIndex);
+    int64_t  FindFreeSlabRun(size_t SlabSpan) const;
+    void     ReleaseSlabRun(size_t StartSlab, size_t SlabSpan);
 
 public:
     KernelHeapManager(uint64_t HeapStart, uint64_t HeapEnd);
