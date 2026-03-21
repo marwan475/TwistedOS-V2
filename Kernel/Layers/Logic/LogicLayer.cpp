@@ -375,6 +375,46 @@ bool InitializeExecveUserEntry(ResourceLayer* Resource, VirtualAddressSpace* Add
     return Success;
 }
 
+bool SeedInitialUserFSBaseForProcess(ResourceLayer* Resource, Process* TargetProcess)
+{
+    if (Resource == nullptr || TargetProcess == nullptr || TargetProcess->AddressSpace == nullptr || TargetProcess->Level != PROCESS_LEVEL_USER)
+    {
+        return false;
+    }
+
+    VirtualAddressSpace* AddressSpace = TargetProcess->AddressSpace;
+    uint64_t             StackBottom  = AddressSpace->GetStackVirtualAddressStart();
+    uint64_t             StackTop     = AddressSpace->GetStackTop();
+
+    constexpr uint64_t TLS_SEED_REGION_SIZE = 0x40;
+    constexpr uint64_t TLS_SEED_OFFSET      = 0x200;
+
+    uint64_t ThreadPointer = (StackBottom + TLS_SEED_OFFSET) & ~STACK_ALIGNMENT_MASK;
+    if ((ThreadPointer + TLS_SEED_REGION_SIZE) > StackTop)
+    {
+        return false;
+    }
+
+    uint64_t UserPageTable     = AddressSpace->GetPageMapL4TableAddr();
+    uint64_t PreviousPageTable = Resource->ReadCurrentPageTable();
+    if (UserPageTable == 0 || PreviousPageTable == 0)
+    {
+        return false;
+    }
+
+    uint64_t SelfPointer = ThreadPointer;
+    uint64_t Canary      = 0x9e3779b97f4a7c15ULL ^ ThreadPointer ^ static_cast<uint64_t>(TargetProcess->Id);
+
+    Resource->LoadPageTable(UserPageTable);
+    kmemset(reinterpret_cast<void*>(ThreadPointer), 0, TLS_SEED_REGION_SIZE);
+    memcpy(reinterpret_cast<void*>(ThreadPointer), &SelfPointer, sizeof(SelfPointer));
+    memcpy(reinterpret_cast<void*>(ThreadPointer + 0x28), &Canary, sizeof(Canary));
+    Resource->LoadPageTable(PreviousPageTable);
+
+    TargetProcess->UserFSBase = ThreadPointer;
+    return true;
+}
+
 bool IsRangeWithin(uint64_t RangeStart, uint64_t RangeSize, uint64_t Address, uint64_t Count)
 {
     if (RangeSize == 0)
@@ -1595,6 +1635,60 @@ uint8_t LogicLayer::CreateUserProcessFromVFS(const char* FilePath)
     return ProcessId;
 }
 
+uint8_t LogicLayer::CreateInitProcess()
+{
+    constexpr const char* InitPath = "/init";
+
+    if (VFS == nullptr || Resource == nullptr)
+    {
+        return PROCESS_ID_INVALID;
+    }
+
+    Dentry* Entry = VFS->Lookup(InitPath);
+    if (Entry == nullptr || Entry->inode == nullptr)
+    {
+        return PROCESS_ID_INVALID;
+    }
+
+    if (Entry->inode->NodeType != INODE_FILE)
+    {
+        return PROCESS_ID_INVALID;
+    }
+
+    if (Entry->inode->NodeData == nullptr || Entry->inode->NodeSize == 0)
+    {
+        return PROCESS_ID_INVALID;
+    }
+
+    uint64_t CodeSize = Entry->inode->NodeSize;
+    uint64_t Pages    = (CodeSize + PAGE_SIZE - 1) / PAGE_SIZE;
+
+    void* CopiedImage = Resource->GetPMM()->AllocatePagesFromDescriptor(Pages);
+    if (CopiedImage == nullptr)
+    {
+        return PROCESS_ID_INVALID;
+    }
+
+    kmemset(CopiedImage, 0, Pages * PAGE_SIZE);
+    memcpy(CopiedImage, Entry->inode->NodeData, CodeSize);
+
+    uint8_t ProcessId = CreateUserProcess(reinterpret_cast<uint64_t>(CopiedImage), CodeSize, InitPath);
+    if (ProcessId == PROCESS_ID_INVALID)
+    {
+        Resource->GetPMM()->FreePagesFromDescriptor(CopiedImage, Pages);
+        return ProcessId;
+    }
+
+    Process* CreatedProcess = PM->GetProcessById(ProcessId);
+    if (CreatedProcess != nullptr)
+    {
+        CreatedProcess->CurrentFileSystemLocation = (Entry->parent != nullptr) ? Entry->parent : Entry;
+        SeedInitialUserFSBaseForProcess(Resource, CreatedProcess);
+    }
+
+    return ProcessId;
+}
+
 /**
  * Function: LogicLayer::CreateUserProcess
  * Description: Creates a user process from raw binary or ELF image and schedules it.
@@ -1604,7 +1698,7 @@ uint8_t LogicLayer::CreateUserProcessFromVFS(const char* FilePath)
  * Returns:
  *   uint8_t - Process ID or 0xFF on failure.
  */
-uint8_t LogicLayer::CreateUserProcess(uint64_t CodeAddr, uint64_t CodeSize)
+uint8_t LogicLayer::CreateUserProcess(uint64_t CodeAddr, uint64_t CodeSize, const char* InitialArgv0)
 {
     if (CodeAddr == 0 || CodeSize == 0)
     {
@@ -1612,10 +1706,14 @@ uint8_t LogicLayer::CreateUserProcess(uint64_t CodeAddr, uint64_t CodeSize)
     }
 
     // Check if code is raw binary or ELF by looking for ELF magic number
-    ELFHeader            Header         = {};
-    VirtualAddressSpace* AddressSpace   = nullptr;
-    bool                 IsELF          = false;
-    uint64_t             UserEntryPoint = USER_PROCESS_VIRTUAL_BASE;
+    ELFHeader            Header                    = {};
+    VirtualAddressSpace* AddressSpace              = nullptr;
+    bool                 IsELF                     = false;
+    uint64_t             UserEntryPoint            = USER_PROCESS_VIRTUAL_BASE;
+    uint64_t             AuxProgramHeaderAddress   = 0;
+    uint64_t             AuxProgramHeaderEntrySize = 0;
+    uint64_t             AuxProgramHeaderCount     = 0;
+    uint64_t             AuxEntryPoint             = 0;
 
     if (ELF != nullptr)
     {
@@ -1625,6 +1723,16 @@ uint8_t LogicLayer::CreateUserProcess(uint64_t CodeAddr, uint64_t CodeSize)
 
     if (IsELF)
     {
+        const ELFProgramHeader64* ProgramHeaders = ELF->GetProgramHeaderTable(CodeAddr, Header);
+        if (ProgramHeaders != nullptr)
+        {
+            TranslateELFFileOffsetToVirtualAddress(ProgramHeaders, Header.ProgramHeaderEntryCount, Header.ProgramHeaderOffset, &AuxProgramHeaderAddress);
+        }
+
+        AuxProgramHeaderEntrySize = Header.ProgramHeaderEntrySize;
+        AuxProgramHeaderCount     = Header.ProgramHeaderEntryCount;
+        AuxEntryPoint             = Header.Entry;
+
         AddressSpace   = MapELF(CodeAddr, CodeSize, Header);
         UserEntryPoint = Header.Entry;
     }
@@ -1644,10 +1752,40 @@ uint8_t LogicLayer::CreateUserProcess(uint64_t CodeAddr, uint64_t CodeSize)
     State.rip      = UserEntryPoint;
     State.rflags   = INITIAL_PROCESS_RFLAGS;                                      // Bit1 always set, IF enabled
     State.rbp      = 0;                                                           // bottom of stack frame
-    State.rsp      = (StackTop & ~STACK_ALIGNMENT_MASK) - STACK_RETURN_SLOT_SIZE; // SysV entry alignment without a real CALL
 
     State.cs   = USER_CS;
     State.ss   = USER_SS;
+
+    if (IsELF)
+    {
+        const char* InitialArgvStorage[2] = {};
+        const char* const* Argv           = nullptr;
+        uint64_t           Argc           = 0;
+
+        if (InitialArgv0 != nullptr && InitialArgv0[0] != '\0')
+        {
+            InitialArgvStorage[0] = InitialArgv0;
+            InitialArgvStorage[1] = nullptr;
+            Argv                  = InitialArgvStorage;
+            Argc                  = 1;
+        }
+
+        if (!InitializeExecveUserEntry(Resource, AddressSpace, &State, Argv, Argc, nullptr, 0, AuxProgramHeaderAddress, AuxProgramHeaderEntrySize, AuxProgramHeaderCount, AuxEntryPoint))
+        {
+            CleanUpELF(AddressSpace);
+            delete AddressSpace;
+            return PROCESS_ID_INVALID;
+        }
+
+        State.rdi = 0;
+        State.rsi = 0;
+        State.rdx = 0;
+    }
+    else
+    {
+        State.rsp = (StackTop & ~STACK_ALIGNMENT_MASK) - STACK_RETURN_SLOT_SIZE; // SysV entry alignment without a real CALL
+    }
+
     uint8_t Id = PM->CreateUserProcess(reinterpret_cast<void*>(AddressSpace->GetStackVirtualAddressStart()), State, AddressSpace, IsELF ? FILE_TYPE_ELF : FILE_TYPE_RAW_BINARY);
 
     if (Id != PROCESS_ID_INVALID)

@@ -73,6 +73,7 @@ ROOTFS_LS = $(ROOTFS_BIN_DIR)/ls
 ROOTFS_CAT = $(ROOTFS_BIN_DIR)/cat
 ROOTFS_ECHO = $(ROOTFS_BIN_DIR)/echo
 INIT2_CC = gcc
+MUSL_INIT_CC ?= $(or $(shell command -v x86_64-linux-musl-gcc 2>/dev/null),$(shell command -v musl-gcc 2>/dev/null))
 INIT_SRC = initramfs/init.c
 INIT_BIN = $(ROOTFS_DIR)/init
 TEST1_SRC = initramfs/Test1.c
@@ -160,7 +161,15 @@ $(KERNEL): Kernel/kernel.cpp Kernel/Testing/KernelSelfTests.cpp Kernel/Layers/Di
 
 
 $(INIT_BIN): $(INIT_SRC) | build
-	$(INIT2_CC) -static -nostdlib -fno-pie -no-pie -fno-stack-protector -fno-stack-clash-protection -Wl,-e,_start $(INIT_SRC) -o $(INIT_BIN)
+	@if [ -z "$(MUSL_INIT_CC)" ]; then \
+		echo "Error: musl compiler not found. Install x86_64-linux-musl-gcc (or musl-gcc), or set MUSL_INIT_CC=<path>." >&2; \
+		exit 1; \
+	fi
+	$(MUSL_INIT_CC) -static -nostartfiles -fno-pie -no-pie -fno-stack-protector -fno-stack-clash-protection -Wl,-e,_start $(INIT_SRC) -o $(INIT_BIN)
+	@if readelf -l $(INIT_BIN) | grep -q 'Requesting program interpreter'; then \
+		echo "Error: $(INIT_BIN) is dynamically linked; expected static binary." >&2; \
+		exit 1; \
+	fi
 
 $(TEST1_BIN): $(TEST1_SRC) | build
 	$(INIT2_CC) -static -nostdlib -fno-pie -no-pie -fno-stack-protector -fno-stack-clash-protection -Wl,-e,_start $(TEST1_SRC) -o $(TEST1_BIN)

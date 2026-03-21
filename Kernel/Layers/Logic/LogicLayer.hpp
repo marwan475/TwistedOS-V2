@@ -55,8 +55,9 @@ public:
     bool               InitializeExtendedFileSystem(const char* DevicePath, const char* MountLocation);
     uint8_t            CreateNullProcess();
     uint8_t            CreateKernelProcess(void (*EntryPoint)());
-    uint8_t            CreateUserProcess(uint64_t CodeAddr, uint64_t CodeSize);
+    uint8_t            CreateUserProcess(uint64_t CodeAddr, uint64_t CodeSize, const char* InitialArgv0 = nullptr);
     uint8_t            CreateUserProcessFromVFS(const char* FilePath);
+    uint8_t            CreateInitProcess();
     uint8_t            ChangeProcessExecution(uint8_t Id, const char* FilePath, const char* const* Argv, uint64_t Argc, const char* const* Envp, uint64_t Envc);
     uint8_t            CopyProcess(uint8_t Id);
     bool               RunProcess(uint8_t Id);

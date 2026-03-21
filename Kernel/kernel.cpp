@@ -164,7 +164,7 @@ extern "C"
         ActiveDispatcher->GetResourceLayer()->GetTTY()->printf_("Kernel self-tests disabled (set STEST=1 to enable)\n");
 #endif
 
-        ActiveDispatcher->GetLogicLayer()->CreateUserProcessFromVFS("/init");
+        ActiveDispatcher->GetLogicLayer()->CreateInitProcess();
 
         ActiveDispatcher->GetLogicLayer()->EnableScheduling();
 
