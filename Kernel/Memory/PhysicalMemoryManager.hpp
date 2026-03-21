@@ -8,7 +8,7 @@
 
 #include "../utils/KernelParameters.hpp"
 
-#define PAGE_SIZE 4096
+#define PAGE_SIZE KERNEL_PAGE_SIZE
 
 class FrameBufferConsole;
 

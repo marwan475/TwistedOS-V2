@@ -11,7 +11,7 @@
 #include <Console.hpp>
 #include <uefi.hpp>
 
-#define PAGE_SIZE 4096
+#define PAGE_SIZE KERNEL_PAGE_SIZE
 #define PHYS_PAGE_ADDR_MASK 0x000FFFFFFFFFF000
 
 typedef union

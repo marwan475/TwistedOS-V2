@@ -275,8 +275,8 @@ EFI_STATUS FileSystem::SetupForKernel(EFI_FILE_PROTOCOL* Dir)
     KernelArgs.PageMapL4Table   = MemoryMgr.GetPageMapL4Table();
 
     // Set up stack for the kernel
-    void* stack_physical_addr    = MemoryMgr.AllocateAvailablePagesFromMemoryMap(KERNEL_STACK_SIZE / PAGE_SIZE);
-    UINTN stack_virtual_addr_end = MemoryMgr.IdentityMapRange((UINTN) stack_physical_addr, KERNEL_STACK_SIZE / PAGE_SIZE);
+    void* stack_physical_addr    = MemoryMgr.AllocateAvailablePagesFromMemoryMap(KERNEL_STACK_PAGES);
+    UINTN stack_virtual_addr_end = MemoryMgr.IdentityMapRange((UINTN) stack_physical_addr, KERNEL_STACK_PAGES);
 
     KernelArgs.NextPageAddress            = MemoryMgr.GetNextPageAddress();
     KernelArgs.CurrentDescriptor          = MemoryMgr.GetCurrentDescriptor();

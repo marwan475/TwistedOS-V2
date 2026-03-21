@@ -10,8 +10,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define PAGE_SIZE 4096
-#define KERNEL_HEAP_SIZE (KERNEL_HEAP_PAGES * PAGE_SIZE)
+#define KERNEL_HEAP_SIZE (KERNEL_HEAP_PAGES * KERNEL_PAGE_SIZE)
 #define BLOCK_SIZE 64
 #define TOTAL_BLOCKS (KERNEL_HEAP_SIZE / BLOCK_SIZE)
 #define BITS_PER_BYTE 8
