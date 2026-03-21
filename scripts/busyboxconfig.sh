@@ -116,7 +116,7 @@ CONFIG_USLEEP=n
 CONFIG_HEAD=y
 CONFIG_TAIL=y
 CONFIG_CP=n
-CONFIG_MV=n
+CONFIG_MV=y
 CONFIG_RM=y
 CONFIG_MKDIR=y
 CONFIG_TOUCH=y
@@ -210,6 +210,7 @@ set_config_y CONFIG_TEST
 set_config_y CONFIG_BASENAME
 set_config_y CONFIG_DIRNAME
 set_config_y CONFIG_ENV
+set_config_y CONFIG_MV
 set_config_y CONFIG_MKDIR
 set_config_y CONFIG_RM
 set_config_y CONFIG_TOUCH
@@ -281,6 +282,7 @@ ln -sf busybox "${INSTALL_DIR}/basename"
 ln -sf busybox "${INSTALL_DIR}/dirname"
 ln -sf busybox "${INSTALL_DIR}/env"
 ln -sf busybox "${INSTALL_DIR}/mkdir"
+ln -sf busybox "${INSTALL_DIR}/mv"
 ln -sf busybox "${INSTALL_DIR}/rm"
 ln -sf busybox "${INSTALL_DIR}/touch"
 ln -sf busybox "${INSTALL_DIR}/mount"
