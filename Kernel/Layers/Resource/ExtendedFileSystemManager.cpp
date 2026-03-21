@@ -22,6 +22,7 @@ constexpr uint16_t EXT2_INODE_MODE_SYMLINK      = 0xA000;
 constexpr uint32_t EXT2_SUPERBLOCK_FREE_BLOCKS_OFFSET = 12;
 constexpr uint32_t EXT2_SUPERBLOCK_FREE_INODES_OFFSET = 16;
 constexpr uint16_t EXT2_INODE_MODE_DIRECTORY_0755     = 0x41ED;
+constexpr uint16_t EXT2_INODE_MODE_REGULAR_0644       = 0x81A4;
 
 ExtendedFileSystemEntryType DecodeEntryType(uint8_t Type)
 {
@@ -855,8 +856,15 @@ uint32_t ExtendedFileSystemManager::GetBlocksCount() const
     return BlocksCount;
 }
 
-bool ExtendedFileSystemManager::CreateDirectory(const char* Path)
+bool ExtendedFileSystemManager::CreateFile(const char* Path, ExtendedFileSystemEntryType Type)
 {
+    bool CreatingDirectory   = (Type == ExtendedFileSystemEntryTypeDirectory);
+    bool CreatingRegularFile = (Type == ExtendedFileSystemEntryTypeRegularFile);
+    if (!CreatingDirectory && !CreatingRegularFile)
+    {
+        return false;
+    }
+
     if (!Initialized || Path == nullptr || BlockSizeBytes == 0 || InodeSizeBytes == 0 || InodesPerGroup == 0 || BlocksPerGroup == 0)
     {
         return false;
@@ -948,10 +956,10 @@ bool ExtendedFileSystemManager::CreateDirectory(const char* Path)
         return false;
     }
 
-    const char* NewDirectoryName      = Segments[SegmentCount - 1];
-    uint32_t    NewDirectoryNameBytes = SegmentLengths[SegmentCount - 1];
+    const char* NewEntryName      = Segments[SegmentCount - 1];
+    uint32_t    NewEntryNameBytes = SegmentLengths[SegmentCount - 1];
 
-    if ((NewDirectoryNameBytes == 1 && NewDirectoryName[0] == '.') || (NewDirectoryNameBytes == 2 && NewDirectoryName[0] == '.' && NewDirectoryName[1] == '.'))
+    if ((NewEntryNameBytes == 1 && NewEntryName[0] == '.') || (NewEntryNameBytes == 2 && NewEntryName[0] == '.' && NewEntryName[1] == '.'))
     {
         return false;
     }
@@ -1148,7 +1156,7 @@ bool ExtendedFileSystemManager::CreateDirectory(const char* Path)
         return true;
     };
 
-    auto AllocateInodeInGroup = [&](uint32_t GroupIndex, uint32_t* AllocatedInode) -> bool
+    auto AllocateInodeInGroup = [&](uint32_t GroupIndex, bool CountAsDirectory, uint32_t* AllocatedInode) -> bool
     {
         if (AllocatedInode == nullptr)
         {
@@ -1216,8 +1224,11 @@ bool ExtendedFileSystemManager::CreateDirectory(const char* Path)
                 delete[] InodeBitmap;
 
                 WriteLE16(&GroupDescriptor[14], static_cast<uint16_t>(GroupFreeInodes - 1));
-                uint16_t UsedDirectories = ReadLE16(&GroupDescriptor[16]);
-                WriteLE16(&GroupDescriptor[16], static_cast<uint16_t>(UsedDirectories + 1));
+                if (CountAsDirectory)
+                {
+                    uint16_t UsedDirectories = ReadLE16(&GroupDescriptor[16]);
+                    WriteLE16(&GroupDescriptor[16], static_cast<uint16_t>(UsedDirectories + 1));
+                }
 
                 if (!WriteGroupDescriptor(GroupIndex, GroupDescriptor))
                 {
@@ -1362,7 +1373,7 @@ bool ExtendedFileSystemManager::CreateDirectory(const char* Path)
     {
         bool Exists      = false;
         bool ExistsIsDir = false;
-        if (!FindEntryInDirectory(ParentInodeNumber, NewDirectoryName, NewDirectoryNameBytes, nullptr, &ExistsIsDir, &Exists))
+        if (!FindEntryInDirectory(ParentInodeNumber, NewEntryName, NewEntryNameBytes, nullptr, &ExistsIsDir, &Exists))
         {
             return false;
         }
@@ -1375,47 +1386,53 @@ bool ExtendedFileSystemManager::CreateDirectory(const char* Path)
 
     uint32_t ParentGroupIndex = (ParentInodeNumber - 1) / InodesPerGroup;
 
-    uint32_t NewDirectoryInode = 0;
-    if (!AllocateInodeInGroup(ParentGroupIndex, &NewDirectoryInode))
+    uint32_t NewInodeNumber = 0;
+    if (!AllocateInodeInGroup(ParentGroupIndex, CreatingDirectory, &NewInodeNumber))
     {
         return false;
     }
 
-    uint32_t NewDirectoryDataBlock = 0;
-    if (!AllocateBlockInGroup(ParentGroupIndex, &NewDirectoryDataBlock))
+    uint32_t NewDataBlockNumber = 0;
+    if (CreatingDirectory)
     {
-        return false;
+        if (!AllocateBlockInGroup(ParentGroupIndex, &NewDataBlockNumber))
+        {
+            return false;
+        }
     }
 
-    uint8_t* NewDirectoryBlock = new uint8_t[BlockSizeBytes];
-    if (NewDirectoryBlock == nullptr)
+    if (CreatingDirectory)
     {
-        return false;
-    }
+        uint8_t* NewDirectoryBlock = new uint8_t[BlockSizeBytes];
+        if (NewDirectoryBlock == nullptr)
+        {
+            return false;
+        }
 
-    kmemset(NewDirectoryBlock, 0, BlockSizeBytes);
+        kmemset(NewDirectoryBlock, 0, BlockSizeBytes);
 
-    WriteLE32(&NewDirectoryBlock[0], NewDirectoryInode);
-    WriteLE16(&NewDirectoryBlock[4], 12);
-    NewDirectoryBlock[6] = 1;
-    NewDirectoryBlock[7] = 2;
-    NewDirectoryBlock[8] = '.';
+        WriteLE32(&NewDirectoryBlock[0], NewInodeNumber);
+        WriteLE16(&NewDirectoryBlock[4], 12);
+        NewDirectoryBlock[6] = 1;
+        NewDirectoryBlock[7] = 2;
+        NewDirectoryBlock[8] = '.';
 
-    WriteLE32(&NewDirectoryBlock[12], ParentInodeNumber);
-    WriteLE16(&NewDirectoryBlock[16], static_cast<uint16_t>(BlockSizeBytes - 12));
-    NewDirectoryBlock[18] = 2;
-    NewDirectoryBlock[19] = 2;
-    NewDirectoryBlock[20] = '.';
-    NewDirectoryBlock[21] = '.';
+        WriteLE32(&NewDirectoryBlock[12], ParentInodeNumber);
+        WriteLE16(&NewDirectoryBlock[16], static_cast<uint16_t>(BlockSizeBytes - 12));
+        NewDirectoryBlock[18] = 2;
+        NewDirectoryBlock[19] = 2;
+        NewDirectoryBlock[20] = '.';
+        NewDirectoryBlock[21] = '.';
 
-    uint64_t NewDirectoryBlockOffset64 = static_cast<uint64_t>(NewDirectoryDataBlock) * BlockSizeBytes;
-    if (NewDirectoryBlockOffset64 > 0xFFFFFFFFu || !WriteBytesToDisk(static_cast<uint32_t>(NewDirectoryBlockOffset64), NewDirectoryBlock, BlockSizeBytes))
-    {
+        uint64_t NewDirectoryBlockOffset64 = static_cast<uint64_t>(NewDataBlockNumber) * BlockSizeBytes;
+        if (NewDirectoryBlockOffset64 > 0xFFFFFFFFu || !WriteBytesToDisk(static_cast<uint32_t>(NewDirectoryBlockOffset64), NewDirectoryBlock, BlockSizeBytes))
+        {
+            delete[] NewDirectoryBlock;
+            return false;
+        }
+
         delete[] NewDirectoryBlock;
-        return false;
     }
-
-    delete[] NewDirectoryBlock;
 
     uint8_t* NewInodeData = new uint8_t[InodeSizeBytes];
     if (NewInodeData == nullptr)
@@ -1424,13 +1441,13 @@ bool ExtendedFileSystemManager::CreateDirectory(const char* Path)
     }
 
     kmemset(NewInodeData, 0, InodeSizeBytes);
-    WriteLE16(&NewInodeData[0], EXT2_INODE_MODE_DIRECTORY_0755);
-    WriteLE32(&NewInodeData[4], BlockSizeBytes);
-    WriteLE16(&NewInodeData[26], 2);
-    WriteLE32(&NewInodeData[28], BlockSizeBytes / 512u);
-    WriteLE32(&NewInodeData[40], NewDirectoryDataBlock);
+    WriteLE16(&NewInodeData[0], CreatingDirectory ? EXT2_INODE_MODE_DIRECTORY_0755 : EXT2_INODE_MODE_REGULAR_0644);
+    WriteLE32(&NewInodeData[4], 0);
+    WriteLE16(&NewInodeData[26], CreatingDirectory ? 2 : 1);
+    WriteLE32(&NewInodeData[28], CreatingDirectory ? (BlockSizeBytes / 512u) : 0);
+    WriteLE32(&NewInodeData[40], CreatingDirectory ? NewDataBlockNumber : 0);
 
-    if (!WriteInodeData(NewDirectoryInode, NewInodeData))
+    if (!WriteInodeData(NewInodeNumber, NewInodeData))
     {
         delete[] NewInodeData;
         return false;
@@ -1446,7 +1463,7 @@ bool ExtendedFileSystemManager::CreateDirectory(const char* Path)
     }
 
     bool AddedToParent = false;
-    uint16_t NewEntryRecordLength = AlignTo4(static_cast<uint16_t>(8u + NewDirectoryNameBytes));
+    uint16_t NewEntryRecordLength = AlignTo4(static_cast<uint16_t>(8u + NewEntryNameBytes));
 
     for (uint32_t PointerIndex = 0; PointerIndex < 12 && !AddedToParent; ++PointerIndex)
     {
@@ -1493,14 +1510,14 @@ bool ExtendedFileSystemManager::CreateDirectory(const char* Path)
 
                 WriteLE16(&ParentBlockData[EntryOffset + 4], CurrentMinimumLength);
 
-                WriteLE32(&ParentBlockData[NewEntryOffset], NewDirectoryInode);
+                WriteLE32(&ParentBlockData[NewEntryOffset], NewInodeNumber);
                 WriteLE16(&ParentBlockData[NewEntryOffset + 4], RemainingLength);
-                ParentBlockData[NewEntryOffset + 6] = static_cast<uint8_t>(NewDirectoryNameBytes);
-                ParentBlockData[NewEntryOffset + 7] = 2;
+                ParentBlockData[NewEntryOffset + 6] = static_cast<uint8_t>(NewEntryNameBytes);
+                ParentBlockData[NewEntryOffset + 7] = CreatingDirectory ? 2 : 1;
 
-                for (uint32_t NameIndex = 0; NameIndex < NewDirectoryNameBytes; ++NameIndex)
+                for (uint32_t NameIndex = 0; NameIndex < NewEntryNameBytes; ++NameIndex)
                 {
-                    ParentBlockData[NewEntryOffset + 8 + NameIndex] = static_cast<uint8_t>(NewDirectoryName[NameIndex]);
+                    ParentBlockData[NewEntryOffset + 8 + NameIndex] = static_cast<uint8_t>(NewEntryName[NameIndex]);
                 }
 
                 if (!WriteBytesToDisk(static_cast<uint32_t>(ParentBlockOffset64), ParentBlockData, BlockSizeBytes))
@@ -1528,8 +1545,11 @@ bool ExtendedFileSystemManager::CreateDirectory(const char* Path)
         return false;
     }
 
-    uint16_t ParentLinks = ReadLE16(&ParentInodeData[26]);
-    WriteLE16(&ParentInodeData[26], static_cast<uint16_t>(ParentLinks + 1));
+    if (CreatingDirectory)
+    {
+        uint16_t ParentLinks = ReadLE16(&ParentInodeData[26]);
+        WriteLE16(&ParentInodeData[26], static_cast<uint16_t>(ParentLinks + 1));
+    }
 
     if (!WriteInodeData(ParentInodeNumber, ParentInodeData))
     {

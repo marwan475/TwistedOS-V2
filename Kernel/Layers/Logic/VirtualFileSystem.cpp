@@ -1012,7 +1012,7 @@ bool VirtualFileSystem::MountEXTFileSystem(ExtendedFileSystemManager* extendedFi
     return true;
 }
 
-bool VirtualFileSystem::CreateDirectory(const char* path)
+bool VirtualFileSystem::CreateFile(const char* path, FileType type)
 {
     if (Root == nullptr || path == nullptr)
     {
@@ -1025,17 +1025,25 @@ bool VirtualFileSystem::CreateDirectory(const char* path)
         return false;
     }
 
+    bool IsDirectory = (type == INODE_DIR);
+    bool IsFile      = (type == INODE_FILE);
+    if (!IsDirectory && !IsFile)
+    {
+        return false;
+    }
+
     if (isEXT && ActiveExtendedFileSystem != nullptr)
     {
-        if (!ActiveExtendedFileSystem->CreateDirectory(path))
+        ExtendedFileSystemEntryType EntryType = IsDirectory ? ExtendedFileSystemEntryTypeDirectory : ExtendedFileSystemEntryTypeRegularFile;
+        if (!ActiveExtendedFileSystem->CreateFile(path, EntryType))
         {
             return false;
         }
 
-        return EnsurePathDentry(Root, path, INODE_DIR, 0, ActiveExtendedFileSystem);
+        return EnsurePathDentry(Root, path, type, 0, IsDirectory ? static_cast<void*>(ActiveExtendedFileSystem) : nullptr);
     }
 
-    return EnsurePathDentry(Root, path, INODE_DIR, 0, nullptr);
+    return EnsurePathDentry(Root, path, type, 0, nullptr);
 }
 
 bool VirtualFileSystem::RegisterDevice(const char* path, void* deviceData, FileOperations* fileOperations)

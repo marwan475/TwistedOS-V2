@@ -89,7 +89,7 @@ public:
     void    MountInitRamFileSystem(RamFileSystemManager* ramFileSystemManager);
     bool    MountEXTFileSystem(ExtendedFileSystemManager* extendedFileSystemManager, const char* mountPath);
     bool    RegisterDevice(const char* path, void* deviceData, FileOperations* fileOperations);
-    bool    CreateDirectory(const char* path);
+    bool    CreateFile(const char* path, FileType type);
     bool    SetRoot(Dentry* RootDentry);
     Dentry* Lookup(const char* path);
     Dentry* LookupNoFollowFinal(const char* path);
