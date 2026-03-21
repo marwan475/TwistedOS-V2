@@ -27,12 +27,15 @@ constexpr int64_t LINUX_ERR_EINVAL  = -22;
 constexpr int64_t LINUX_ERR_EBADF   = -9;
 constexpr int64_t LINUX_ERR_ENOSYS  = -38;
 constexpr int64_t LINUX_ERR_ENOTTY  = -25;
+constexpr int64_t LINUX_ERR_EACCES  = -13;
 constexpr int64_t LINUX_ERR_ECHILD  = -10;
 constexpr int64_t LINUX_ERR_ENODEV  = -19;
 constexpr int64_t LINUX_ERR_ENOTDIR = -20;
+constexpr int64_t LINUX_ERR_EISDIR  = -21;
 constexpr int64_t LINUX_ERR_EPERM   = -1;
 constexpr int64_t LINUX_ERR_ERANGE  = -34;
 constexpr int64_t LINUX_ERR_EEXIST  = -17;
+constexpr int64_t LINUX_ERR_ENOTEMPTY = -39;
 
 constexpr uint64_t SYSCALL_COPY_CHUNK_SIZE   = 4096;
 constexpr uint64_t SYSCALL_PATH_MAX          = 4096;
@@ -120,6 +123,11 @@ constexpr uint64_t LINUX_O_ASYNC    = 0x2000;
 constexpr uint64_t LINUX_O_DIRECT   = 0x4000;
 constexpr uint64_t LINUX_O_NOATIME  = 0x40000;
 constexpr uint64_t LINUX_O_CLOEXEC  = 0x80000;
+
+constexpr int64_t LINUX_ACCESS_F_OK = 0;
+constexpr int64_t LINUX_ACCESS_X_OK = 1;
+constexpr int64_t LINUX_ACCESS_W_OK = 2;
+constexpr int64_t LINUX_ACCESS_R_OK = 4;
 
 constexpr uint64_t LINUX_F_DUPFD         = 0;
 constexpr uint64_t LINUX_F_GETFD         = 1;
@@ -2522,6 +2530,280 @@ int64_t TranslationLayer::HandleMkdirSystemCall(const char* Path, uint64_t Mode)
     }
 
     if (!VFS->CreateFile(CreatePath, INODE_DIR))
+    {
+        return LINUX_ERR_ENOENT;
+    }
+
+    return 0;
+}
+
+int64_t TranslationLayer::HandleAccessSystemCall(const char* Path, int64_t Mode)
+{
+    if (Logic == nullptr || Path == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    if ((Mode & ~(LINUX_ACCESS_R_OK | LINUX_ACCESS_W_OK | LINUX_ACCESS_X_OK)) != 0)
+    {
+        return LINUX_ERR_EINVAL;
+    }
+
+    VirtualFileSystem* VFS = Logic->GetVirtualFileSystem();
+    ProcessManager*    PM  = Logic->GetProcessManager();
+    if (VFS == nullptr || PM == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    Process* CurrentProcess = PM->GetRunningProcess();
+    if (CurrentProcess == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    char KernelPath[SYSCALL_PATH_MAX] = {};
+    if (!CopyUserCString(Logic, Path, KernelPath, sizeof(KernelPath)))
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    if (KernelPath[0] == '\0')
+    {
+        return LINUX_ERR_ENOENT;
+    }
+
+    char        EffectivePath[SYSCALL_PATH_MAX] = {};
+    const char* LookupPath                      = KernelPath;
+
+    if (KernelPath[0] != '/')
+    {
+        Dentry* BaseDirectory = CurrentProcess->CurrentFileSystemLocation;
+        if (BaseDirectory == nullptr)
+        {
+            return LINUX_ERR_ENOENT;
+        }
+
+        char BasePath[SYSCALL_PATH_MAX] = {};
+        if (!BuildAbsolutePathFromDentry(BaseDirectory, BasePath, sizeof(BasePath)))
+        {
+            return LINUX_ERR_EFAULT;
+        }
+
+        uint64_t BasePathLength = CStrLength(BasePath);
+        uint64_t RelativeLength = CStrLength(KernelPath);
+        uint64_t NeedsSeparator = (BasePathLength > 1) ? 1 : 0;
+        uint64_t RequiredBytes  = BasePathLength + NeedsSeparator + RelativeLength + 1;
+        if (RequiredBytes > sizeof(EffectivePath))
+        {
+            return LINUX_ERR_EINVAL;
+        }
+
+        memcpy(EffectivePath, BasePath, static_cast<size_t>(BasePathLength));
+        uint64_t Cursor = BasePathLength;
+        if (NeedsSeparator != 0)
+        {
+            EffectivePath[Cursor++] = '/';
+        }
+
+        memcpy(EffectivePath + Cursor, KernelPath, static_cast<size_t>(RelativeLength));
+        EffectivePath[Cursor + RelativeLength] = '\0';
+        LookupPath                             = EffectivePath;
+    }
+
+    Dentry* Existing = VFS->Lookup(LookupPath);
+    if (Existing == nullptr || Existing->inode == nullptr)
+    {
+        return LINUX_ERR_ENOENT;
+    }
+
+    if (Mode == LINUX_ACCESS_F_OK)
+    {
+        return 0;
+    }
+
+    if ((Mode & (LINUX_ACCESS_R_OK | LINUX_ACCESS_W_OK | LINUX_ACCESS_X_OK)) != 0)
+    {
+        return 0;
+    }
+
+    return LINUX_ERR_EACCES;
+}
+
+int64_t TranslationLayer::HandleRmdirSystemCall(const char* Path)
+{
+    if (Logic == nullptr || Path == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    VirtualFileSystem* VFS = Logic->GetVirtualFileSystem();
+    ProcessManager*    PM  = Logic->GetProcessManager();
+    if (VFS == nullptr || PM == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    Process* CurrentProcess = PM->GetRunningProcess();
+    if (CurrentProcess == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    char KernelPath[SYSCALL_PATH_MAX] = {};
+    if (!CopyUserCString(Logic, Path, KernelPath, sizeof(KernelPath)))
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    if (KernelPath[0] == '\0')
+    {
+        return LINUX_ERR_ENOENT;
+    }
+
+    char        EffectivePath[SYSCALL_PATH_MAX] = {};
+    const char* DeletePath                      = KernelPath;
+
+    if (KernelPath[0] != '/')
+    {
+        Dentry* BaseDirectory = CurrentProcess->CurrentFileSystemLocation;
+        if (BaseDirectory == nullptr)
+        {
+            return LINUX_ERR_ENOENT;
+        }
+
+        char BasePath[SYSCALL_PATH_MAX] = {};
+        if (!BuildAbsolutePathFromDentry(BaseDirectory, BasePath, sizeof(BasePath)))
+        {
+            return LINUX_ERR_EFAULT;
+        }
+
+        uint64_t BasePathLength = CStrLength(BasePath);
+        uint64_t RelativeLength = CStrLength(KernelPath);
+        uint64_t NeedsSeparator = (BasePathLength > 1) ? 1 : 0;
+        uint64_t RequiredBytes  = BasePathLength + NeedsSeparator + RelativeLength + 1;
+        if (RequiredBytes > sizeof(EffectivePath))
+        {
+            return LINUX_ERR_EINVAL;
+        }
+
+        memcpy(EffectivePath, BasePath, static_cast<size_t>(BasePathLength));
+        uint64_t Cursor = BasePathLength;
+        if (NeedsSeparator != 0)
+        {
+            EffectivePath[Cursor++] = '/';
+        }
+
+        memcpy(EffectivePath + Cursor, KernelPath, static_cast<size_t>(RelativeLength));
+        EffectivePath[Cursor + RelativeLength] = '\0';
+        DeletePath                             = EffectivePath;
+    }
+
+    Dentry* Existing = VFS->Lookup(DeletePath);
+    if (Existing == nullptr || Existing->inode == nullptr)
+    {
+        return LINUX_ERR_ENOENT;
+    }
+
+    if (Existing->inode->NodeType != INODE_DIR)
+    {
+        return LINUX_ERR_ENOTDIR;
+    }
+
+    if (Existing->child_count != 0)
+    {
+        return LINUX_ERR_ENOTEMPTY;
+    }
+
+    if (!VFS->DeleteFile(DeletePath, INODE_DIR))
+    {
+        return LINUX_ERR_ENOENT;
+    }
+
+    return 0;
+}
+
+int64_t TranslationLayer::HandleUnlinkSystemCall(const char* Path)
+{
+    if (Logic == nullptr || Path == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    VirtualFileSystem* VFS = Logic->GetVirtualFileSystem();
+    ProcessManager*    PM  = Logic->GetProcessManager();
+    if (VFS == nullptr || PM == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    Process* CurrentProcess = PM->GetRunningProcess();
+    if (CurrentProcess == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    char KernelPath[SYSCALL_PATH_MAX] = {};
+    if (!CopyUserCString(Logic, Path, KernelPath, sizeof(KernelPath)))
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    if (KernelPath[0] == '\0')
+    {
+        return LINUX_ERR_ENOENT;
+    }
+
+    char        EffectivePath[SYSCALL_PATH_MAX] = {};
+    const char* DeletePath                      = KernelPath;
+
+    if (KernelPath[0] != '/')
+    {
+        Dentry* BaseDirectory = CurrentProcess->CurrentFileSystemLocation;
+        if (BaseDirectory == nullptr)
+        {
+            return LINUX_ERR_ENOENT;
+        }
+
+        char BasePath[SYSCALL_PATH_MAX] = {};
+        if (!BuildAbsolutePathFromDentry(BaseDirectory, BasePath, sizeof(BasePath)))
+        {
+            return LINUX_ERR_EFAULT;
+        }
+
+        uint64_t BasePathLength = CStrLength(BasePath);
+        uint64_t RelativeLength = CStrLength(KernelPath);
+        uint64_t NeedsSeparator = (BasePathLength > 1) ? 1 : 0;
+        uint64_t RequiredBytes  = BasePathLength + NeedsSeparator + RelativeLength + 1;
+        if (RequiredBytes > sizeof(EffectivePath))
+        {
+            return LINUX_ERR_EINVAL;
+        }
+
+        memcpy(EffectivePath, BasePath, static_cast<size_t>(BasePathLength));
+        uint64_t Cursor = BasePathLength;
+        if (NeedsSeparator != 0)
+        {
+            EffectivePath[Cursor++] = '/';
+        }
+
+        memcpy(EffectivePath + Cursor, KernelPath, static_cast<size_t>(RelativeLength));
+        EffectivePath[Cursor + RelativeLength] = '\0';
+        DeletePath                             = EffectivePath;
+    }
+
+    Dentry* Existing = VFS->Lookup(DeletePath);
+    if (Existing == nullptr || Existing->inode == nullptr)
+    {
+        return LINUX_ERR_ENOENT;
+    }
+
+    if (Existing->inode->NodeType == INODE_DIR)
+    {
+        return LINUX_ERR_EISDIR;
+    }
+
+    if (!VFS->DeleteFile(DeletePath, INODE_FILE))
     {
         return LINUX_ERR_ENOENT;
     }

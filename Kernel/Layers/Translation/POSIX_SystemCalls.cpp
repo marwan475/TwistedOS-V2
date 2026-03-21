@@ -75,6 +75,9 @@ int64_t TranslationLayer::HandlePosixSystemCallNumber(uint64_t SystemCallNumber,
         case 20: // writev
             return HandleWritevSystemCall(Arg1, reinterpret_cast<const void*>(Arg2), Arg3);
             break;
+        case 21: // access
+            return HandleAccessSystemCall(reinterpret_cast<const char*>(Arg1), static_cast<int64_t>(Arg2));
+            break;
         case 33: // dup2
             return HandleDup2SystemCall(Arg1, Arg2);
             break;
@@ -107,6 +110,12 @@ int64_t TranslationLayer::HandlePosixSystemCallNumber(uint64_t SystemCallNumber,
             break;
         case 83: // mkdir
             return HandleMkdirSystemCall(reinterpret_cast<const char*>(Arg1), Arg2);
+            break;
+        case 84: // rmdir
+            return HandleRmdirSystemCall(reinterpret_cast<const char*>(Arg1));
+            break;
+        case 87: // unlink
+            return HandleUnlinkSystemCall(reinterpret_cast<const char*>(Arg1));
             break;
         case 102: // getuid
             return HandleGetuidSystemCall();
