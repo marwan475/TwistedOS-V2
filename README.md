@@ -69,7 +69,7 @@ X86_64 OS that boots via UEFI into a higher-half kernel with PMM, VMM, schedulin
         - VirtualFileSystem
             - Mounts on initramfs
             - Mounts EXT2 root filesystem from disk
-            - Supports switching to the EXT2 root filesystem from initramfs via `init.sh` (`mount -t ext2 /dev/sda2 /mnt` then `chroot /mnt /bin/sh`)
+            - Supports switching to the EXT2 root filesystem from initramfs from user space
             - Ability to execute binary from vfs (Create user process from vfs)
             - Register devices in vfs (/dev)
     - Translation layer
