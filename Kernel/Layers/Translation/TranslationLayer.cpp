@@ -706,6 +706,22 @@ void ReleaseVforkParentIfNeeded(LogicLayer* Logic, Process* ChildProcess)
     }
 }
 
+void SyncVforkParentFileSystemLocation(ProcessManager* PM, Process* CurrentProcess)
+{
+    if (PM == nullptr || CurrentProcess == nullptr || !CurrentProcess->IsVforkChild)
+    {
+        return;
+    }
+
+    Process* ParentProcess = PM->GetProcessById(CurrentProcess->VforkParentId);
+    if (ParentProcess == nullptr || ParentProcess->Status == PROCESS_TERMINATED)
+    {
+        return;
+    }
+
+    ParentProcess->CurrentFileSystemLocation = CurrentProcess->CurrentFileSystemLocation;
+}
+
 uint64_t AlignDownToPageBoundary(uint64_t Address)
 {
     return Address & PHYS_PAGE_ADDR_MASK;
@@ -2320,6 +2336,7 @@ int64_t TranslationLayer::HandleChdirSystemCall(const char* Path)
     }
 
     CurrentProcess->CurrentFileSystemLocation = NodeDentry;
+    SyncVforkParentFileSystemLocation(PM, CurrentProcess);
     return 0;
 }
 
@@ -2376,6 +2393,7 @@ int64_t TranslationLayer::HandleChrootSystemCall(const char* Path)
     }
 
     CurrentProcess->CurrentFileSystemLocation = RootDentry;
+    SyncVforkParentFileSystemLocation(PM, CurrentProcess);
 
     return 0;
 }
