@@ -113,6 +113,27 @@ static void EnsureSerialInitialized()
         SerialInitialized = true;
     }
 }
+
+static int FormatToBuffer(char* Buffer, uint64_t BufferSize, const char* Format, va_list Args)
+{
+    if (Buffer == nullptr || BufferSize == 0 || Format == nullptr)
+    {
+        return 0;
+    }
+
+    int Result = vsnprintf_(Buffer, BufferSize, Format, Args);
+    if (Result <= 0)
+    {
+        return Result;
+    }
+
+    if (Result > static_cast<int>(BufferSize - 1))
+    {
+        return static_cast<int>(BufferSize - 1);
+    }
+
+    return Result;
+}
 } // namespace
 
 FileOperations TTY::TerminalFileOperations = {
@@ -319,6 +340,31 @@ void TTY::NotifyInputAvailable()
     ActiveLogicLayer->NotifyTTYInputAvailable();
 }
 
+int TTY::Serialprintf(const char* Format, ...)
+{
+    if (Format == nullptr)
+    {
+        return 0;
+    }
+
+    char Buffer[512] = {};
+
+    va_list Args;
+    va_start(Args, Format);
+    int Result = FormatToBuffer(Buffer, sizeof(Buffer), Format, Args);
+    va_end(Args);
+
+    if (Result <= 0)
+    {
+        return Result;
+    }
+
+    EnsureSerialInitialized();
+    SerialWriteBuffer(Buffer, Result);
+
+    return Result;
+}
+
 int TTY::printf_(const char* Format, ...)
 {
     if (Format == nullptr)
@@ -330,7 +376,7 @@ int TTY::printf_(const char* Format, ...)
 
     va_list Args;
     va_start(Args, Format);
-    int Result = vsnprintf_(Buffer, sizeof(Buffer), Format, Args);
+    int Result = FormatToBuffer(Buffer, sizeof(Buffer), Format, Args);
     va_end(Args);
 
     if (Result <= 0)
@@ -338,16 +384,10 @@ int TTY::printf_(const char* Format, ...)
         return Result;
     }
 
-    int WritableCount = Result;
-    if (WritableCount > static_cast<int>(sizeof(Buffer) - 1))
-    {
-        WritableCount = static_cast<int>(sizeof(Buffer) - 1);
-    }
-
     EnsureSerialInitialized();
-    SerialWriteBuffer(Buffer, WritableCount);
+    SerialWriteBuffer(Buffer, Result);
 
-    for (int Index = 0; Index < WritableCount; ++Index)
+    for (int Index = 0; Index < Result; ++Index)
     {
         PutChar(Buffer[Index]);
     }

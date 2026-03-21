@@ -355,7 +355,7 @@ bool InitializeExecveUserEntry(ResourceLayer* Resource, VirtualAddressSpace* Add
                 memcpy(StackArgv0, "<out-of-stack>", sizeof("<out-of-stack>"));
             }
 
-            Resource->GetTTY()->printf_("exec_stack_dbg: rsp=%p argc=%lu argv0_ptr=%p argv0='%s'\n", (void*) StackCursor, StackArgc, (void*) StackArgv0Pointer, StackArgv0);
+            Resource->GetTTY()->Serialprintf("exec_stack_dbg: rsp=%p argc=%lu argv0_ptr=%p argv0='%s'\n", (void*) StackCursor, StackArgc, (void*) StackArgv0Pointer, StackArgv0);
         }
 #endif
     } while (false);
@@ -458,6 +458,131 @@ bool IsRangeWithinAnyProcessMapping(const Process* CurrentProcess, uint64_t Addr
     }
 
     return false;
+}
+
+bool IsLowerCanonicalUserAddress(uint64_t Address)
+{
+    constexpr uint64_t LOWER_CANONICAL_MAX = 0x00007FFFFFFFFFFFULL;
+    return Address <= LOWER_CANONICAL_MAX;
+}
+
+bool IsLowerCanonicalUserRange(uint64_t Address, uint64_t Count)
+{
+    if (Count == 0)
+    {
+        return IsLowerCanonicalUserAddress(Address);
+    }
+
+    uint64_t EndInclusive = Address + (Count - 1);
+    if (EndInclusive < Address)
+    {
+        return false;
+    }
+
+    return IsLowerCanonicalUserAddress(Address) && IsLowerCanonicalUserAddress(EndInclusive);
+}
+
+bool IsUserAccessiblePageMapped(uint64_t PageMapL4TableAddr, uint64_t Address)
+{
+    if (PageMapL4TableAddr == 0)
+    {
+        return false;
+    }
+
+    VirtualAddress Vaddr;
+    Vaddr.value = Address;
+
+    PageTableEntry* PML4 = reinterpret_cast<PageTableEntry*>(PageMapL4TableAddr);
+    if (PML4 == nullptr)
+    {
+        return false;
+    }
+
+    PageTableEntry PML4Entry = PML4[Vaddr.fields.pml4_index];
+    if (!PML4Entry.fields.present || !PML4Entry.fields.user_access)
+    {
+        return false;
+    }
+
+    PageTableEntry* PDPT = reinterpret_cast<PageTableEntry*>(PML4Entry.value & PHYS_PAGE_ADDR_MASK);
+    if (PDPT == nullptr)
+    {
+        return false;
+    }
+
+    PageTableEntry PDPTEntry = PDPT[Vaddr.fields.pdpt_index];
+    if (!PDPTEntry.fields.present || !PDPTEntry.fields.user_access)
+    {
+        return false;
+    }
+
+    PageTableEntry* PD = reinterpret_cast<PageTableEntry*>(PDPTEntry.value & PHYS_PAGE_ADDR_MASK);
+    if (PD == nullptr)
+    {
+        return false;
+    }
+
+    PageTableEntry PDEntry = PD[Vaddr.fields.pd_index];
+    if (!PDEntry.fields.present || !PDEntry.fields.user_access)
+    {
+        return false;
+    }
+
+    if (PDEntry.fields.size)
+    {
+        return true;
+    }
+
+    PageTableEntry* PT = reinterpret_cast<PageTableEntry*>(PDEntry.value & PHYS_PAGE_ADDR_MASK);
+    if (PT == nullptr)
+    {
+        return false;
+    }
+
+    PageTableEntry PTEntry = PT[Vaddr.fields.pt_index];
+    if (!PTEntry.fields.present || !PTEntry.fields.user_access)
+    {
+        return false;
+    }
+
+    return true;
+}
+
+bool IsUserAddressRangeMappedByPageTables(const Process* CurrentProcess, uint64_t Address, uint64_t Count)
+{
+    if (CurrentProcess == nullptr || CurrentProcess->AddressSpace == nullptr)
+    {
+        return false;
+    }
+
+    if (Count == 0)
+    {
+        return true;
+    }
+
+    uint64_t PageMapL4TableAddr = CurrentProcess->AddressSpace->GetPageMapL4TableAddr();
+    if (PageMapL4TableAddr == 0)
+    {
+        return false;
+    }
+
+    uint64_t StartPage = AlignDownToPage(Address);
+    uint64_t EndPage   = AlignDownToPage(Address + (Count - 1));
+
+    for (uint64_t PageAddress = StartPage; PageAddress <= EndPage; PageAddress += PAGE_SIZE)
+    {
+        if (!IsUserAccessiblePageMapped(PageMapL4TableAddr, PageAddress))
+        {
+            return false;
+        }
+
+        if (PageAddress > (UINT64_MAX - PAGE_SIZE))
+        {
+            break;
+        }
+    }
+
+    return true;
 }
 
 void FreeAnonymousProcessMappings(PhysicalMemoryManager* PMM, Process* TargetProcess)
@@ -582,6 +707,11 @@ bool IsUserAddressRangeAccessible(const Process* CurrentProcess, uint64_t Addres
         return false;
     }
 
+    if (!IsLowerCanonicalUserRange(Address, Count))
+    {
+        return false;
+    }
+
     const VirtualAddressSpace* AddressSpace = CurrentProcess->AddressSpace;
 
     if (CurrentProcess->FileType == FILE_TYPE_ELF)
@@ -612,7 +742,7 @@ bool IsUserAddressRangeAccessible(const Process* CurrentProcess, uint64_t Addres
         return true;
     }
 
-    return false;
+    return IsUserAddressRangeMappedByPageTables(CurrentProcess, Address, Count);
 }
 
 void FreePageTableHierarchy(PhysicalMemoryManager* PMM, uint64_t PageMapL4TableAddr)

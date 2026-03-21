@@ -90,8 +90,8 @@ int64_t TranslationLayer::HandlePosixSystemCallNumber(uint64_t SystemCallNumber,
         case 59: // execve
             return HandleExecveSystemCall(reinterpret_cast<const char*>(Arg1), reinterpret_cast<const char* const*>(Arg2), reinterpret_cast<const char* const*>(Arg3));
             break;
-        case 61: // wait
-            return HandleWaitSystemCall(reinterpret_cast<int*>(Arg1));
+        case 61: // wait4
+            return HandleWaitSystemCall(static_cast<int64_t>(Arg1), reinterpret_cast<int*>(Arg2), static_cast<int64_t>(Arg3), reinterpret_cast<void*>(Arg4));
             break;
         case 72: // fcntl
             return HandleFcntlSystemCall(Arg1, Arg2, Arg3);

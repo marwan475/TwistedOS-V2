@@ -535,6 +535,17 @@ bool CopyUserStringVector(LogicLayer* Logic, const char* const* UserVector, char
         const void* UserEntryAddress = reinterpret_cast<const void*>(reinterpret_cast<uint64_t>(UserVector) + (Index * sizeof(const char*)));
         if (!Logic->CopyFromUserToKernel(UserEntryAddress, &UserEntry, sizeof(UserEntry)))
         {
+#ifdef DEBUG_BUILD
+            Dispatcher* ActiveDispatcher = Dispatcher::GetActive();
+            if (ActiveDispatcher != nullptr && ActiveDispatcher->GetResourceLayer() != nullptr)
+            {
+                TTY* Terminal = ActiveDispatcher->GetResourceLayer()->GetTTY();
+                if (Terminal != nullptr)
+                {
+                    Terminal->Serialprintf("execvec_dbg: read_ptr_fail vec=%p idx=%lu slot=%p\n", (void*) UserVector, Index, UserEntryAddress);
+                }
+            }
+#endif
             FreeKernelStringVector(Logic, KernelVector, Index);
             return false;
         }
@@ -548,6 +559,17 @@ bool CopyUserStringVector(LogicLayer* Logic, const char* const* UserVector, char
 
         if (!CopyUserCString(Logic, UserEntry, TempBuffer, sizeof(TempBuffer)))
         {
+#ifdef DEBUG_BUILD
+            Dispatcher* ActiveDispatcher = Dispatcher::GetActive();
+            if (ActiveDispatcher != nullptr && ActiveDispatcher->GetResourceLayer() != nullptr)
+            {
+                TTY* Terminal = ActiveDispatcher->GetResourceLayer()->GetTTY();
+                if (Terminal != nullptr)
+                {
+                    Terminal->Serialprintf("execvec_dbg: read_cstr_fail vec=%p idx=%lu entry=%p\n", (void*) UserVector, Index, (void*) UserEntry);
+                }
+            }
+#endif
             FreeKernelStringVector(Logic, KernelVector, Index);
             return false;
         }
@@ -565,6 +587,18 @@ bool CopyUserStringVector(LogicLayer* Logic, const char* const* UserVector, char
             KernelVector[Index][CharIndex] = TempBuffer[CharIndex];
         }
     }
+
+#ifdef DEBUG_BUILD
+    Dispatcher* ActiveDispatcher = Dispatcher::GetActive();
+    if (ActiveDispatcher != nullptr && ActiveDispatcher->GetResourceLayer() != nullptr)
+    {
+        TTY* Terminal = ActiveDispatcher->GetResourceLayer()->GetTTY();
+        if (Terminal != nullptr)
+        {
+            Terminal->Serialprintf("execvec_dbg: vector_too_large vec=%p max=%lu\n", (void*) UserVector, static_cast<uint64_t>(SYSCALL_EXEC_MAX_VECTOR));
+        }
+    }
+#endif
 
     FreeKernelStringVector(Logic, KernelVector, SYSCALL_EXEC_MAX_VECTOR);
     return false;
@@ -3129,7 +3163,8 @@ int64_t TranslationLayer::HandleExecveSystemCall(const char* Path, const char* c
             {
                 const char* Arg0 = (KernelArgv != nullptr && KernelArgc > 0 && KernelArgv[0] != nullptr) ? KernelArgv[0] : "<null>";
                 const char* Arg1 = (KernelArgv != nullptr && KernelArgc > 1 && KernelArgv[1] != nullptr) ? KernelArgv[1] : "<null>";
-                Terminal->printf_("execve_dbg: path='%s' argc=%lu argv0='%s' argv1='%s'\n", KernelPathBuffer, KernelArgc, Arg0, Arg1);
+                Terminal->Serialprintf("execve_dbg: path='%s' argc=%lu argv0='%s' argv1='%s' argv_ptr=%p envp_ptr=%p argv_ok=%d env_ok=%d\n", KernelPathBuffer, KernelArgc, Arg0,
+                                       Arg1, (void*) Argv, (void*) Envp, IsArgvValid ? 1 : 0, IsEnvpValid ? 1 : 0);
             }
         }
     }
@@ -3192,11 +3227,18 @@ int64_t TranslationLayer::HandleExecveSystemCall(const char* Path, const char* c
     return 0;
 }
 
-int64_t TranslationLayer::HandleWaitSystemCall(int* Status)
+int64_t TranslationLayer::HandleWaitSystemCall(int64_t Pid, int* Status, int64_t Options, void* Rusage)
 {
+    (void) Rusage;
+
     if (Logic == nullptr)
     {
         return LINUX_ERR_EFAULT;
+    }
+
+    if (Options != 0)
+    {
+        return LINUX_ERR_EINVAL;
     }
 
     ProcessManager* PM = Logic->GetProcessManager();
@@ -3211,9 +3253,55 @@ int64_t TranslationLayer::HandleWaitSystemCall(int* Status)
         return LINUX_ERR_EFAULT;
     }
 
+    bool    WaitAnyChild      = (Pid == -1);
+    uint8_t RequestedChildPid = PROCESS_ID_INVALID;
+    if (!WaitAnyChild)
+    {
+        if (Pid < 0 || Pid > 255)
+        {
+            return LINUX_ERR_ECHILD;
+        }
+
+        RequestedChildPid = static_cast<uint8_t>(Pid);
+    }
+
+    auto IsMatchingChildId = [&](uint8_t ChildId) -> bool
+    {
+        return WaitAnyChild || ChildId == RequestedChildPid;
+    };
+
+    auto HasMatchingLiveChild = [&]() -> bool
+    {
+        for (size_t Index = 0; Index < PM->GetMaxProcesses(); ++Index)
+        {
+            Process* CandidateProcess = PM->GetProcessById(static_cast<uint8_t>(Index));
+            if (CandidateProcess == nullptr)
+            {
+                continue;
+            }
+
+            if (CandidateProcess->ParrentId != CurrentProcess->Id || CandidateProcess->Status == PROCESS_TERMINATED)
+            {
+                continue;
+            }
+
+            if (IsMatchingChildId(CandidateProcess->Id))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    };
+
     auto ConsumePendingChild = [&]() -> int64_t
     {
         if (!CurrentProcess->HasPendingChildExit)
+        {
+            return PROCESS_ID_INVALID;
+        }
+
+        if (!IsMatchingChildId(CurrentProcess->PendingChildId))
         {
             return PROCESS_ID_INVALID;
         }
@@ -3238,7 +3326,7 @@ int64_t TranslationLayer::HandleWaitSystemCall(int* Status)
         return ImmediateResult;
     }
 
-    if (!ProcessHasLiveChild(PM, CurrentProcess->Id))
+    if (!HasMatchingLiveChild())
     {
         return LINUX_ERR_ECHILD;
     }
@@ -3253,7 +3341,7 @@ int64_t TranslationLayer::HandleWaitSystemCall(int* Status)
     }
 
     CurrentProcess->WaitingForChild = false;
-    return LINUX_ERR_ECHILD;
+    return HasMatchingLiveChild() ? LINUX_ERR_ECHILD : LINUX_ERR_ECHILD;
 }
 
 int64_t TranslationLayer::HandleMmapSystemCall(void* Address, uint64_t Length, int64_t Protection, int64_t Flags, int64_t FileDescriptor, int64_t Offset)

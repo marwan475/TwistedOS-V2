@@ -50,7 +50,7 @@ public:
     int64_t HandleVforkSystemCall();
     int64_t HandleExitGroupSystemCall(int64_t Status);
     int64_t HandleExecveSystemCall(const char* Path, const char* const* Argv, const char* const* Envp);
-    int64_t HandleWaitSystemCall(int* Status);
+    int64_t HandleWaitSystemCall(int64_t Pid, int* Status, int64_t Options, void* Rusage);
     int64_t HandleMmapSystemCall(void* Address, uint64_t Length, int64_t Protection, int64_t Flags, int64_t FileDescriptor, int64_t Offset);
     int64_t HandleMunmapSystemCall(void* Address, uint64_t Length);
     int64_t HandleRtSigactionSystemCall(int64_t Signal, const void* Action, void* OldAction, uint64_t SigsetSize);
