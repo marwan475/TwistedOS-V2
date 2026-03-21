@@ -641,6 +641,57 @@ bool AppendChild(Dentry* Parent, Dentry* Child)
     return true;
 }
 
+bool RemoveChild(Dentry* Parent, Dentry* Child)
+{
+    if (Parent == nullptr || Child == nullptr || Parent->child_count == 0 || Parent->children == nullptr)
+    {
+        return false;
+    }
+
+    uint64_t ChildIndex = 0;
+    while (ChildIndex < Parent->child_count && Parent->children[ChildIndex] != Child)
+    {
+        ++ChildIndex;
+    }
+
+    if (ChildIndex >= Parent->child_count)
+    {
+        return false;
+    }
+
+    uint64_t NewCount = Parent->child_count - 1;
+    if (NewCount == 0)
+    {
+        delete[] Parent->children;
+        Parent->children    = nullptr;
+        Parent->child_count = 0;
+        return true;
+    }
+
+    Dentry** NewChildren = new Dentry*[NewCount];
+    if (NewChildren == nullptr)
+    {
+        return false;
+    }
+
+    uint64_t NewIndex = 0;
+    for (uint64_t Index = 0; Index < Parent->child_count; ++Index)
+    {
+        if (Index == ChildIndex)
+        {
+            continue;
+        }
+
+        NewChildren[NewIndex] = Parent->children[Index];
+        ++NewIndex;
+    }
+
+    delete[] Parent->children;
+    Parent->children    = NewChildren;
+    Parent->child_count = NewCount;
+    return true;
+}
+
 /**
  * Function: FreeDentryTree
  * Description: Recursively frees a dentry subtree and all associated resources.
@@ -1044,6 +1095,50 @@ bool VirtualFileSystem::CreateFile(const char* path, FileType type)
     }
 
     return EnsurePathDentry(Root, path, type, 0, nullptr);
+}
+
+bool VirtualFileSystem::DeleteFile(const char* path, FileType type)
+{
+    bool IsDirectory = (type == INODE_DIR);
+    bool IsFile      = (type == INODE_FILE);
+    if (Root == nullptr || path == nullptr || (!IsDirectory && !IsFile))
+    {
+        return false;
+    }
+
+    Dentry* Existing = LookupNoFollowFinal(path);
+    if (Existing == nullptr || Existing == Root || Existing->inode == nullptr || Existing->parent == nullptr)
+    {
+        return false;
+    }
+
+    if (Existing->inode->NodeType != type)
+    {
+        return false;
+    }
+
+    if (IsDirectory && Existing->child_count != 0)
+    {
+        return false;
+    }
+
+    if (isEXT && ActiveExtendedFileSystem != nullptr)
+    {
+        ExtendedFileSystemEntryType EntryType = IsDirectory ? ExtendedFileSystemEntryTypeDirectory : ExtendedFileSystemEntryTypeRegularFile;
+        if (!ActiveExtendedFileSystem->DeleteFile(path, EntryType))
+        {
+            return false;
+        }
+    }
+
+    if (!RemoveChild(Existing->parent, Existing))
+    {
+        return false;
+    }
+
+    Existing->parent = nullptr;
+    FreeDentryTree(Existing);
+    return true;
 }
 
 bool VirtualFileSystem::RegisterDevice(const char* path, void* deviceData, FileOperations* fileOperations)

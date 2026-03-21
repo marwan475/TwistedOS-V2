@@ -73,6 +73,7 @@ public:
     uint32_t GetInodesCount() const;
     uint32_t GetBlocksCount() const;
     bool     CreateFile(const char* Path, ExtendedFileSystemEntryType Type);
+    bool     DeleteFile(const char* Path, ExtendedFileSystemEntryType Type);
     bool     EnumerateEntries(ExtendedFileSystemEntryCallback Callback, void* Context, TTY* Terminal = nullptr) const;
     void     PrintFileSystem(TTY* Terminal) const;
     void     PrintFileTree(TTY* Terminal) const;
