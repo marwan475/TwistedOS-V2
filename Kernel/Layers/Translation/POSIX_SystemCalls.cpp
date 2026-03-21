@@ -123,6 +123,9 @@ int64_t TranslationLayer::HandlePosixSystemCallNumber(uint64_t SystemCallNumber,
         case 110: // getppid
             return HandleGetppidSystemCall();
             break;
+        case 132: // utime
+            return HandleUtimeSystemCall(reinterpret_cast<const char*>(Arg1), reinterpret_cast<const void*>(Arg2));
+            break;
         case 158: // arch_prctl
             return HandleArchPrctlSystemCall(Arg1, Arg2);
             break;
@@ -141,11 +144,20 @@ int64_t TranslationLayer::HandlePosixSystemCallNumber(uint64_t SystemCallNumber,
         case 231: // exit_group
             return HandleExitGroupSystemCall(static_cast<int64_t>(Arg1));
             break;
+        case 235: // utimes
+            return HandleUtimesSystemCall(reinterpret_cast<const char*>(Arg1), reinterpret_cast<const void*>(Arg2));
+            break;
         case 257: // openat
             return HandleOpenAtSystemCall(static_cast<int64_t>(Arg1), reinterpret_cast<const char*>(Arg2), Arg3, Arg4);
             break;
+        case 261: // futimesat
+            return HandleFutimesatSystemCall(static_cast<int64_t>(Arg1), reinterpret_cast<const char*>(Arg2), reinterpret_cast<const void*>(Arg3));
+            break;
         case 262: // newfstatat
             return HandleNewFstatatSystemCall(static_cast<int64_t>(Arg1), reinterpret_cast<const char*>(Arg2), reinterpret_cast<void*>(Arg3), static_cast<int64_t>(Arg4));
+            break;
+        case 280: // utimensat
+            return HandleUtimensatSystemCall(static_cast<int64_t>(Arg1), reinterpret_cast<const char*>(Arg2), reinterpret_cast<const void*>(Arg3), static_cast<int64_t>(Arg4));
             break;
             /*
                     case 4: // stat
