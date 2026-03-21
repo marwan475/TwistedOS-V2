@@ -36,7 +36,8 @@ void _start()
 {
     static const char        tty[]        = "/dev/tty";
     static const char        shell[]      = "/bin/sh";
-    static const char* const shell_argv[] = {shell, 0};
+    static const char        init_script[] = "/init.sh";
+    static const char* const shell_argv[] = {shell, init_script, 0};
     static const char* const shell_envp[] = {0};
 
     long tty_fd = syscall2(2, (u64) tty, 2);
