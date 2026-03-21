@@ -84,31 +84,6 @@ const char* Ext2DirectoryEntryTypeToString(uint8_t Type)
     }
 }
 
-bool StringEquals(const char* Left, const char* Right)
-{
-    if (Left == nullptr || Right == nullptr)
-    {
-        return false;
-    }
-
-    uint64_t LeftLength  = strlen(Left);
-    uint64_t RightLength = strlen(Right);
-    if (LeftLength != RightLength)
-    {
-        return false;
-    }
-
-    for (uint64_t Index = 0; Index < LeftLength; ++Index)
-    {
-        if (Left[Index] != Right[Index])
-        {
-            return false;
-        }
-    }
-
-    return true;
-}
-
 } // namespace
 
 ExtendedFileSystemManager::ExtendedFileSystemManager(const IDEController* Controller)
@@ -309,6 +284,8 @@ bool ExtendedFileSystemManager::ReadInode(uint32_t InodeNumber, uint8_t* InodeDa
 
 bool ExtendedFileSystemManager::ReadInodePayload(uint32_t InodeNumber, const uint8_t* InodeData, uint16_t InodeMode, uint64_t PayloadSize, void* DestinationBuffer) const
 {
+    static_cast<void>(InodeNumber);
+
     if (!Initialized || InodeData == nullptr || (DestinationBuffer == nullptr && PayloadSize != 0))
     {
         return false;

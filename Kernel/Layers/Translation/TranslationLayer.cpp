@@ -604,30 +604,6 @@ bool CopyUserStringVector(LogicLayer* Logic, const char* const* UserVector, char
     return false;
 }
 
-bool ProcessHasLiveChild(ProcessManager* PM, uint8_t ParentId)
-{
-    if (PM == nullptr)
-    {
-        return false;
-    }
-
-    for (size_t Index = 0; Index < PM->GetMaxProcesses(); ++Index)
-    {
-        Process* CandidateProcess = PM->GetProcessById(static_cast<uint8_t>(Index));
-        if (CandidateProcess == nullptr)
-        {
-            continue;
-        }
-
-        if (CandidateProcess->ParrentId == ParentId && CandidateProcess->Status != PROCESS_TERMINATED)
-        {
-            return true;
-        }
-    }
-
-    return false;
-}
-
 bool BuildAbsolutePathFromDentry(const Dentry* Node, char* Buffer, uint64_t BufferSize)
 {
     if (Node == nullptr || Buffer == nullptr || BufferSize == 0)
