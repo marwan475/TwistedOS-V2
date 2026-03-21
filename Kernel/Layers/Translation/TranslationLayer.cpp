@@ -3236,10 +3236,17 @@ int64_t TranslationLayer::HandleWaitSystemCall(int64_t Pid, int* Status, int64_t
         return LINUX_ERR_EFAULT;
     }
 
-    if (Options != 0)
+    constexpr int64_t LINUX_WAIT_OPTION_WNOHANG    = 0x00000001;
+    constexpr int64_t LINUX_WAIT_OPTION_WUNTRACED  = 0x00000002;
+    constexpr int64_t LINUX_WAIT_OPTION_WCONTINUED = 0x00000008;
+    constexpr int64_t LINUX_WAIT_OPTION_MASK       = LINUX_WAIT_OPTION_WNOHANG | LINUX_WAIT_OPTION_WUNTRACED | LINUX_WAIT_OPTION_WCONTINUED;
+
+    if ((Options & ~LINUX_WAIT_OPTION_MASK) != 0)
     {
         return LINUX_ERR_EINVAL;
     }
+
+    bool NoHang = (Options & LINUX_WAIT_OPTION_WNOHANG) != 0;
 
     ProcessManager* PM = Logic->GetProcessManager();
     if (PM == nullptr)
@@ -3331,6 +3338,11 @@ int64_t TranslationLayer::HandleWaitSystemCall(int64_t Pid, int* Status, int64_t
         return LINUX_ERR_ECHILD;
     }
 
+    if (NoHang)
+    {
+        return 0;
+    }
+
     CurrentProcess->WaitingForChild = true;
     Logic->BlockProcess(CurrentProcess->Id);
 
@@ -3341,7 +3353,7 @@ int64_t TranslationLayer::HandleWaitSystemCall(int64_t Pid, int* Status, int64_t
     }
 
     CurrentProcess->WaitingForChild = false;
-    return HasMatchingLiveChild() ? LINUX_ERR_ECHILD : LINUX_ERR_ECHILD;
+    return HasMatchingLiveChild() ? 0 : LINUX_ERR_ECHILD;
 }
 
 int64_t TranslationLayer::HandleMmapSystemCall(void* Address, uint64_t Length, int64_t Protection, int64_t Flags, int64_t FileDescriptor, int64_t Offset)

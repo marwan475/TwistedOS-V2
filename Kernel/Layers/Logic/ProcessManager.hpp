@@ -18,7 +18,7 @@ static constexpr size_t  MAX_PROCESSES                     = 32;
 static constexpr uint8_t PROCESS_ID_INVALID                = 0xFF;
 static constexpr size_t  MAX_OPEN_FILES_PER_PROCESS        = 16;
 static constexpr size_t  MAX_MEMORY_MAPPINGS_PER_PROCESS   = 8;
-static constexpr size_t  MAX_POSIX_SIGNALS_PER_PROCESS     = 8;
+static constexpr size_t  MAX_POSIX_SIGNALS_PER_PROCESS     = 64;
 static constexpr size_t  PROCESS_KERNEL_SYSCALL_STACK_SIZE = 16384;
 
 enum ProcessState
@@ -107,7 +107,7 @@ struct Process
     VirtualAddressSpace*        AddressSpace              = nullptr;
     Dentry*                     CurrentFileSystemLocation = nullptr;
     File*                       FileTable[MAX_OPEN_FILES_PER_PROCESS];
-    ProcessSignalAction         SignalActions[MAX_POSIX_SIGNALS_PER_PROCESS];
+    ProcessSignalAction*        SignalActions             = nullptr;
     ProcessMemoryMapping        MemoryMappings[MAX_MEMORY_MAPPINGS_PER_PROCESS];
 };
 
