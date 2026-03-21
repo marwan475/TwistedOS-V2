@@ -1203,6 +1203,154 @@ bool VirtualFileSystem::DeleteFile(const char* path, FileType type)
     return true;
 }
 
+bool VirtualFileSystem::RenameFile(const char* oldPath, const char* newPath, FileType type)
+{
+    bool IsDirectory = (type == INODE_DIR);
+    bool IsFile      = (type == INODE_FILE);
+    if (Root == nullptr || oldPath == nullptr || newPath == nullptr || (!IsDirectory && !IsFile))
+    {
+        return false;
+    }
+
+    Dentry* Source = LookupNoFollowFinal(oldPath);
+    if (Source == nullptr || Source == Root || Source->inode == nullptr || Source->parent == nullptr)
+    {
+        return false;
+    }
+
+    if (Source->inode->NodeType != type)
+    {
+        return false;
+    }
+
+    Dentry* ExistingDestination = LookupNoFollowFinal(newPath);
+    if (ExistingDestination != nullptr)
+    {
+        return ExistingDestination == Source;
+    }
+
+    const char* NormalizedNewPath = NormalizePathStart(newPath);
+    if (IsRootAliasPath(NormalizedNewPath))
+    {
+        return false;
+    }
+
+    const char* PathEnd = NormalizedNewPath;
+    while (*PathEnd != STRING_TERMINATOR)
+    {
+        ++PathEnd;
+    }
+
+    while (PathEnd > NormalizedNewPath && *(PathEnd - 1) == PATH_SEPARATOR)
+    {
+        --PathEnd;
+    }
+
+    if (PathEnd == NormalizedNewPath)
+    {
+        return false;
+    }
+
+    const char* LastSegmentStart = PathEnd;
+    while (LastSegmentStart > NormalizedNewPath && *(LastSegmentStart - 1) != PATH_SEPARATOR)
+    {
+        --LastSegmentStart;
+    }
+
+    uint64_t NewNameLength = static_cast<uint64_t>(PathEnd - LastSegmentStart);
+    if (NewNameLength == 0)
+    {
+        return false;
+    }
+
+    if ((NewNameLength == 1 && LastSegmentStart[0] == PATH_DOT)
+        || (NewNameLength == 2 && LastSegmentStart[0] == PATH_DOT && LastSegmentStart[1] == PATH_DOT))
+    {
+        return false;
+    }
+
+    Dentry* TargetParent = Root;
+    const char* SegmentStart = NormalizedNewPath;
+    while (SegmentStart < LastSegmentStart)
+    {
+        while (SegmentStart < LastSegmentStart && *SegmentStart == PATH_SEPARATOR)
+        {
+            ++SegmentStart;
+        }
+
+        if (SegmentStart >= LastSegmentStart)
+        {
+            break;
+        }
+
+        const char* SegmentEnd = SegmentStart;
+        while (SegmentEnd < LastSegmentStart && *SegmentEnd != PATH_SEPARATOR)
+        {
+            ++SegmentEnd;
+        }
+
+        uint64_t SegmentLength = static_cast<uint64_t>(SegmentEnd - SegmentStart);
+        if ((SegmentLength == 1 && SegmentStart[0] == PATH_DOT)
+            || (SegmentLength == 2 && SegmentStart[0] == PATH_DOT && SegmentStart[1] == PATH_DOT))
+        {
+            return false;
+        }
+
+        Dentry* Next = FindChildBySegment(TargetParent, SegmentStart, SegmentLength);
+        if (Next == nullptr || Next->inode == nullptr || Next->inode->NodeType != INODE_DIR)
+        {
+            return false;
+        }
+
+        TargetParent = Next;
+        SegmentStart = SegmentEnd;
+    }
+
+    if (FindChildBySegment(TargetParent, LastSegmentStart, NewNameLength) != nullptr)
+    {
+        return false;
+    }
+
+    if (IsDirectory && (Source == TargetParent || IsDescendantDentry(TargetParent, Source)))
+    {
+        return false;
+    }
+
+    char* NewName = DuplicateSegment(LastSegmentStart, NewNameLength);
+    if (NewName == nullptr)
+    {
+        return false;
+    }
+
+    if (isEXT && ActiveExtendedFileSystem != nullptr)
+    {
+        ExtendedFileSystemEntryType EntryType = IsDirectory ? ExtendedFileSystemEntryTypeDirectory : ExtendedFileSystemEntryTypeRegularFile;
+        if (!ActiveExtendedFileSystem->RenameFile(oldPath, newPath, EntryType))
+        {
+            delete[] NewName;
+            return false;
+        }
+    }
+
+    Dentry* PreviousParent = Source->parent;
+    if (!RemoveChild(PreviousParent, Source))
+    {
+        delete[] NewName;
+        return false;
+    }
+
+    if (!AppendChild(TargetParent, Source))
+    {
+        AppendChild(PreviousParent, Source);
+        delete[] NewName;
+        return false;
+    }
+
+    delete[] const_cast<char*>(Source->name);
+    Source->name = NewName;
+    return true;
+}
+
 bool VirtualFileSystem::RegisterDevice(const char* path, void* deviceData, FileOperations* fileOperations)
 {
     if (Root == nullptr || path == nullptr || fileOperations == nullptr)

@@ -91,6 +91,7 @@ public:
     bool    RegisterDevice(const char* path, void* deviceData, FileOperations* fileOperations);
     bool    CreateFile(const char* path, FileType type);
     bool    DeleteFile(const char* path, FileType type);
+    bool    RenameFile(const char* oldPath, const char* newPath, FileType type);
     bool    SetRoot(Dentry* RootDentry);
     Dentry* Lookup(const char* path);
     Dentry* LookupNoFollowFinal(const char* path);
