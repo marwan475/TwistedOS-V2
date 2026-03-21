@@ -40,7 +40,7 @@ X86_64 OS that boots via UEFI into a higher-half kernel with PMM, VMM, schedulin
         - Manages all hardware resources
         - Stores physical and virtual memory managers
         - Initializes the kernel heap manager
-            - Tracks free memory using a bitmap
+            - Uses slab classes for small allocations and page-backed allocations for larger requests
             - Tracks allocations using a header before each allocation with size and magic
             - Supports `new` and `delete` operators for C++ object allocations in the kernel
         - Exposes task switching to the logic layer
@@ -69,6 +69,7 @@ X86_64 OS that boots via UEFI into a higher-half kernel with PMM, VMM, schedulin
         - VirtualFileSystem
             - Mounts on initramfs
             - Mounts EXT2 root filesystem from disk
+            - Supports switching to the EXT2 root filesystem from initramfs via `init.sh` (`mount -t ext2 /dev/sda2 /mnt` then `chroot /mnt /bin/sh`)
             - Ability to execute binary from vfs (Create user process from vfs)
             - Register devices in vfs (/dev)
     - Translation layer
@@ -85,11 +86,14 @@ X86_64 OS that boots via UEFI into a higher-half kernel with PMM, VMM, schedulin
                 - stat / lstat / newfstatat
                 - getdents64
                 - getcwd / chdir
+                - mkdir
                 - fcntl / dup2
                 - mmap / munmap / mprotect / brk
                 - getpid / getppid / getuid / getgid / geteuid / getegid
                 - fork / vfork / wait / exit_group
                 - execve
+                - utime / utimes / futimesat / utimensat
+                - chroot / mount
                 - rt_sigaction / rt_sigprocmask
                 - arch_prctl / set_tid_address
 - Debug support
