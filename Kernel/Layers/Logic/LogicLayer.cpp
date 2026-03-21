@@ -2417,25 +2417,6 @@ bool LogicLayer::RunProcess(uint8_t Id)
     bool     ResumeTargetInKernelContext = (TargetProcess->Level == PROCESS_LEVEL_USER && TargetProcess->WaitingForSystemCallReturn && TargetProcess->HasSavedSystemCallFrame
                                         && TargetProcess->State.cs == KERNEL_CS && TargetProcess->State.ss == KERNEL_SS);
 
-#ifdef DEBUG_BUILD
-    TTY* DebugTerminal = Resource->GetTTY();
-    if (DebugTerminal != nullptr)
-    {
-        DebugTerminal->Serialprintf(
-                "run_dbg: enter target=%u target_status=%d target_level=%d resume_kernel=%u target_rip=%p target_rsp=%p target_cs=%p target_ss=%p current=%d\n", Id,
-                static_cast<int>(TargetProcess->Status), static_cast<int>(TargetProcess->Level), ResumeTargetInKernelContext ? 1U : 0U, (void*) TargetProcess->State.rip,
-                (void*) TargetProcess->State.rsp, (void*) TargetProcess->State.cs, (void*) TargetProcess->State.ss,
-                (CurrentProcess == nullptr) ? -1 : static_cast<int>(CurrentProcess->Id));
-
-        if (CurrentProcess != nullptr)
-        {
-            DebugTerminal->Serialprintf("run_dbg: current_state id=%u status=%d rip=%p rsp=%p cs=%p ss=%p\n", CurrentProcess->Id, static_cast<int>(CurrentProcess->Status),
-                                       (void*) CurrentProcess->State.rip, (void*) CurrentProcess->State.rsp, (void*) CurrentProcess->State.cs,
-                                       (void*) CurrentProcess->State.ss);
-        }
-    }
-#endif
-
     if (CurrentProcess == nullptr)
     {
         TargetProcess->Status = PROCESS_RUNNING;
@@ -2447,12 +2428,6 @@ bool LogicLayer::RunProcess(uint8_t Id)
 
         if (TargetProcess->Level == PROCESS_LEVEL_USER && !ResumeTargetInKernelContext)
         {
-#ifdef DEBUG_BUILD
-            if (DebugTerminal != nullptr)
-            {
-                DebugTerminal->Serialprintf("run_dbg: switch_path=bootstrap_user target=%u\n", TargetProcess->Id);
-            }
-#endif
             SetKernelSystemCallStackTop(TargetProcess->KernelSystemCallStackTop);
             SetUserFSBase(TargetProcess->UserFSBase);
             Resource->TaskSwitchUser(&BootstrapState, TargetProcess->State, TargetProcess->AddressSpace);
@@ -2470,13 +2445,6 @@ bool LogicLayer::RunProcess(uint8_t Id)
                 return false;
             }
 
-#ifdef DEBUG_BUILD
-            if (DebugTerminal != nullptr)
-            {
-                DebugTerminal->Serialprintf("run_dbg: switch_path=bootstrap_kernel_resume target=%u cr3=%p\n", TargetProcess->Id, (void*) TargetPageTable);
-            }
-#endif
-
             SetKernelSystemCallStackTop(TargetProcess->KernelSystemCallStackTop);
             SetUserFSBase(TargetProcess->UserFSBase);
             Resource->LoadPageTable(TargetPageTable);
@@ -2484,12 +2452,6 @@ bool LogicLayer::RunProcess(uint8_t Id)
         }
         else
         {
-#ifdef DEBUG_BUILD
-            if (DebugTerminal != nullptr)
-            {
-                DebugTerminal->Serialprintf("run_dbg: switch_path=bootstrap_kernel target=%u\n", TargetProcess->Id);
-            }
-#endif
             Resource->TaskSwitchKernel(&BootstrapState, TargetProcess->State);
         }
 
@@ -2509,12 +2471,6 @@ bool LogicLayer::RunProcess(uint8_t Id)
     PM->UpdateCurrentProcessId(TargetProcess->Id);
     if (TargetProcess->Level == PROCESS_LEVEL_USER && !ResumeTargetInKernelContext)
     {
-#ifdef DEBUG_BUILD
-        if (DebugTerminal != nullptr)
-        {
-            DebugTerminal->Serialprintf("run_dbg: switch_path=normal_user from=%u to=%u\n", CurrentProcess->Id, TargetProcess->Id);
-        }
-#endif
         SetKernelSystemCallStackTop(TargetProcess->KernelSystemCallStackTop);
         SetUserFSBase(TargetProcess->UserFSBase);
         Resource->TaskSwitchUser(&CurrentProcess->State, TargetProcess->State, TargetProcess->AddressSpace);
@@ -2532,13 +2488,6 @@ bool LogicLayer::RunProcess(uint8_t Id)
             return false;
         }
 
-#ifdef DEBUG_BUILD
-        if (DebugTerminal != nullptr)
-        {
-            DebugTerminal->Serialprintf("run_dbg: switch_path=normal_kernel_resume from=%u to=%u cr3=%p\n", CurrentProcess->Id, TargetProcess->Id, (void*) TargetPageTable);
-        }
-#endif
-
         SetKernelSystemCallStackTop(TargetProcess->KernelSystemCallStackTop);
         SetUserFSBase(TargetProcess->UserFSBase);
         Resource->LoadPageTable(TargetPageTable);
@@ -2546,12 +2495,6 @@ bool LogicLayer::RunProcess(uint8_t Id)
     }
     else
     {
-#ifdef DEBUG_BUILD
-        if (DebugTerminal != nullptr)
-        {
-            DebugTerminal->Serialprintf("run_dbg: switch_path=normal_kernel from=%u to=%u\n", CurrentProcess->Id, TargetProcess->Id);
-        }
-#endif
         Resource->TaskSwitchKernel(&CurrentProcess->State, TargetProcess->State);
     }
 
@@ -2783,18 +2726,6 @@ void LogicLayer::Schedule()
     }
 
     uint8_t NextProcessId = Sched->SelectNextProcess();
-
-#ifdef DEBUG_BUILD
-    if (Resource != nullptr)
-    {
-        TTY* Terminal = Resource->GetTTY();
-        if (Terminal != nullptr)
-        {
-            Process* Current = PM->GetCurrentProcess();
-            Terminal->Serialprintf("sched_dbg: select next=%u current=%d\n", NextProcessId, (Current == nullptr) ? -1 : static_cast<int>(Current->Id));
-        }
-    }
-#endif
 
     // Resource->GetConsole()->printf_("Scheduling: Next process ID = %u\n", NextProcessId);
 
