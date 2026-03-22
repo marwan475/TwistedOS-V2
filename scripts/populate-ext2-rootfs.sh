@@ -26,11 +26,8 @@ fi
 
 SOURCE_ROOTFS_DIR="$(cd "${SOURCE_ROOTFS_DIR}" && pwd)"
 
-COMMAND_FILE="$(mktemp)"
-trap 'rm -f "${COMMAND_FILE}"' EXIT
-
 while IFS= read -r relative_dir; do
-	echo "mkdir /${relative_dir}" >>"${COMMAND_FILE}"
+	debugfs -w -R "mkdir /${relative_dir}" "${EXT2_IMAGE_PATH}" >/dev/null 2>&1 || true
 done < <(cd "${SOURCE_ROOTFS_DIR}" && find . -mindepth 1 -type d | sed 's|^\./||' | LC_ALL=C sort)
 
 while IFS= read -r relative_path; do
@@ -38,17 +35,15 @@ while IFS= read -r relative_path; do
 	target_path="/${relative_path}"
 	parent_path="$(dirname "${target_path}")"
 
-	echo "mkdir ${parent_path}" >>"${COMMAND_FILE}"
-	echo "rm ${target_path}" >>"${COMMAND_FILE}"
+	debugfs -w -R "mkdir ${parent_path}" "${EXT2_IMAGE_PATH}" >/dev/null 2>&1 || true
+	debugfs -w -R "rm ${target_path}" "${EXT2_IMAGE_PATH}" >/dev/null 2>&1 || true
 
 	if [ -L "${source_path}" ]; then
 		link_target="$(readlink "${source_path}")"
-		echo "symlink ${target_path} ${link_target}" >>"${COMMAND_FILE}"
+		debugfs -w -R "symlink ${target_path} ${link_target}" "${EXT2_IMAGE_PATH}" >/dev/null
 	else
-		echo "write ${source_path} ${target_path}" >>"${COMMAND_FILE}"
+		debugfs -w -R "write ${source_path} ${target_path}" "${EXT2_IMAGE_PATH}" >/dev/null
 	fi
 done < <(cd "${SOURCE_ROOTFS_DIR}" && find . -mindepth 1 \( -type f -o -type l \) | sed 's|^\./||' | LC_ALL=C sort)
-
-debugfs -w -f "${COMMAND_FILE}" "${EXT2_IMAGE_PATH}" >/dev/null
 
 echo "EXT2 rootfs populated from ${SOURCE_ROOTFS_DIR}"
