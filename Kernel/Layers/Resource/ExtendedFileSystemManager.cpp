@@ -420,8 +420,7 @@ bool ExtendedFileSystemManager::ReadInodePayload(uint32_t InodeNumber, const uin
     return true;
 }
 
-bool ExtendedFileSystemManager::EnumerateDirectoryEntries(uint32_t DirectoryInodeNumber, const char* DirectoryPath, ExtendedFileSystemEntryCallback Callback, void* Context, TTY* Terminal,
-                                                          uint64_t* EnumeratedEntries) const
+bool ExtendedFileSystemManager::EnumerateDirectoryEntries(uint32_t DirectoryInodeNumber, const char* DirectoryPath, ExtendedFileSystemEntryCallback Callback, void* Context) const
 {
     if (DirectoryPath == nullptr || Callback == nullptr)
     {
@@ -536,19 +535,6 @@ bool ExtendedFileSystemManager::EnumerateDirectoryEntries(uint32_t DirectoryInod
                     Entry.Name                    = FullPath;
                     void* EntryData               = nullptr;
 
-                    if (EnumeratedEntries != nullptr)
-                    {
-                        ++(*EnumeratedEntries);
-                        if (Terminal != nullptr)
-                        {
-                            if ((*EnumeratedEntries <= 16) || ((*EnumeratedEntries % 512) == 0))
-                            {
-                                Terminal->printf_("ext enum dbg: inode=%u type=%u size=%llu path=%s count=%llu\n", EntryInode, static_cast<unsigned int>(DecodedType),
-                                                  static_cast<unsigned long long>(EntrySize), FullPath, static_cast<unsigned long long>(*EnumeratedEntries));
-                            }
-                        }
-                    }
-
                     Entry.Data        = EntryData;
                     Entry.Size        = EntrySize;
                     Entry.Type        = DecodedType;
@@ -559,7 +545,7 @@ bool ExtendedFileSystemManager::EnumerateDirectoryEntries(uint32_t DirectoryInod
                     bool RecurseIntoDirectory = (DecodedType == ExtendedFileSystemEntryTypeDirectory || IsDirectory);
                     if (ContinueEnumeration && RecurseIntoDirectory)
                     {
-                        ContinueEnumeration = EnumerateDirectoryEntries(EntryInode, FullPath, Callback, Context, Terminal, EnumeratedEntries);
+                        ContinueEnumeration = EnumerateDirectoryEntries(EntryInode, FullPath, Callback, Context);
                     }
 
                     delete[] FullPath;
@@ -3099,15 +3085,7 @@ bool ExtendedFileSystemManager::EnumerateEntries(ExtendedFileSystemEntryCallback
         return false;
     }
 
-    uint64_t EnumeratedEntries = 0;
-    bool     EnumerationResult = EnumerateDirectoryEntries(EXT2_ROOT_INODE_NUMBER, "/", Callback, Context, Terminal, &EnumeratedEntries);
-
-    if (Terminal != nullptr)
-    {
-        Terminal->printf_("ext enum dbg: completed result=%u total_entries=%llu\n", EnumerationResult ? 1U : 0U, static_cast<unsigned long long>(EnumeratedEntries));
-    }
-
-    return EnumerationResult;
+    return EnumerateDirectoryEntries(EXT2_ROOT_INODE_NUMBER, "/", Callback, Context);
 }
 
 void ExtendedFileSystemManager::PrintFileSystem(TTY* Terminal) const

@@ -41,8 +41,6 @@ typedef struct
     Dentry*     RootDentry;
     const char* MountPath;
     const void* FileSystemManager;
-    TTY*        Terminal;
-    uint64_t    EnumeratedEntries;
     bool        IsSuccessful;
 } MountEXTFileSystemContext;
 
@@ -1062,16 +1060,6 @@ bool MountEXTEntryCallback(const ExtendedFileSystemEntry& Entry, void* Context)
 
     bool Added = EnsurePathDentry(MountContext->RootDentry, TargetPath, NodeType, Entry.Size, NodeData);
 
-    ++MountContext->EnumeratedEntries;
-    if (MountContext->Terminal != nullptr)
-    {
-        if (MountContext->EnumeratedEntries <= 8 || (MountContext->EnumeratedEntries % 512) == 0)
-        {
-            MountContext->Terminal->printf_("ext mount dbg: entry=%llu inode=%u type=%u path=%s added=%u\n", static_cast<unsigned long long>(MountContext->EnumeratedEntries),
-                                            Entry.InodeNumber, static_cast<unsigned int>(Entry.Type), (TargetPath != nullptr) ? TargetPath : "<null>", Added ? 1U : 0U);
-        }
-    }
-
     if (Added)
     {
         Dentry* MountedEntry = ResolvePathInternal(MountContext->RootDentry, MountContext->RootDentry, TargetPath, MAX_SYMLINK_FOLLOW_DEPTH, false);
@@ -1244,28 +1232,8 @@ void VirtualFileSystem::MountInitRamFileSystem(RamFileSystemManager* ramFileSyst
 
 bool VirtualFileSystem::MountEXTFileSystem(ExtendedFileSystemManager* extendedFileSystemManager, const char* mountPath)
 {
-    TTY* Terminal = nullptr;
-    Dispatcher* ActiveDispatcher = Dispatcher::GetActive();
-    if (ActiveDispatcher != nullptr)
-    {
-        ResourceLayer* Resource = ActiveDispatcher->GetResourceLayer();
-        if (Resource != nullptr)
-        {
-            Terminal = Resource->GetTTY();
-        }
-    }
-
-    if (Terminal != nullptr)
-    {
-        Terminal->printf_("ext mount dbg: begin mountPath=%s fs=%p\n", (mountPath != nullptr) ? mountPath : "<null>", extendedFileSystemManager);
-    }
-
     if (extendedFileSystemManager == nullptr || mountPath == nullptr || !extendedFileSystemManager->IsInitialized())
     {
-        if (Terminal != nullptr)
-        {
-            Terminal->printf_("ext mount dbg: rejected before mount (invalid manager/path/init state)\n");
-        }
         return false;
     }
 
@@ -1277,10 +1245,6 @@ bool VirtualFileSystem::MountEXTFileSystem(ExtendedFileSystemManager* extendedFi
 
     if (!EnsurePathDentry(Root, mountPath, INODE_DIR, 0, extendedFileSystemManager))
     {
-        if (Terminal != nullptr)
-        {
-            Terminal->printf_("ext mount dbg: failed EnsurePathDentry for mount root\n");
-        }
         return false;
     }
 
@@ -1288,38 +1252,16 @@ bool VirtualFileSystem::MountEXTFileSystem(ExtendedFileSystemManager* extendedFi
     MountContext.RootDentry                = Root;
     MountContext.MountPath                 = mountPath;
     MountContext.FileSystemManager         = extendedFileSystemManager;
-    MountContext.Terminal                  = Terminal;
-    MountContext.EnumeratedEntries         = 0;
     MountContext.IsSuccessful              = true;
 
-    if (Terminal != nullptr)
-    {
-        Terminal->printf_("ext mount dbg: starting ext enumeration\n");
-    }
-
-    bool EnumerationSuccess = extendedFileSystemManager->EnumerateEntries(&MountEXTEntryCallback, &MountContext, Terminal);
+    bool EnumerationSuccess = extendedFileSystemManager->EnumerateEntries(&MountEXTEntryCallback, &MountContext, nullptr);
     if (!EnumerationSuccess || !MountContext.IsSuccessful)
     {
-        if (Terminal != nullptr)
-        {
-            Terminal->printf_("ext mount dbg: enumeration failed success=%u context_ok=%u entries=%llu\n", EnumerationSuccess ? 1U : 0U, MountContext.IsSuccessful ? 1U : 0U,
-                              static_cast<unsigned long long>(MountContext.EnumeratedEntries));
-        }
         return false;
-    }
-
-    if (Terminal != nullptr)
-    {
-        Terminal->printf_("ext mount dbg: enumeration complete entries=%llu\n", static_cast<unsigned long long>(MountContext.EnumeratedEntries));
     }
 
     isEXT                    = true;
     ActiveExtendedFileSystem = extendedFileSystemManager;
-
-    if (Terminal != nullptr)
-    {
-        Terminal->printf_("ext mount dbg: mount state committed\n");
-    }
 
     return true;
 }
