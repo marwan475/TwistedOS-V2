@@ -43,6 +43,13 @@ X86_64 OS that boots via UEFI into a higher-half kernel with PMM, VMM, schedulin
             - Uses slab classes for small allocations and page-backed allocations for larger requests
             - Tracks allocations using a header before each allocation with size and magic
             - Supports `new` and `delete` operators for C++ object allocations in the kernel
+        - Creates `TTY`
+            - Framebuffer-backed terminal output
+            - ANSI escape sequence support for cursor positioning, screen clearing, and colors
+            - Canonical and non-canonical input modes with echo and erase handling
+            - Supports terminal ioctls (`TCGETS`, `TCSETS*`, `TIOCGWINSZ`, `TIOCSPGRP`, `FIONREAD`)
+        - Creates `Keyboard`
+            - Handles PS/2 keyboard input and forwards characters into TTY input buffer
         - Exposes task switching to the logic layer
         - Creates `DeviceManager`
             - Enumerates PCI devices and initializes IDE disk access
@@ -66,9 +73,11 @@ X86_64 OS that boots via UEFI into a higher-half kernel with PMM, VMM, schedulin
             - Sleeps processes for a certain amount of timer ticks
         - Creates `ELFManager`
             - Used to parse and map ELFs to user virtual address space
+            - Supports dynamic ELF loading flow for user binaries
         - VirtualFileSystem
             - Mounts on initramfs
             - Mounts EXT2 root filesystem from disk
+            - Supports Alpine root filesystem
             - Supports switching to the EXT2 root filesystem from initramfs from user space
             - Ability to execute binary from vfs (Create user process from vfs)
             - Register devices in vfs (/dev)
@@ -82,14 +91,20 @@ X86_64 OS that boots via UEFI into a higher-half kernel with PMM, VMM, schedulin
                 - read
                 - write
                 - writev
+                - poll
+                - lseek
                 - ioctl
+                - access
                 - stat / lstat / newfstatat
                 - getdents64
                 - getcwd / chdir
-                - mkdir
+                - mkdir / rename / rmdir / unlink
                 - fcntl / dup2
                 - mmap / munmap / mprotect / brk
                 - getpid / getppid / getuid / getgid / geteuid / getegid
+                - setpgid / getpgid / getpgrp / setsid / getsid
+                - pause / nanosleep
+                - uname / gettimeofday / clock_gettime
                 - fork / vfork / wait / exit_group
                 - execve
                 - utime / utimes / futimesat / utimensat
