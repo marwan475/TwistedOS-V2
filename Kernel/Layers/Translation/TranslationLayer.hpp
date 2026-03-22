@@ -30,6 +30,7 @@ public:
     int64_t HandleOpenSystemCall(const char* Path, uint64_t Flags);
     int64_t HandleOpenAtSystemCall(int64_t DirectoryFileDescriptor, const char* Path, uint64_t Flags, uint64_t Mode);
     int64_t HandleStatSystemCall(const char* Path, void* Buffer);
+    int64_t HandleFstatSystemCall(uint64_t FileDescriptor, void* Buffer);
     int64_t HandleLstatSystemCall(const char* Path, void* Buffer);
     int64_t HandleNewFstatatSystemCall(int64_t DirectoryFileDescriptor, const char* Path, void* Buffer, int64_t Flags);
     int64_t HandleGetdents64SystemCall(uint64_t FileDescriptor, void* Buffer, uint64_t BufferSize);

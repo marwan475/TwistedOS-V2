@@ -48,6 +48,9 @@ int64_t TranslationLayer::HandlePosixSystemCallNumber(uint64_t SystemCallNumber,
         case 4: // stat
             return HandleStatSystemCall(reinterpret_cast<const char*>(Arg1), reinterpret_cast<void*>(Arg2));
             break;
+        case 5: // fstat
+            return HandleFstatSystemCall(Arg1, reinterpret_cast<void*>(Arg2));
+            break;
         case 6: // lstat
             return HandleLstatSystemCall(reinterpret_cast<const char*>(Arg1), reinterpret_cast<void*>(Arg2));
             break;

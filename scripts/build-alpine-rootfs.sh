@@ -13,6 +13,7 @@ ALPINE_MIRROR="${ALPINE_MIRROR:-https://dl-cdn.alpinelinux.org/alpine}"
 ALPINE_ARCH="${ALPINE_ARCH:-x86_64}"
 ALPINE_VERSION="${ALPINE_VERSION:-latest-stable}"
 ALPINE_EXTRA_PACKAGES="${ALPINE_EXTRA_PACKAGES:-xorg-server xinit dwm}"
+ALPINE_REQUIRED_PACKAGES="libx11"
 
 require_command()
 {
@@ -170,7 +171,8 @@ main()
 	local apk_static_path
 	apk_static_path="$(download_apk_static "${ALPINE_MIRROR}" "${alpine_branch}" "${ALPINE_ARCH}" "${DOWNLOAD_DIR}")"
 
-	echo "Installing extra packages into rootfs: ${ALPINE_EXTRA_PACKAGES}"
+	local packages_to_install="${ALPINE_EXTRA_PACKAGES} ${ALPINE_REQUIRED_PACKAGES}"
+	echo "Installing packages into rootfs: ${packages_to_install}"
 	# shellcheck disable=SC2086
 	run_as_root "${apk_static_path}" \
 		--root "${ROOTFS_OUTPUT_DIR}" \
@@ -178,7 +180,7 @@ main()
 		--keys-dir "${ROOTFS_OUTPUT_DIR}/etc/apk/keys" \
 		--repositories-file "${ROOTFS_OUTPUT_DIR}/etc/apk/repositories" \
 		--update-cache \
-		add --no-cache ${ALPINE_EXTRA_PACKAGES}
+		add --no-cache ${packages_to_install}
 
 	echo "Alpine root filesystem ready at: ${ROOTFS_OUTPUT_DIR}"
 }

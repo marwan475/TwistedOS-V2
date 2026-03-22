@@ -2041,6 +2041,47 @@ int64_t TranslationLayer::HandleStatSystemCall(const char* Path, void* Buffer)
     return 0;
 }
 
+int64_t TranslationLayer::HandleFstatSystemCall(uint64_t FileDescriptor, void* Buffer)
+{
+    if (Logic == nullptr || Buffer == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    ProcessManager* PM = Logic->GetProcessManager();
+    if (PM == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    Process* CurrentProcess = PM->GetRunningProcess();
+    if (CurrentProcess == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    if (FileDescriptor >= MAX_OPEN_FILES_PER_PROCESS)
+    {
+        return LINUX_ERR_EBADF;
+    }
+
+    File* OpenFile = CurrentProcess->FileTable[FileDescriptor];
+    if (OpenFile == nullptr || OpenFile->Node == nullptr)
+    {
+        return LINUX_ERR_EBADF;
+    }
+
+    LinuxStat KernelStat = {};
+    PopulateLinuxStatFromNode(OpenFile->Node, &KernelStat);
+
+    if (!Logic->CopyFromKernelToUser(&KernelStat, Buffer, sizeof(KernelStat)))
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    return 0;
+}
+
 int64_t TranslationLayer::HandleLstatSystemCall(const char* Path, void* Buffer)
 {
     if (Logic == nullptr || Path == nullptr || Buffer == nullptr)
