@@ -3451,11 +3451,25 @@ int64_t TranslationLayer::HandleChrootSystemCall(const char* Path)
 
 int64_t TranslationLayer::HandleMountSystemCall(const char* Source, const char* Target, const char* FileSystemType, uint64_t MountFlags, const void* Data)
 {
-    (void) MountFlags;
     (void) Data;
+
+    TTY* Terminal = nullptr;
+    Dispatcher* ActiveDispatcher = Dispatcher::GetActive();
+    if (ActiveDispatcher != nullptr)
+    {
+        ResourceLayer* Resource = ActiveDispatcher->GetResourceLayer();
+        if (Resource != nullptr)
+        {
+            Terminal = Resource->GetTTY();
+        }
+    }
 
     if (Logic == nullptr || Source == nullptr || Target == nullptr || FileSystemType == nullptr)
     {
+        if (Terminal != nullptr)
+        {
+            Terminal->printf_("mount dbg: invalid args logic=%p src=%p tgt=%p fstype=%p\n", Logic, Source, Target, FileSystemType);
+        }
         return LINUX_ERR_EFAULT;
     }
 
@@ -3465,28 +3479,54 @@ int64_t TranslationLayer::HandleMountSystemCall(const char* Source, const char* 
     char KernelSourcePath[SYSCALL_MOUNT_SOURCE_MAX] = {};
     if (!CopyUserCString(Logic, Source, KernelSourcePath, sizeof(KernelSourcePath)))
     {
+        if (Terminal != nullptr)
+        {
+            Terminal->printf_("mount dbg: failed copying source from user ptr=%p\n", Source);
+        }
         return LINUX_ERR_EFAULT;
     }
 
     char KernelTargetPath[SYSCALL_MOUNT_TARGET_MAX] = {};
     if (!CopyUserCString(Logic, Target, KernelTargetPath, sizeof(KernelTargetPath)))
     {
+        if (Terminal != nullptr)
+        {
+            Terminal->printf_("mount dbg: failed copying target from user ptr=%p\n", Target);
+        }
         return LINUX_ERR_EFAULT;
     }
 
     char KernelFileSystemType[64] = {};
     if (!CopyUserCString(Logic, FileSystemType, KernelFileSystemType, sizeof(KernelFileSystemType)))
     {
+        if (Terminal != nullptr)
+        {
+            Terminal->printf_("mount dbg: failed copying fstype from user ptr=%p\n", FileSystemType);
+        }
         return LINUX_ERR_EFAULT;
+    }
+
+    if (Terminal != nullptr)
+    {
+        Terminal->printf_("mount dbg: source=%s target=%s fstype=%s flags=0x%llx\n", KernelSourcePath, KernelTargetPath, KernelFileSystemType,
+                          static_cast<unsigned long long>(MountFlags));
     }
 
     if (KernelSourcePath[0] == '\0' || KernelTargetPath[0] == '\0' || KernelFileSystemType[0] == '\0')
     {
+        if (Terminal != nullptr)
+        {
+            Terminal->printf_("mount dbg: empty mount argument rejected\n");
+        }
         return LINUX_ERR_EINVAL;
     }
 
     if (!IsSupportedMountFileSystemType(KernelFileSystemType))
     {
+        if (Terminal != nullptr)
+        {
+            Terminal->printf_("mount dbg: unsupported fstype=%s\n", KernelFileSystemType);
+        }
         return LINUX_ERR_ENODEV;
     }
 
@@ -3538,10 +3578,31 @@ int64_t TranslationLayer::HandleMountSystemCall(const char* Source, const char* 
 
         memcpy(AbsoluteMountPath + Cursor, KernelTargetPath, static_cast<size_t>(RelativeLength));
         AbsoluteMountPath[Cursor + RelativeLength] = '\0';
-        return Logic->InitializeExtendedFileSystem(KernelSourcePath, AbsoluteMountPath) ? 0 : LINUX_ERR_ENODEV;
+
+        if (Terminal != nullptr)
+        {
+            Terminal->printf_("mount dbg: invoking ext init source=%s target=%s (resolved from relative path)\n", KernelSourcePath, AbsoluteMountPath);
+        }
+
+        bool MountResult = Logic->InitializeExtendedFileSystem(KernelSourcePath, AbsoluteMountPath);
+        if (Terminal != nullptr)
+        {
+            Terminal->printf_("mount dbg: ext init result=%d\n", MountResult ? 1 : 0);
+        }
+        return MountResult ? 0 : LINUX_ERR_ENODEV;
     }
 
-    return Logic->InitializeExtendedFileSystem(KernelSourcePath, MountLocation) ? 0 : LINUX_ERR_ENODEV;
+    if (Terminal != nullptr)
+    {
+        Terminal->printf_("mount dbg: invoking ext init source=%s target=%s\n", KernelSourcePath, MountLocation);
+    }
+
+    bool MountResult = Logic->InitializeExtendedFileSystem(KernelSourcePath, MountLocation);
+    if (Terminal != nullptr)
+    {
+        Terminal->printf_("mount dbg: ext init result=%d\n", MountResult ? 1 : 0);
+    }
+    return MountResult ? 0 : LINUX_ERR_ENODEV;
 }
 
 int64_t TranslationLayer::HandleMprotectSystemCall(void* Address, uint64_t Length, int64_t Protection)

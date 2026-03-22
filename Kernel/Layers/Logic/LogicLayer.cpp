@@ -1235,6 +1235,12 @@ bool LogicLayer::InitializeExtendedFileSystem(const char* DevicePath, const char
 
     PartitionManager* PartitionManagerInstance = Resource->GetPartitionManager();
     TTY*              Terminal                 = Resource->GetTTY();
+
+    if (Terminal != nullptr)
+    {
+        Terminal->printf_("ext init dbg: begin device=%s mount=%s\n", (DevicePath != nullptr) ? DevicePath : "<null>", (MountLocation != nullptr) ? MountLocation : "<null>");
+    }
+
     if (PartitionManagerInstance == nullptr || DevicePath == nullptr || MountLocation == nullptr)
     {
         if (Terminal != nullptr)
@@ -1245,6 +1251,11 @@ bool LogicLayer::InitializeExtendedFileSystem(const char* DevicePath, const char
     }
 
     RootFileSystemPartitionInfo RootPartitionInfo = {};
+    if (Terminal != nullptr)
+    {
+        Terminal->printf_("ext init dbg: resolving partition for %s\n", DevicePath);
+    }
+
     if (!PartitionManagerInstance->GetPartitionByDevicePath(DevicePath, &RootPartitionInfo))
     {
         if (Terminal != nullptr)
@@ -1252,6 +1263,11 @@ bool LogicLayer::InitializeExtendedFileSystem(const char* DevicePath, const char
             Terminal->printf_("ext filesystem partition not found: %s\n", DevicePath);
         }
         return false;
+    }
+
+    if (Terminal != nullptr)
+    {
+        Terminal->printf_("ext init dbg: partition resolved, initializing ext manager\n");
     }
 
     if (!Resource->InitializeExtendedFileSystemManager(&RootPartitionInfo))
@@ -1263,6 +1279,11 @@ bool LogicLayer::InitializeExtendedFileSystem(const char* DevicePath, const char
         return false;
     }
 
+    if (Terminal != nullptr)
+    {
+        Terminal->printf_("ext init dbg: ext manager ready, mounting into VFS at %s\n", MountLocation);
+    }
+
     if (!VFS->MountEXTFileSystem(Resource->GetExtendedFileSystemManager(), MountLocation))
     {
         if (Terminal != nullptr)
@@ -1270,6 +1291,11 @@ bool LogicLayer::InitializeExtendedFileSystem(const char* DevicePath, const char
             Terminal->printf_("ext filesystem mount failed: device=%s mount=%s\n", DevicePath, MountLocation);
         }
         return false;
+    }
+
+    if (Terminal != nullptr)
+    {
+        Terminal->printf_("ext init dbg: mount complete\n");
     }
 
     return true;
