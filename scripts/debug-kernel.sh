@@ -78,7 +78,7 @@ cleanup() {
 
 is_gdb_stub_listening() {
     if command -v ss >/dev/null 2>&1; then
-        ss -ltnH "sport = :${port}" | grep -q ":${port}[[:space:]]"
+        ss -ltnH 2>/dev/null | awk '{print $4}' | grep -Eq "[.:]${port}$"
         return $?
     fi
 
@@ -167,7 +167,7 @@ fi
 ensure_port_is_free
 
 echo "Starting QEMU paused with GDB stub on localhost:${port}"
-make -C "${repo_root}" qemu-basic-debug >"${qemu_log}" 2>&1 &
+make -C "${repo_root}" DEBUG=1 -o all qemu-basic-debug >"${qemu_log}" 2>&1 &
 qemu_pid=$!
 
 wait_for_gdb_stub
