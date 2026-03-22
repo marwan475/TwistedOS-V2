@@ -118,6 +118,7 @@ bool InitializeProcessEntry(Process& ProcessEntry, ProcessState Status, ProcessL
     ProcessEntry.ProgramBreak               = ProgramBreak;
     ProcessEntry.AddressSpace               = AddressSpace;
     ProcessEntry.CurrentFileSystemLocation  = nullptr;
+    ProcessEntry.RunningExecutableDentry    = nullptr;
     ProcessEntry.State                      = State;
 
     if (ResetFileTable)

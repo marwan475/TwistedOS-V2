@@ -82,6 +82,7 @@ TEST2_SRC = initramfs/Test2.c
 TEST2_BIN = $(ROOTFS_DIR)/Test2
 ESP_SIZE = 64
 ROOTFS_SIZE = 256
+EXT2_SOURCE_ROOTFS = RootFileSystem/alpine-rootfs
 IMG_SECTORS = $(shell echo $$(( ($(ESP_SIZE) + $(ROOTFS_SIZE) + 2) * 2048 )))
 ESP_SECTORS = $(shell echo $$(( $(ESP_SIZE) * 2048 )))
 ROOTFS_SECTORS = $(shell echo $$(( $(ROOTFS_SIZE) * 2048 )))
@@ -210,18 +211,7 @@ $(IMG): $(EFI) $(KERNEL) $(INITRAMFS)
 	mcopy -i $$ESP $(BIN)$(INITRAMFS) ::/initramfs.cpio; \
 	dd if=/dev/zero of=$$ROOTFS bs=512 count=$(ROOTFS_SECTORS) status=none; \
 	mkfs.ext2 -F $$ROOTFS >/dev/null; \
-	debugfs -w -R "mkdir /bin" $$ROOTFS >/dev/null 2>&1 || true; \
-	for entry in $(ROOTFS_BIN_DIR)/*; do \
-		[ -e "$$entry" ] || continue; \
-		name=$$(basename "$$entry"); \
-		debugfs -w -R "rm /bin/$$name" $$ROOTFS >/dev/null 2>&1 || true; \
-		if [ -L "$$entry" ]; then \
-			target=$$(readlink "$$entry"); \
-			debugfs -w -R "symlink /bin/$$name $$target" $$ROOTFS >/dev/null; \
-		else \
-			debugfs -w -R "write $$entry /bin/$$name" $$ROOTFS >/dev/null; \
-		fi; \
-	done; \
+	bash ./scripts/populate-ext2-rootfs.sh $$ROOTFS $(EXT2_SOURCE_ROOTFS); \
 	dd if=$$ESP of=$@ bs=512 seek=$$START conv=notrunc status=none; \
 	dd if=$$ROOTFS of=$@ bs=512 seek=$$ROOTFS_START conv=notrunc status=none; \
 	rm -f $$ESP $$ROOTFS

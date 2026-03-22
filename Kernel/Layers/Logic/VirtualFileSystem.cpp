@@ -6,6 +6,7 @@
 
 #include "VirtualFileSystem.hpp"
 
+#include "../Dispatcher.hpp"
 #include "../Resource/ExtendedFileSystemManager.hpp"
 #include "../Resource/RamFileSystemManager.hpp"
 #include "../Resource/TTY.hpp"
@@ -50,6 +51,72 @@ bool    RemoveChild(Dentry* Parent, Dentry* Child);
 bool    IsDescendantDentry(const Dentry* CandidateDescendant, const Dentry* CandidateAncestor);
 void    TransferDevDirectoryIfMissing(Dentry* OldRoot, Dentry* NewRoot);
 
+bool EnsureLazyLoadedINodeData(INode* Node)
+{
+    if (Node == nullptr)
+    {
+        return false;
+    }
+
+    if (!Node->IsLazyLoad)
+    {
+        return Node->NodeData != nullptr;
+    }
+
+    if (Node->NodeData != nullptr)
+    {
+        return true;
+    }
+
+    if (Node->NodeSize == 0)
+    {
+        return true;
+    }
+
+    if (Node->BackingInodeNumber == 0 || Node->LazyLoadContext == nullptr)
+    {
+        return false;
+    }
+
+    ExtendedFileSystemManager* FileSystemManager = reinterpret_cast<ExtendedFileSystemManager*>(Node->LazyLoadContext);
+    if (FileSystemManager == nullptr || !FileSystemManager->IsInitialized())
+    {
+        return false;
+    }
+
+    Dispatcher* ActiveDispatcher = Dispatcher::GetActive();
+    if (ActiveDispatcher == nullptr)
+    {
+        return false;
+    }
+
+    ResourceLayer* Resource = ActiveDispatcher->GetResourceLayer();
+    if (Resource == nullptr || Resource->GetPMM() == nullptr)
+    {
+        return false;
+    }
+
+    uint64_t PageCount = (Node->NodeSize + PAGE_SIZE - 1) / PAGE_SIZE;
+    void*    FileData  = Resource->GetPMM()->AllocatePagesFromDescriptor(PageCount);
+    if (FileData == nullptr)
+    {
+        return false;
+    }
+
+    kmemset(FileData, 0, static_cast<size_t>(PageCount * PAGE_SIZE));
+
+    if (!FileSystemManager->LoadInodeData(Node->BackingInodeNumber, FileData, Node->NodeSize))
+    {
+        Resource->GetPMM()->FreePagesFromDescriptor(FileData, PageCount);
+        return false;
+    }
+
+    Node->NodeData            = FileData;
+    Node->LazyDataBackedByPMM = true;
+    Node->LazyDataPageCount   = PageCount;
+    return true;
+}
+
 int64_t DefaultReadFileOperation(File* OpenFile, void* Buffer, uint64_t Count)
 {
     if (OpenFile == nullptr || OpenFile->Node == nullptr || (Buffer == nullptr && Count != 0))
@@ -74,7 +141,20 @@ int64_t DefaultReadFileOperation(File* OpenFile, void* Buffer, uint64_t Count)
 
     if (OpenFile->Node->NodeData == nullptr)
     {
-        return (OpenFile->Node->NodeSize == 0) ? 0 : LINUX_ERR_EFAULT;
+        if (OpenFile->Node->NodeSize == 0)
+        {
+            return 0;
+        }
+
+        if (!EnsureLazyLoadedINodeData(OpenFile->Node))
+        {
+            return LINUX_ERR_EFAULT;
+        }
+
+        if (OpenFile->Node->NodeData == nullptr)
+        {
+            return LINUX_ERR_EFAULT;
+        }
     }
 
     uint64_t FileSize = OpenFile->Node->NodeSize;
@@ -117,7 +197,20 @@ int64_t DefaultWriteFileOperation(File* OpenFile, const void* Buffer, uint64_t C
 
     if (OpenFile->Node->NodeData == nullptr)
     {
-        return LINUX_ERR_ENOSPC;
+        if (OpenFile->Node->NodeSize == 0)
+        {
+            return LINUX_ERR_ENOSPC;
+        }
+
+        if (!EnsureLazyLoadedINodeData(OpenFile->Node))
+        {
+            return LINUX_ERR_ENOSPC;
+        }
+
+        if (OpenFile->Node->NodeData == nullptr)
+        {
+            return LINUX_ERR_ENOSPC;
+        }
     }
 
     uint64_t FileSize = OpenFile->Node->NodeSize;
@@ -557,6 +650,12 @@ INode* CreateINode(FileType Type, uint64_t Size, void* Data)
     Node->NodeType = Type;
     Node->NodeSize = Size;
     Node->NodeData = Data;
+    Node->IsLazyLoad = false;
+    Node->LazyDataBackedByPMM = false;
+    Node->LazyDataPageCount = 0;
+    Node->BackingInodeNumber = 0;
+    Node->LazyLoadRefCount = 0;
+    Node->LazyLoadContext = nullptr;
     Node->INodeOps = nullptr;
     Node->FileOps  = &DefaultFileOperations;
     return Node;
@@ -828,6 +927,12 @@ bool EnsurePathDentry(Dentry* RootDentry, const char* Path, FileType FinalNodeTy
         RootDentry->inode->NodeType = INODE_DIR;
         RootDentry->inode->NodeSize = 0;
         RootDentry->inode->NodeData = nullptr;
+        RootDentry->inode->IsLazyLoad = false;
+        RootDentry->inode->LazyDataBackedByPMM = false;
+        RootDentry->inode->LazyDataPageCount = 0;
+        RootDentry->inode->BackingInodeNumber = 0;
+        RootDentry->inode->LazyLoadRefCount = 0;
+        RootDentry->inode->LazyLoadContext = nullptr;
         return true;
     }
 
@@ -884,6 +989,12 @@ bool EnsurePathDentry(Dentry* RootDentry, const char* Path, FileType FinalNodeTy
             Child->inode->NodeType = FinalNodeType;
             Child->inode->NodeSize = FinalNodeSize;
             Child->inode->NodeData = FinalNodeData;
+            Child->inode->IsLazyLoad = false;
+            Child->inode->LazyDataBackedByPMM = false;
+            Child->inode->LazyDataPageCount = 0;
+            Child->inode->BackingInodeNumber = 0;
+            Child->inode->LazyLoadRefCount = 0;
+            Child->inode->LazyLoadContext = nullptr;
         }
 
         Current      = Child;
@@ -945,6 +1056,33 @@ bool MountEXTEntryCallback(const ExtendedFileSystemEntry& Entry, void* Context)
     }
 
     bool Added = EnsurePathDentry(MountContext->RootDentry, TargetPath, NodeType, Entry.Size, NodeData);
+
+    if (Added)
+    {
+        Dentry* MountedEntry = ResolvePathInternal(MountContext->RootDentry, MountContext->RootDentry, TargetPath, MAX_SYMLINK_FOLLOW_DEPTH, false);
+        if (MountedEntry != nullptr && MountedEntry->inode != nullptr)
+        {
+            bool IsLazyRegularFile = (NodeType == INODE_FILE && Entry.Data == nullptr && Entry.InodeNumber != 0);
+            if (IsLazyRegularFile)
+            {
+                MountedEntry->inode->IsLazyLoad = true;
+                MountedEntry->inode->LazyDataBackedByPMM = false;
+                MountedEntry->inode->LazyDataPageCount = 0;
+                MountedEntry->inode->BackingInodeNumber = Entry.InodeNumber;
+                MountedEntry->inode->LazyLoadRefCount = 0;
+                MountedEntry->inode->LazyLoadContext = const_cast<void*>(MountContext->FileSystemManager);
+            }
+            else
+            {
+                MountedEntry->inode->IsLazyLoad = false;
+                MountedEntry->inode->LazyDataBackedByPMM = false;
+                MountedEntry->inode->LazyDataPageCount = 0;
+                MountedEntry->inode->BackingInodeNumber = 0;
+                MountedEntry->inode->LazyLoadRefCount = 0;
+                MountedEntry->inode->LazyLoadContext = nullptr;
+            }
+        }
+    }
 
     delete[] TargetPath;
 

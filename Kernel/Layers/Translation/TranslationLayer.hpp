@@ -55,6 +55,7 @@ public:
     int64_t HandleGeteuidSystemCall();
     int64_t HandleGetegidSystemCall();
     int64_t HandleDup2SystemCall(uint64_t OldFileDescriptor, uint64_t NewFileDescriptor);
+    int64_t HandlePauseSystemCall();
     int64_t HandleForkSystemCall();
     int64_t HandleVforkSystemCall();
     int64_t HandleExitGroupSystemCall(int64_t Status);

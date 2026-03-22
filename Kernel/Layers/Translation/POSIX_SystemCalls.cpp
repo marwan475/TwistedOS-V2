@@ -81,6 +81,9 @@ int64_t TranslationLayer::HandlePosixSystemCallNumber(uint64_t SystemCallNumber,
         case 33: // dup2
             return HandleDup2SystemCall(Arg1, Arg2);
             break;
+        case 34: // pause
+            return HandlePauseSystemCall();
+            break;
         case 39: // getpid
             return HandleGetpidSystemCall();
             break;
@@ -1071,7 +1074,7 @@ int64_t TranslationLayer::HandlePosixSystemCallNumber(uint64_t SystemCallNumber,
         default:
         {
             Dispatcher* ActiveDispatcher = Dispatcher::GetActive();
-            if (ActiveDispatcher != nullptr)
+            if (ActiveDispatcher != nullptr )
             {
                 ActiveDispatcher->GetResourceLayer()->GetTTY()->printf_("Unknown system call: %d\n", (int) SystemCallNumber);
             }

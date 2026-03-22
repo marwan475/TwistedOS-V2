@@ -106,6 +106,7 @@ struct Process
     uint64_t                    ProgramBreak              = 0;
     VirtualAddressSpace*        AddressSpace              = nullptr;
     Dentry*                     CurrentFileSystemLocation = nullptr;
+    Dentry*                     RunningExecutableDentry   = nullptr;
     File*                       FileTable[MAX_OPEN_FILES_PER_PROCESS];
     ProcessSignalAction*        SignalActions = nullptr;
     ProcessMemoryMapping        MemoryMappings[MAX_MEMORY_MAPPINGS_PER_PROCESS];

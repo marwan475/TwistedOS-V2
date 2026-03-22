@@ -25,6 +25,7 @@ constexpr int64_t LINUX_ERR_EAGAIN  = -11;
 constexpr int64_t LINUX_ERR_EMFILE  = -24;
 constexpr int64_t LINUX_ERR_EINVAL  = -22;
 constexpr int64_t LINUX_ERR_EBADF   = -9;
+constexpr int64_t LINUX_ERR_EINTR   = -4;
 constexpr int64_t LINUX_ERR_ENOSYS  = -38;
 constexpr int64_t LINUX_ERR_ENOTTY  = -25;
 constexpr int64_t LINUX_ERR_EACCES  = -13;
@@ -3895,6 +3896,29 @@ int64_t TranslationLayer::HandleDup2SystemCall(uint64_t OldFileDescriptor, uint6
     CurrentProcess->FileTable[NewFileDescriptor] = DuplicatedFile;
 
     return static_cast<int64_t>(NewFileDescriptor);
+}
+
+int64_t TranslationLayer::HandlePauseSystemCall()
+{
+    if (Logic == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    ProcessManager* PM = Logic->GetProcessManager();
+    if (PM == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    Process* CurrentProcess = PM->GetRunningProcess();
+    if (CurrentProcess == nullptr || CurrentProcess->Level != PROCESS_LEVEL_USER)
+    {
+        return LINUX_ERR_EINVAL;
+    }
+
+    Logic->BlockProcess(CurrentProcess->Id);
+    return LINUX_ERR_EINTR;
 }
 
 int64_t TranslationLayer::HandleForkSystemCall()

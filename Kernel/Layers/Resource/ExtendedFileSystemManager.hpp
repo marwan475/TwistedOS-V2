@@ -75,6 +75,7 @@ public:
     bool     CreateFile(const char* Path, ExtendedFileSystemEntryType Type);
     bool     DeleteFile(const char* Path, ExtendedFileSystemEntryType Type);
     bool     RenameFile(const char* OldPath, const char* NewPath, ExtendedFileSystemEntryType Type);
+    bool     LoadInodeData(uint32_t InodeNumber, void* DestinationBuffer, uint64_t SizeBytes) const;
     bool     EnumerateEntries(ExtendedFileSystemEntryCallback Callback, void* Context, TTY* Terminal = nullptr) const;
     void     PrintFileSystem(TTY* Terminal) const;
     void     PrintFileTree(TTY* Terminal) const;

@@ -6,6 +6,7 @@
 
 #include "LogicLayer.hpp"
 
+#include "Layers/Resource/ExtendedFileSystemManager.hpp"
 #include "Layers/Resource/PartitionManager.hpp"
 #include "Layers/Resource/ResourceLayer.hpp"
 #include "Layers/Resource/TTY.hpp"
@@ -107,6 +108,106 @@ uint64_t LocalCStringLength(const char* String)
     }
 
     return Length;
+}
+
+bool EnsureLazyLoadedINodeData(ResourceLayer* Resource, INode* Node)
+{
+    if (Node == nullptr)
+    {
+        return false;
+    }
+
+    if (!Node->IsLazyLoad)
+    {
+        return Node->NodeData != nullptr;
+    }
+
+    if (Node->NodeData != nullptr)
+    {
+        return true;
+    }
+
+    if (Resource == nullptr || Resource->GetPMM() == nullptr || Node->LazyLoadContext == nullptr || Node->BackingInodeNumber == 0 || Node->NodeSize == 0)
+    {
+        return false;
+    }
+
+    ExtendedFileSystemManager* FileSystemManager = reinterpret_cast<ExtendedFileSystemManager*>(Node->LazyLoadContext);
+    if (FileSystemManager == nullptr || !FileSystemManager->IsInitialized())
+    {
+        return false;
+    }
+
+    uint64_t PageCount = (Node->NodeSize + PAGE_SIZE - 1) / PAGE_SIZE;
+    void*    FileData  = Resource->GetPMM()->AllocatePagesFromDescriptor(PageCount);
+    if (FileData == nullptr)
+    {
+        return false;
+    }
+
+    kmemset(FileData, 0, static_cast<size_t>(PageCount * PAGE_SIZE));
+
+    if (!FileSystemManager->LoadInodeData(Node->BackingInodeNumber, FileData, Node->NodeSize))
+    {
+        Resource->GetPMM()->FreePagesFromDescriptor(FileData, PageCount);
+        return false;
+    }
+
+    Node->NodeData            = FileData;
+    Node->LazyDataBackedByPMM = true;
+    Node->LazyDataPageCount   = PageCount;
+    return true;
+}
+
+void RetainRunningExecutable(Process* TargetProcess, Dentry* ExecutableEntry)
+{
+    if (TargetProcess == nullptr)
+    {
+        return;
+    }
+
+    TargetProcess->RunningExecutableDentry = ExecutableEntry;
+
+    if (ExecutableEntry == nullptr || ExecutableEntry->inode == nullptr || !ExecutableEntry->inode->IsLazyLoad)
+    {
+        return;
+    }
+
+    ++ExecutableEntry->inode->LazyLoadRefCount;
+}
+
+void ReleaseRunningExecutable(ResourceLayer* Resource, Process* TargetProcess)
+{
+    if (TargetProcess == nullptr)
+    {
+        return;
+    }
+
+    Dentry* ExecutableEntry = TargetProcess->RunningExecutableDentry;
+    TargetProcess->RunningExecutableDentry = nullptr;
+
+    if (ExecutableEntry == nullptr || ExecutableEntry->inode == nullptr || !ExecutableEntry->inode->IsLazyLoad)
+    {
+        return;
+    }
+
+    INode* Node = ExecutableEntry->inode;
+    if (Node->LazyLoadRefCount > 0)
+    {
+        --Node->LazyLoadRefCount;
+    }
+
+    if (Node->LazyLoadRefCount == 0 && Node->NodeData != nullptr && Node->LazyDataBackedByPMM)
+    {
+        if (Resource != nullptr && Resource->GetPMM() != nullptr && Node->LazyDataPageCount != 0)
+        {
+            Resource->GetPMM()->FreePagesFromDescriptor(Node->NodeData, Node->LazyDataPageCount);
+        }
+
+        Node->NodeData            = nullptr;
+        Node->LazyDataBackedByPMM = false;
+        Node->LazyDataPageCount   = 0;
+    }
 }
 
 void SetKernelSystemCallStackTop(uint64_t StackTop)
@@ -1263,7 +1364,7 @@ uint8_t LogicLayer::ChangeProcessExecution(uint8_t Id, const char* FilePath, con
         return PROCESS_ID_INVALID;
     }
 
-    if (Entry->inode->NodeData == nullptr || Entry->inode->NodeSize == 0)
+    if (Entry->inode->NodeSize == 0 || !EnsureLazyLoadedINodeData(Resource, Entry->inode))
     {
         return PROCESS_ID_INVALID;
     }
@@ -1409,6 +1510,12 @@ uint8_t LogicLayer::ChangeProcessExecution(uint8_t Id, const char* FilePath, con
         delete OldAddressSpace;
     }
 
+    if (TargetProcess->RunningExecutableDentry != Entry)
+    {
+        ReleaseRunningExecutable(Resource, TargetProcess);
+        RetainRunningExecutable(TargetProcess, Entry);
+    }
+
     return Id;
 }
 
@@ -1542,6 +1649,7 @@ uint8_t LogicLayer::CopyProcess(uint8_t Id)
     ChildProcess->ClearChildTidAddress      = SourceProcess->ClearChildTidAddress;
     ChildProcess->ProgramBreak              = SourceProcess->ProgramBreak;
     ChildProcess->CurrentFileSystemLocation = SourceProcess->CurrentFileSystemLocation;
+    RetainRunningExecutable(ChildProcess, SourceProcess->RunningExecutableDentry);
 
     if (!CloneAnonymousProcessMappings(Resource, SourceProcess, ChildProcess))
     {
@@ -1602,7 +1710,7 @@ uint8_t LogicLayer::CreateUserProcessFromVFS(const char* FilePath)
         return PROCESS_ID_INVALID;
     }
 
-    if (Entry->inode->NodeData == nullptr || Entry->inode->NodeSize == 0)
+    if (Entry->inode->NodeSize == 0 || !EnsureLazyLoadedINodeData(Resource, Entry->inode))
     {
         return PROCESS_ID_INVALID;
     }
@@ -1630,6 +1738,7 @@ uint8_t LogicLayer::CreateUserProcessFromVFS(const char* FilePath)
     if (CreatedProcess != nullptr)
     {
         CreatedProcess->CurrentFileSystemLocation = (Entry->parent != nullptr) ? Entry->parent : Entry;
+        RetainRunningExecutable(CreatedProcess, Entry);
     }
 
     return ProcessId;
@@ -1655,7 +1764,7 @@ uint8_t LogicLayer::CreateInitProcess()
         return PROCESS_ID_INVALID;
     }
 
-    if (Entry->inode->NodeData == nullptr || Entry->inode->NodeSize == 0)
+    if (Entry->inode->NodeSize == 0 || !EnsureLazyLoadedINodeData(Resource, Entry->inode))
     {
         return PROCESS_ID_INVALID;
     }
@@ -1683,6 +1792,7 @@ uint8_t LogicLayer::CreateInitProcess()
     if (CreatedProcess != nullptr)
     {
         CreatedProcess->CurrentFileSystemLocation = (Entry->parent != nullptr) ? Entry->parent : Entry;
+        RetainRunningExecutable(CreatedProcess, Entry);
         SeedInitialUserFSBaseForProcess(Resource, CreatedProcess);
     }
 
@@ -2314,6 +2424,11 @@ void LogicLayer::KillProcess(uint8_t Id, int32_t ExitStatus)
         DebugTerminal->Serialprintf("kill_dbg: id=%u skip_addrspace_cleanup=%u\n", Id, SkipAddressSpaceCleanup ? 1U : 0U);
     }
 #endif
+
+    if (TargetProcess != nullptr)
+    {
+        ReleaseRunningExecutable(Resource, TargetProcess);
+    }
 
     if (TargetProcess != nullptr && TargetProcess->Level == PROCESS_LEVEL_USER && TargetProcess->AddressSpace != nullptr && !SkipAddressSpaceCleanup)
     {

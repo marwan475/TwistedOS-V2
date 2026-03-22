@@ -141,7 +141,7 @@ git clone https://github.com/mirror/busybox.git
 make
 ```
 
-This produces the bootloader, kernel, initramfs, and `TwistedOS.img` (GPT image with an EFI partition and an EXT2 root filesystem partition).
+This produces the bootloader, kernel, initramfs, and `TwistedOS.img` (GPT image with an EFI partition and an EXT2 root filesystem partition populated from `RootFileSystem/alpine-rootfs`).
 
 Run the OS in QEMU:
 

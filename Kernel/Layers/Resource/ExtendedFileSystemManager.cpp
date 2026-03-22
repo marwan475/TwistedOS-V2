@@ -10,7 +10,6 @@
 #include "TTY.hpp"
 
 #include <CommonUtils.hpp>
-#include <Layers/Dispatcher.hpp>
 
 namespace
 {
@@ -536,39 +535,9 @@ bool ExtendedFileSystemManager::EnumerateDirectoryEntries(uint32_t DirectoryInod
                     Entry.Name                    = FullPath;
                     void* EntryData               = nullptr;
 
-                    bool ShouldLoadData = (DecodedType == ExtendedFileSystemEntryTypeSymbolicLink || DecodedType == ExtendedFileSystemEntryTypeRegularFile);
-
-                    if (ShouldLoadData && EntrySize > 0)
+                    if (DecodedType == ExtendedFileSystemEntryTypeSymbolicLink && EntrySize > 0)
                     {
-                        uint8_t* LoadedData     = nullptr;
-                        bool     UsedKernelHeap = false;
-                        bool     UsedPMM        = false;
-                        uint64_t PMMPages       = 0;
-
-                        Dispatcher* ActiveDispatcher = Dispatcher::GetActive();
-                        if (ActiveDispatcher != nullptr && ActiveDispatcher->GetResourceLayer() != nullptr)
-                        {
-                            ResourceLayer* Resource = ActiveDispatcher->GetResourceLayer();
-
-                            if (EntrySize >= (128 * 1024) && Resource->GetPMM() != nullptr)
-                            {
-                                PMMPages   = (EntrySize + 4095) / 4096;
-                                LoadedData = reinterpret_cast<uint8_t*>(Resource->GetPMM()->AllocatePagesFromDescriptor(PMMPages));
-                                UsedPMM    = (LoadedData != nullptr);
-                            }
-
-                            if (LoadedData == nullptr)
-                            {
-                                LoadedData     = reinterpret_cast<uint8_t*>(Resource->kmalloc(static_cast<size_t>(EntrySize)));
-                                UsedKernelHeap = (LoadedData != nullptr);
-                            }
-                        }
-
-                        if (LoadedData == nullptr)
-                        {
-                            LoadedData = new uint8_t[EntrySize];
-                        }
-
+                        uint8_t* LoadedData = new uint8_t[EntrySize];
                         if (LoadedData == nullptr)
                         {
                             delete[] FullPath;
@@ -578,27 +547,7 @@ bool ExtendedFileSystemManager::EnumerateDirectoryEntries(uint32_t DirectoryInod
 
                         if (!ReadInodePayload(EntryInode, ChildInodeData, ChildMode, EntrySize, LoadedData))
                         {
-                            if (UsedPMM)
-                            {
-                                Dispatcher* CleanupDispatcher = Dispatcher::GetActive();
-                                if (CleanupDispatcher != nullptr && CleanupDispatcher->GetResourceLayer() != nullptr && CleanupDispatcher->GetResourceLayer()->GetPMM() != nullptr)
-                                {
-                                    CleanupDispatcher->GetResourceLayer()->GetPMM()->FreePagesFromDescriptor(LoadedData, PMMPages);
-                                }
-                            }
-                            else if (UsedKernelHeap)
-                            {
-                                Dispatcher* CleanupDispatcher = Dispatcher::GetActive();
-                                if (CleanupDispatcher != nullptr && CleanupDispatcher->GetResourceLayer() != nullptr)
-                                {
-                                    CleanupDispatcher->GetResourceLayer()->kfree(LoadedData);
-                                }
-                            }
-                            else
-                            {
-                                delete[] LoadedData;
-                            }
-
+                            delete[] LoadedData;
                             delete[] FullPath;
                             delete[] BlockData;
                             return false;
@@ -833,6 +782,29 @@ uint32_t ExtendedFileSystemManager::GetInodesCount() const
 uint32_t ExtendedFileSystemManager::GetBlocksCount() const
 {
     return BlocksCount;
+}
+
+bool ExtendedFileSystemManager::LoadInodeData(uint32_t InodeNumber, void* DestinationBuffer, uint64_t SizeBytes) const
+{
+    if (!Initialized || DestinationBuffer == nullptr || SizeBytes == 0)
+    {
+        return false;
+    }
+
+    uint8_t InodeBuffer[256] = {};
+    if (InodeSizeBytes > sizeof(InodeBuffer) || !ReadInode(InodeNumber, InodeBuffer, sizeof(InodeBuffer)))
+    {
+        return false;
+    }
+
+    uint64_t InodeSize = ReadLE32(&InodeBuffer[4]);
+    if (SizeBytes > InodeSize)
+    {
+        return false;
+    }
+
+    uint16_t InodeMode = ReadLE16(&InodeBuffer[0]);
+    return ReadInodePayload(InodeNumber, InodeBuffer, InodeMode, SizeBytes, DestinationBuffer);
 }
 
 bool ExtendedFileSystemManager::CreateFile(const char* Path, ExtendedFileSystemEntryType Type)
