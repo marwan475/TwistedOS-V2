@@ -2751,6 +2751,8 @@ int64_t TranslationLayer::HandleChdirSystemCall(const char* Path)
 
 int64_t TranslationLayer::HandleMkdirSystemCall(const char* Path, uint64_t Mode)
 {
+    (void) Mode;
+
     if (Logic == nullptr || Path == nullptr)
     {
         return LINUX_ERR_EFAULT;
@@ -2818,96 +2820,16 @@ int64_t TranslationLayer::HandleMkdirSystemCall(const char* Path, uint64_t Mode)
         CreatePath                             = EffectivePath;
     }
 
-#ifdef DEBUG_BUILD
-    TTY* MkdirTerminal = nullptr;
-    {
-        Dispatcher* ActiveDispatcher = Dispatcher::GetActive();
-        if (ActiveDispatcher != nullptr && ActiveDispatcher->GetResourceLayer() != nullptr)
-        {
-            MkdirTerminal = ActiveDispatcher->GetResourceLayer()->GetTTY();
-        }
-    }
-
-    if (MkdirTerminal != nullptr)
-    {
-        char        WorkingDirectoryPath[SYSCALL_PATH_MAX] = {};
-        const char* WorkingDirectoryText                   = "<unavailable>";
-        if (CurrentProcess->CurrentFileSystemLocation != nullptr
-            && BuildAbsolutePathFromDentry(CurrentProcess->CurrentFileSystemLocation, WorkingDirectoryPath, sizeof(WorkingDirectoryPath)))
-        {
-            WorkingDirectoryText = WorkingDirectoryPath;
-        }
-
-        MkdirTerminal->Serialprintf("mkdir_dbg: request='%s' resolved='%s' mode=%llo cwd='%s'\n", KernelPath, CreatePath, static_cast<unsigned long long>(Mode), WorkingDirectoryText);
-    }
-#endif
-
     Dentry* Existing = VFS->Lookup(CreatePath);
     if (Existing != nullptr)
     {
-#ifdef DEBUG_BUILD
-        if (MkdirTerminal != nullptr)
-        {
-            const char* ExistingType = (Existing->inode != nullptr && Existing->inode->NodeType == INODE_DIR) ? "dir" : "file";
-            MkdirTerminal->Serialprintf("mkdir_dbg: exists path='%s' type=%s -> -EEXIST\n", CreatePath, ExistingType);
-        }
-#endif
         return LINUX_ERR_EEXIST;
     }
 
     if (!VFS->CreateFile(CreatePath, INODE_DIR))
     {
-#ifdef DEBUG_BUILD
-        if (MkdirTerminal != nullptr)
-        {
-            char     ParentPath[SYSCALL_PATH_MAX] = {};
-            bool     ParentPathValid              = false;
-            uint64_t PathLength                   = CStrLength(CreatePath);
-            if (PathLength > 0)
-            {
-                int64_t LastSlashIndex = -1;
-                for (uint64_t Index = 0; Index < PathLength; ++Index)
-                {
-                    if (CreatePath[Index] == '/')
-                    {
-                        LastSlashIndex = static_cast<int64_t>(Index);
-                    }
-                }
-
-                if (LastSlashIndex == 0)
-                {
-                    ParentPath[0]  = '/';
-                    ParentPath[1]  = '\0';
-                    ParentPathValid = true;
-                }
-                else if (LastSlashIndex > 0 && static_cast<uint64_t>(LastSlashIndex) < sizeof(ParentPath))
-                {
-                    memcpy(ParentPath, CreatePath, static_cast<size_t>(LastSlashIndex));
-                    ParentPath[LastSlashIndex] = '\0';
-                    ParentPathValid            = true;
-                }
-            }
-
-            Dentry* ParentDentry = ParentPathValid ? VFS->Lookup(ParentPath) : nullptr;
-            Dentry* AfterCreate  = VFS->Lookup(CreatePath);
-            MkdirTerminal->Serialprintf(
-                "mkdir_dbg: create_failed path='%s' parent='%s' parent_found=%d parent_type=%d post_lookup=%p\n",
-                CreatePath,
-                ParentPathValid ? ParentPath : "<invalid>",
-                ParentDentry != nullptr ? 1 : 0,
-                (ParentDentry != nullptr && ParentDentry->inode != nullptr) ? static_cast<int>(ParentDentry->inode->NodeType) : -1,
-                (void*) AfterCreate);
-        }
-#endif
         return LINUX_ERR_ENOENT;
     }
-
-#ifdef DEBUG_BUILD
-    if (MkdirTerminal != nullptr)
-    {
-        MkdirTerminal->Serialprintf("mkdir_dbg: create_success path='%s'\n", CreatePath);
-    }
-#endif
 
     return 0;
 }

@@ -743,12 +743,6 @@ void TransferDevDirectoryIfMissing(Dentry* OldRoot, Dentry* NewRoot)
         return;
     }
 
-    Dentry* ExistingDevInNewRoot = FindChildBySegment(NewRoot, DEV_DIRECTORY_NAME, 3);
-    if (ExistingDevInNewRoot != nullptr)
-    {
-        return;
-    }
-
     Dentry* DevInOldRoot = FindChildBySegment(OldRoot, DEV_DIRECTORY_NAME, 3);
     if (DevInOldRoot == nullptr || DevInOldRoot->parent == nullptr)
     {
@@ -757,6 +751,54 @@ void TransferDevDirectoryIfMissing(Dentry* OldRoot, Dentry* NewRoot)
 
     if (DevInOldRoot == NewRoot || IsDescendantDentry(NewRoot, DevInOldRoot))
     {
+        return;
+    }
+
+    Dentry* ExistingDevInNewRoot = FindChildBySegment(NewRoot, DEV_DIRECTORY_NAME, 3);
+    if (ExistingDevInNewRoot != nullptr)
+    {
+        if (ExistingDevInNewRoot->inode == nullptr || ExistingDevInNewRoot->inode->NodeType != INODE_DIR)
+        {
+            return;
+        }
+
+        uint64_t ChildIndex = 0;
+        while (ChildIndex < DevInOldRoot->child_count)
+        {
+            Dentry* Child = DevInOldRoot->children[ChildIndex];
+            if (Child == nullptr || Child->name == nullptr)
+            {
+                ++ChildIndex;
+                continue;
+            }
+
+            uint64_t ChildNameLength = GetStringLength(Child->name);
+            if (ChildNameLength == 0)
+            {
+                ++ChildIndex;
+                continue;
+            }
+
+            Dentry* ExistingChild = FindChildBySegment(ExistingDevInNewRoot, Child->name, ChildNameLength);
+            if (ExistingChild != nullptr)
+            {
+                ++ChildIndex;
+                continue;
+            }
+
+            if (!RemoveChild(DevInOldRoot, Child))
+            {
+                ++ChildIndex;
+                continue;
+            }
+
+            if (!AppendChild(ExistingDevInNewRoot, Child))
+            {
+                AppendChild(DevInOldRoot, Child);
+                ++ChildIndex;
+            }
+        }
+
         return;
     }
 

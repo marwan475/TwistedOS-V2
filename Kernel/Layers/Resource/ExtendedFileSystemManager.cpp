@@ -10,8 +10,6 @@
 #include "TTY.hpp"
 
 #include <CommonUtils.hpp>
-#include <Layers/Dispatcher.hpp>
-#include <Layers/Resource/ResourceLayer.hpp>
 
 namespace
 {
@@ -793,42 +791,13 @@ bool ExtendedFileSystemManager::CreateFile(const char* Path, ExtendedFileSystemE
     bool CreatingDirectory   = (Type == ExtendedFileSystemEntryTypeDirectory);
     bool CreatingRegularFile = (Type == ExtendedFileSystemEntryTypeRegularFile);
 
-#ifdef DEBUG_BUILD
-    TTY* DebugTerminal = nullptr;
-    {
-        Dispatcher* ActiveDispatcher = Dispatcher::GetActive();
-        if (ActiveDispatcher != nullptr && ActiveDispatcher->GetResourceLayer() != nullptr)
-        {
-            DebugTerminal = ActiveDispatcher->GetResourceLayer()->GetTTY();
-        }
-    }
-
-    if (DebugTerminal != nullptr)
-    {
-        DebugTerminal->Serialprintf("ext2_create_dbg: begin path='%s' type=%u\n", Path == nullptr ? "<null>" : Path, static_cast<unsigned>(Type));
-    }
-#endif
-
     if (!CreatingDirectory && !CreatingRegularFile)
     {
-#ifdef DEBUG_BUILD
-        if (DebugTerminal != nullptr)
-        {
-            DebugTerminal->Serialprintf("ext2_create_dbg: fail invalid_type type=%u\n", static_cast<unsigned>(Type));
-        }
-#endif
         return false;
     }
 
     if (!Initialized || Path == nullptr || BlockSizeBytes == 0 || InodeSizeBytes == 0 || InodesPerGroup == 0 || BlocksPerGroup == 0)
     {
-#ifdef DEBUG_BUILD
-        if (DebugTerminal != nullptr)
-        {
-            DebugTerminal->Serialprintf("ext2_create_dbg: fail invalid_state init=%u path=%p bsz=%u isz=%u ipg=%u bpg=%u\n", Initialized ? 1 : 0, (void*) Path, BlockSizeBytes,
-                                       InodeSizeBytes, InodesPerGroup, BlocksPerGroup);
-        }
-#endif
         return false;
     }
 
@@ -840,12 +809,6 @@ bool ExtendedFileSystemManager::CreateFile(const char* Path, ExtendedFileSystemE
 
     if (*EffectivePath == '\0')
     {
-#ifdef DEBUG_BUILD
-        if (DebugTerminal != nullptr)
-        {
-            DebugTerminal->Serialprintf("ext2_create_dbg: fail empty_effective_path\n");
-        }
-#endif
         return false;
     }
 
@@ -871,12 +834,6 @@ bool ExtendedFileSystemManager::CreateFile(const char* Path, ExtendedFileSystemE
 
     if (PathLength == 0)
     {
-#ifdef DEBUG_BUILD
-        if (DebugTerminal != nullptr)
-        {
-            DebugTerminal->Serialprintf("ext2_create_dbg: fail empty_path_after_trim\n");
-        }
-#endif
         return false;
     }
 
@@ -927,12 +884,6 @@ bool ExtendedFileSystemManager::CreateFile(const char* Path, ExtendedFileSystemE
 
     if (SegmentCount == 0)
     {
-#ifdef DEBUG_BUILD
-        if (DebugTerminal != nullptr)
-        {
-            DebugTerminal->Serialprintf("ext2_create_dbg: fail empty_segment_list\n");
-        }
-#endif
         return false;
     }
 
@@ -941,12 +892,6 @@ bool ExtendedFileSystemManager::CreateFile(const char* Path, ExtendedFileSystemE
 
     if ((NewEntryNameBytes == 1 && NewEntryName[0] == '.') || (NewEntryNameBytes == 2 && NewEntryName[0] == '.' && NewEntryName[1] == '.'))
     {
-#ifdef DEBUG_BUILD
-        if (DebugTerminal != nullptr)
-        {
-            DebugTerminal->Serialprintf("ext2_create_dbg: fail invalid_leaf name='%s'\n", NewEntryName);
-        }
-#endif
         return false;
     }
 
@@ -1345,24 +1290,11 @@ bool ExtendedFileSystemManager::CreateFile(const char* Path, ExtendedFileSystemE
 
         if (!FindEntryInDirectory(ParentInodeNumber, Segments[SegmentIndex], SegmentLengths[SegmentIndex], &ChildInode, &IsDir, &Found))
         {
-#ifdef DEBUG_BUILD
-            if (DebugTerminal != nullptr)
-            {
-                DebugTerminal->Serialprintf("ext2_create_dbg: fail parent_lookup_error parent_ino=%u seg='%s'\n", ParentInodeNumber, Segments[SegmentIndex]);
-            }
-#endif
             return false;
         }
 
         if (!Found || !IsDir)
         {
-#ifdef DEBUG_BUILD
-            if (DebugTerminal != nullptr)
-            {
-                DebugTerminal->Serialprintf("ext2_create_dbg: fail parent_missing_or_not_dir parent_ino=%u seg='%s' found=%u is_dir=%u\n", ParentInodeNumber, Segments[SegmentIndex],
-                                           Found ? 1 : 0, IsDir ? 1 : 0);
-            }
-#endif
             return false;
         }
 
@@ -1374,23 +1306,11 @@ bool ExtendedFileSystemManager::CreateFile(const char* Path, ExtendedFileSystemE
         bool ExistsIsDir = false;
         if (!FindEntryInDirectory(ParentInodeNumber, NewEntryName, NewEntryNameBytes, nullptr, &ExistsIsDir, &Exists))
         {
-#ifdef DEBUG_BUILD
-            if (DebugTerminal != nullptr)
-            {
-                DebugTerminal->Serialprintf("ext2_create_dbg: fail leaf_lookup_error parent_ino=%u leaf='%s'\n", ParentInodeNumber, NewEntryName);
-            }
-#endif
             return false;
         }
 
         if (Exists)
         {
-#ifdef DEBUG_BUILD
-            if (DebugTerminal != nullptr)
-            {
-                DebugTerminal->Serialprintf("ext2_create_dbg: fail already_exists parent_ino=%u leaf='%s'\n", ParentInodeNumber, NewEntryName);
-            }
-#endif
             return false;
         }
     }
@@ -1440,12 +1360,6 @@ bool ExtendedFileSystemManager::CreateFile(const char* Path, ExtendedFileSystemE
     uint32_t NewInodeNumber = 0;
     if (!AllocateInodeNearGroup(ParentGroupIndex, CreatingDirectory, &NewInodeNumber))
     {
-#ifdef DEBUG_BUILD
-        if (DebugTerminal != nullptr)
-        {
-            DebugTerminal->Serialprintf("ext2_create_dbg: fail alloc_inode parent_group=%u group_count=%u\n", ParentGroupIndex, InodeGroupCount);
-        }
-#endif
         return false;
     }
 
@@ -1456,12 +1370,6 @@ bool ExtendedFileSystemManager::CreateFile(const char* Path, ExtendedFileSystemE
     {
         if (!AllocateBlockNearGroup(NewInodeGroupIndex, &NewDataBlockNumber))
         {
-#ifdef DEBUG_BUILD
-            if (DebugTerminal != nullptr)
-            {
-                DebugTerminal->Serialprintf("ext2_create_dbg: fail alloc_dir_block inode_group=%u block_group_count=%u\n", NewInodeGroupIndex, BlockGroupCount);
-            }
-#endif
             return false;
         }
     }
@@ -1514,12 +1422,6 @@ bool ExtendedFileSystemManager::CreateFile(const char* Path, ExtendedFileSystemE
 
     if (!WriteInodeData(NewInodeNumber, NewInodeData))
     {
-#ifdef DEBUG_BUILD
-        if (DebugTerminal != nullptr)
-        {
-            DebugTerminal->Serialprintf("ext2_create_dbg: fail write_new_inode inode=%u\n", NewInodeNumber);
-        }
-#endif
         delete[] NewInodeData;
         return false;
     }
@@ -1530,12 +1432,6 @@ bool ExtendedFileSystemManager::CreateFile(const char* Path, ExtendedFileSystemE
     kmemset(ParentInodeData, 0, sizeof(ParentInodeData));
     if (InodeSizeBytes > sizeof(ParentInodeData) || !ReadInode(ParentInodeNumber, ParentInodeData, sizeof(ParentInodeData)))
     {
-#ifdef DEBUG_BUILD
-        if (DebugTerminal != nullptr)
-        {
-            DebugTerminal->Serialprintf("ext2_create_dbg: fail read_parent_inode inode=%u inode_size=%u\n", ParentInodeNumber, InodeSizeBytes);
-        }
-#endif
         return false;
     }
 
@@ -1637,12 +1533,6 @@ bool ExtendedFileSystemManager::CreateFile(const char* Path, ExtendedFileSystemE
         uint32_t NewParentBlockNumber = 0;
         if (!AllocateBlockNearGroup(ParentGroupIndex, &NewParentBlockNumber))
         {
-#ifdef DEBUG_BUILD
-            if (DebugTerminal != nullptr)
-            {
-            DebugTerminal->Serialprintf("ext2_create_dbg: fail alloc_parent_dir_block parent_group=%u block_group_count=%u\n", ParentGroupIndex, BlockGroupCount);
-            }
-#endif
             return false;
         }
 
@@ -1688,21 +1578,8 @@ bool ExtendedFileSystemManager::CreateFile(const char* Path, ExtendedFileSystemE
 
     if (!WriteInodeData(ParentInodeNumber, ParentInodeData))
     {
-#ifdef DEBUG_BUILD
-        if (DebugTerminal != nullptr)
-        {
-            DebugTerminal->Serialprintf("ext2_create_dbg: fail write_parent_inode inode=%u\n", ParentInodeNumber);
-        }
-#endif
         return false;
     }
-
-#ifdef DEBUG_BUILD
-    if (DebugTerminal != nullptr)
-    {
-        DebugTerminal->Serialprintf("ext2_create_dbg: success path='%s' parent_ino=%u new_ino=%u new_dir_block=%u\n", Path, ParentInodeNumber, NewInodeNumber, NewDataBlockNumber);
-    }
-#endif
 
     return true;
 }
