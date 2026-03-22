@@ -343,9 +343,89 @@ void TTY::HandleOutputChar(char Character)
                 Mode = OutputAnsiParams[0];
             }
 
-            if (Mode == 0 || Mode == 2)
+            uint32_t MaxColumns = FrameBufferDevice->GetWidth() / FONT_WIDTH;
+            uint32_t MaxRows    = FrameBufferDevice->GetHeight() / FONT_HEIGHT;
+
+            if (Mode == 2)
             {
                 ClearScreen();
+            }
+            else if (Mode == 0)
+            {
+                uint32_t StartRow = CursorY / FONT_HEIGHT;
+                uint32_t StartCol = CursorX / FONT_WIDTH;
+
+                for (uint32_t Row = StartRow; Row < MaxRows; ++Row)
+                {
+                    uint32_t ColStart = (Row == StartRow) ? StartCol : 0;
+                    for (uint32_t Col = ColStart; Col < MaxColumns; ++Col)
+                    {
+                        DrawChar(Col * FONT_WIDTH, Row * FONT_HEIGHT, ' ');
+                    }
+                }
+            }
+            else if (Mode == 1)
+            {
+                uint32_t EndRow = CursorY / FONT_HEIGHT;
+                uint32_t EndCol = CursorX / FONT_WIDTH;
+
+                for (uint32_t Row = 0; Row <= EndRow && Row < MaxRows; ++Row)
+                {
+                    uint32_t ColEnd = (Row == EndRow) ? EndCol : (MaxColumns == 0 ? 0 : MaxColumns - 1);
+                    for (uint32_t Col = 0; Col <= ColEnd && Col < MaxColumns; ++Col)
+                    {
+                        DrawChar(Col * FONT_WIDTH, Row * FONT_HEIGHT, ' ');
+                    }
+                }
+            }
+
+            ResetAnsiParser();
+            return;
+        }
+
+        if (Character == 'K')
+        {
+            uint8_t Mode = 0;
+            if (OutputAnsiParamCount >= 1)
+            {
+                Mode = OutputAnsiParams[0];
+            }
+
+            uint32_t MaxColumns = FrameBufferDevice->GetWidth() / FONT_WIDTH;
+            uint32_t Row        = CursorY / FONT_HEIGHT;
+            uint32_t CursorCol  = CursorX / FONT_WIDTH;
+
+            if (Row < (FrameBufferDevice->GetHeight() / FONT_HEIGHT))
+            {
+                uint32_t ColStart = 0;
+                uint32_t ColEnd   = (MaxColumns == 0) ? 0 : (MaxColumns - 1);
+
+                if (Mode == 0)
+                {
+                    ColStart = CursorCol;
+                }
+                else if (Mode == 1)
+                {
+                    ColEnd = CursorCol;
+                }
+                else if (Mode == 2)
+                {
+                    ColStart = 0;
+                    ColEnd   = (MaxColumns == 0) ? 0 : (MaxColumns - 1);
+                }
+
+                if (MaxColumns > 0 && ColStart < MaxColumns)
+                {
+                    if (ColEnd >= MaxColumns)
+                    {
+                        ColEnd = MaxColumns - 1;
+                    }
+
+                    for (uint32_t Col = ColStart; Col <= ColEnd; ++Col)
+                    {
+                        DrawChar(Col * FONT_WIDTH, Row * FONT_HEIGHT, ' ');
+                    }
+                }
             }
 
             ResetAnsiParser();
@@ -947,20 +1027,17 @@ uint64_t TTY::PushKeyboardInputChar(char Character)
     }
 
     uint8_t EraseCharacter = GetControlCharacter(LINUX_CC_VERASE);
-    if (Character == '\b' || static_cast<uint8_t>(Character) == EraseCharacter)
+    if (IsCanonicalModeEnabled() && (Character == '\b' || static_cast<uint8_t>(Character) == EraseCharacter))
     {
-        if (IsCanonicalModeEnabled())
+        uint64_t EditableBytes = BufferedBytes - CommittedBytes;
+        if (EditableBytes > 0)
         {
-            uint64_t EditableBytes = BufferedBytes - CommittedBytes;
-            if (EditableBytes > 0)
-            {
-                BufferHead = (BufferHead + KEYBOARD_BUFFER_CAPACITY - 1) % KEYBOARD_BUFFER_CAPACITY;
-                --BufferedBytes;
+            BufferHead = (BufferHead + KEYBOARD_BUFFER_CAPACITY - 1) % KEYBOARD_BUFFER_CAPACITY;
+            --BufferedBytes;
 
-                if (IsEchoEnabled())
-                {
-                    PutChar('\b');
-                }
+            if (IsEchoEnabled())
+            {
+                PutChar('\b');
             }
         }
 
