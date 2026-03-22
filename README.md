@@ -143,6 +143,9 @@ X86_64 OS that boots via UEFI into a higher-half kernel with PMM, VMM, schedulin
 - `cpio`
 - `musl` / `musl-gcc`
 - `e2fsprogs` (for `mkfs.ext2` and `debugfs`)
+- `curl`
+- `tar`
+- `sha256sum` (usually provided by `coreutils`)
 
 ## Build Instructions
 
@@ -152,23 +155,25 @@ Build the full OS image from the repository root:
 git clone https://github.com/mirror/busybox.git
 ```
 
+Build Alpine root filesystem:
+
+```sh
+./scripts/build-alpine-rootfs.sh
+```
+
 ```sh
 make
 ```
 
 This produces the bootloader, kernel, initramfs, and `TwistedOS.img` (GPT image with an EFI partition and an EXT2 root filesystem partition populated from `RootFileSystem/alpine-rootfs`).
 
-Run the OS in QEMU:
-
-```sh
-make qemu
-```
-
-Run a more minimal QEMU configuration:
+Run the OS in QEMU using the supported configuration:
 
 ```sh
 make qemu-basic
 ```
+
+`make qemu` is currently not supported.
 
 Build with debug serial logging enabled:
 
