@@ -147,6 +147,46 @@ void Console::SetTextMode(int mode)
 }
 
 /**
+ * Function: Console::PickBestTextMode
+ * Description: Selects the text mode with the largest terminal area (columns * rows).
+ * Parameters:
+ *   None - This function takes no parameters.
+ * Returns:
+ *   int - Best available text mode index.
+ */
+int Console::PickBestTextMode()
+{
+    INT32 MaxMode = ConsoleOut->Mode->MaxMode;
+
+    UINTN bestCols = 0;
+    UINTN bestRows = 0;
+    UINTN bestArea = 0;
+    INT32 bestMode = ConsoleOut->Mode->Mode;
+
+    for (INT32 i = 0; i < MaxMode; i++)
+    {
+        UINTN      Cols   = 0;
+        UINTN      Rows   = 0;
+        EFI_STATUS status = ConsoleOut->QueryMode(ConsoleOut, (UINTN) i, &Cols, &Rows);
+        if (EFI_ERROR(status))
+        {
+            continue;
+        }
+
+        UINTN area = Cols * Rows;
+        if (area > bestArea || (area == bestArea && (Cols > bestCols || (Cols == bestCols && Rows > bestRows))))
+        {
+            bestArea = area;
+            bestCols = Cols;
+            bestRows = Rows;
+            bestMode = i;
+        }
+    }
+
+    return bestMode;
+}
+
+/**
  * Function: Console::DisplayGraphicsModeInfo
  * Description: Displays details about the current GOP graphics mode.
  * Parameters:
@@ -208,6 +248,58 @@ void Console::SetGraphicsMode(int mode)
 
     printf_("Graphics Mode Set \r\n");
     DisplayGraphicsModeInfo();
+}
+
+/**
+ * Function: Console::PickGraphicsModeByResolution
+ * Description: Selects the graphics mode that best matches a target resolution.
+ * Parameters:
+ *   UINT32 targetWidth - Preferred horizontal resolution.
+ *   UINT32 targetHeight - Preferred vertical resolution.
+ * Returns:
+ *   int - Best matching graphics mode index.
+ */
+int Console::PickGraphicsModeByResolution(UINT32 targetWidth, UINT32 targetHeight)
+{
+    auto absDiff = [](UINT32 left, UINT32 right) -> UINT64 { return (left >= right) ? (UINT64) (left - right) : (UINT64) (right - left); };
+
+    INT32 MaxMode = Gop->Mode->MaxMode;
+    INT32 bestMode = Gop->Mode->Mode;
+
+    UINT64 bestDistance = ~0ULL;
+    UINT64 bestArea     = 0;
+
+    for (INT32 i = 0; i < MaxMode; i++)
+    {
+        EFI_GRAPHICS_OUTPUT_MODE_INFORMATION* GopModeInfo  = NULL;
+        UINTN                                 ModeInfoSize = sizeof(EFI_GRAPHICS_OUTPUT_MODE_INFORMATION);
+
+        EFI_STATUS status = Gop->QueryMode(Gop, (UINTN) i, &ModeInfoSize, &GopModeInfo);
+        if (EFI_ERROR(status) || GopModeInfo == NULL)
+        {
+            continue;
+        }
+
+        UINT32 width  = GopModeInfo->HorizontalResolution;
+        UINT32 height = GopModeInfo->VerticalResolution;
+
+        if (width == targetWidth && height == targetHeight)
+        {
+            return i;
+        }
+
+        UINT64 distance = absDiff(width, targetWidth) + absDiff(height, targetHeight);
+        UINT64 area     = (UINT64) width * (UINT64) height;
+
+        if (distance < bestDistance || (distance == bestDistance && area > bestArea))
+        {
+            bestDistance = distance;
+            bestArea     = area;
+            bestMode     = i;
+        }
+    }
+
+    return bestMode;
 }
 
 /**

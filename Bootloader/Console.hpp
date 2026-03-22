@@ -24,9 +24,11 @@ public:
     void                              DisplayModeInfo();
     void                              DisplayAllModeInfo();
     void                              SetTextMode(int mode);
+    int                               PickBestTextMode();
     void                              DisplayGraphicsModeInfo();
     void                              DisplayAllGraphicsModeInfo();
     void                              SetGraphicsMode(int mode);
+    int                               PickGraphicsModeByResolution(UINT32 targetWidth, UINT32 targetHeight);
     EFI_GRAPHICS_OUTPUT_PROTOCOL_MODE GetGopMode();
     EFI_STATUS                        GetKeyFromUser(EFI_INPUT_KEY* key);
     char                              GetKeyOnEvent();

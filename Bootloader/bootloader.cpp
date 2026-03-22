@@ -9,6 +9,14 @@
 #include <FileSystem.hpp>
 #include <uefi.hpp>
 
+#ifndef BOOT_GFX_WIDTH
+#define BOOT_GFX_WIDTH 1024
+#endif
+
+#ifndef BOOT_GFX_HEIGHT
+#define BOOT_GFX_HEIGHT 768
+#endif
+
 Console* Con;
 
 /**
@@ -46,12 +54,9 @@ extern "C"
         efiConsole.DisplayModeInfo();
         efiConsole.DisplayAllModeInfo();
 
-        efiConsole.printf_("Pick a Text mode\r\n");
-        // char key  = efiConsole.GetKeyOnEvent();
-        char key  = '4';
-        int  ikey = key - '0';
-
-        efiConsole.SetTextMode(ikey);
+        int textMode = efiConsole.PickBestTextMode();
+        efiConsole.printf_("Auto-selected text mode: %d\r\n", textMode);
+        efiConsole.SetTextMode(textMode);
 
         efiConsole.ClearConsole();
         efiConsole.DisplayModeInfo();
@@ -59,21 +64,10 @@ extern "C"
         efiConsole.DisplayGraphicsModeInfo();
         efiConsole.DisplayAllGraphicsModeInfo();
 
-        efiConsole.printf_("Pick a Graphics mode\r\n");
-
-        efiConsole.printf_("Digit 1\r\n");
-        // key       = efiConsole.GetKeyOnEvent();
-        key       = '2';
-        ikey      = key - '0';
-        int Gmode = ikey * 10;
-
-        efiConsole.printf_("Digit 2\r\n");
-        // key  = efiConsole.GetKeyOnEvent();
-        key  = '2';
-        ikey = key - '0';
-        Gmode += ikey;
-
-        efiConsole.SetGraphicsMode(Gmode);
+        efiConsole.printf_("Target graphics resolution: %ux%u\r\n", (UINT32) BOOT_GFX_WIDTH, (UINT32) BOOT_GFX_HEIGHT);
+        int graphicsMode = efiConsole.PickGraphicsModeByResolution((UINT32) BOOT_GFX_WIDTH, (UINT32) BOOT_GFX_HEIGHT);
+        efiConsole.printf_("Auto-selected graphics mode: %d\r\n", graphicsMode);
+        efiConsole.SetGraphicsMode(graphicsMode);
         FileSystem efiFileSystem = FileSystem(ImageHandle, SystemTable->BootServices, &efiConsole);
         efiFileSystem.LoadKernel();
 

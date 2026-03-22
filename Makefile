@@ -17,6 +17,11 @@ CFLAGS = \
 	-fno-rtti \
 	-Wno-missing-field-initializers
 
+BOOT_GFX_WIDTH ?= 1024
+BOOT_GFX_HEIGHT ?= 768
+
+CFLAGS += -DBOOT_GFX_WIDTH=$(BOOT_GFX_WIDTH) -DBOOT_GFX_HEIGHT=$(BOOT_GFX_HEIGHT)
+
 KERNEL_CC = g++
 KERNEL_LD = ld
 KERNEL_AS = nasm
