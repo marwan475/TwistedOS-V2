@@ -90,6 +90,9 @@ int64_t TranslationLayer::HandlePosixSystemCallNumber(uint64_t SystemCallNumber,
         case 34: // pause
             return HandlePauseSystemCall();
             break;
+        case 35: // nanosleep
+            return HandleNanosleepSystemCall(reinterpret_cast<const void*>(Arg1), reinterpret_cast<void*>(Arg2));
+            break;
         case 39: // getpid
             return HandleGetpidSystemCall();
             break;

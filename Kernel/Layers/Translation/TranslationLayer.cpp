@@ -4421,6 +4421,75 @@ int64_t TranslationLayer::HandlePauseSystemCall()
     return LINUX_ERR_EINTR;
 }
 
+int64_t TranslationLayer::HandleNanosleepSystemCall(const void* RequestedTime, void* RemainingTime)
+{
+    if (Logic == nullptr || RequestedTime == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    ProcessManager* PM = Logic->GetProcessManager();
+    if (PM == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    Process* CurrentProcess = PM->GetRunningProcess();
+    if (CurrentProcess == nullptr || CurrentProcess->Level != PROCESS_LEVEL_USER)
+    {
+        return LINUX_ERR_EINVAL;
+    }
+
+    LinuxTimeSpec RequestedKernelTime = {};
+    if (!Logic->CopyFromUserToKernel(RequestedTime, &RequestedKernelTime, sizeof(RequestedKernelTime)))
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    if (RequestedKernelTime.Seconds < 0)
+    {
+        return LINUX_ERR_EINVAL;
+    }
+
+    if (RequestedKernelTime.Nanoseconds < 0 || RequestedKernelTime.Nanoseconds > 999999999)
+    {
+        return LINUX_ERR_EINVAL;
+    }
+
+    constexpr uint64_t NANOSECONDS_PER_TICK = 10000000;
+    uint64_t SleepTicksFromSeconds = static_cast<uint64_t>(RequestedKernelTime.Seconds) * 100;
+
+    if (RequestedKernelTime.Seconds > 0 && (SleepTicksFromSeconds / 100) != static_cast<uint64_t>(RequestedKernelTime.Seconds))
+    {
+        return LINUX_ERR_EINVAL;
+    }
+
+    uint64_t RequestedNanoseconds = static_cast<uint64_t>(RequestedKernelTime.Nanoseconds);
+    uint64_t SleepTicksFromNanoseconds = (RequestedNanoseconds + (NANOSECONDS_PER_TICK - 1)) / NANOSECONDS_PER_TICK;
+
+    uint64_t SleepTicks = SleepTicksFromSeconds + SleepTicksFromNanoseconds;
+    if (SleepTicks < SleepTicksFromSeconds)
+    {
+        return LINUX_ERR_EINVAL;
+    }
+
+    if (SleepTicks != 0)
+    {
+        Logic->SleepProcess(CurrentProcess->Id, SleepTicks);
+    }
+
+    if (RemainingTime != nullptr)
+    {
+        LinuxTimeSpec RemainingKernelTime = {};
+        if (!Logic->CopyFromKernelToUser(&RemainingKernelTime, RemainingTime, sizeof(RemainingKernelTime)))
+        {
+            return LINUX_ERR_EFAULT;
+        }
+    }
+
+    return 0;
+}
+
 int64_t TranslationLayer::HandleForkSystemCall()
 {
     if (Logic == nullptr)
