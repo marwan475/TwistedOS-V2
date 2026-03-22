@@ -650,18 +650,18 @@ Dentry* ResolvePathInternal(Dentry* RootDentry, Dentry* StartDentry, const char*
  */
 INode* CreateINode(FileType Type, uint64_t Size, void* Data)
 {
-    INode* Node    = new INode;
-    Node->NodeType = Type;
-    Node->NodeSize = Size;
-    Node->NodeData = Data;
-    Node->IsLazyLoad = false;
+    INode* Node               = new INode;
+    Node->NodeType            = Type;
+    Node->NodeSize            = Size;
+    Node->NodeData            = Data;
+    Node->IsLazyLoad          = false;
     Node->LazyDataBackedByPMM = false;
-    Node->LazyDataPageCount = 0;
-    Node->BackingInodeNumber = 0;
-    Node->LazyLoadRefCount = 0;
-    Node->LazyLoadContext = nullptr;
-    Node->INodeOps = nullptr;
-    Node->FileOps  = &DefaultFileOperations;
+    Node->LazyDataPageCount   = 0;
+    Node->BackingInodeNumber  = 0;
+    Node->LazyLoadRefCount    = 0;
+    Node->LazyLoadContext     = nullptr;
+    Node->INodeOps            = nullptr;
+    Node->FileOps             = &DefaultFileOperations;
     return Node;
 }
 
@@ -928,15 +928,15 @@ bool EnsurePathDentry(Dentry* RootDentry, const char* Path, FileType FinalNodeTy
     const char* NormalizedPath = NormalizePathStart(Path);
     if (IsRootAliasPath(NormalizedPath))
     {
-        RootDentry->inode->NodeType = INODE_DIR;
-        RootDentry->inode->NodeSize = 0;
-        RootDentry->inode->NodeData = nullptr;
-        RootDentry->inode->IsLazyLoad = false;
+        RootDentry->inode->NodeType            = INODE_DIR;
+        RootDentry->inode->NodeSize            = 0;
+        RootDentry->inode->NodeData            = nullptr;
+        RootDentry->inode->IsLazyLoad          = false;
         RootDentry->inode->LazyDataBackedByPMM = false;
-        RootDentry->inode->LazyDataPageCount = 0;
-        RootDentry->inode->BackingInodeNumber = 0;
-        RootDentry->inode->LazyLoadRefCount = 0;
-        RootDentry->inode->LazyLoadContext = nullptr;
+        RootDentry->inode->LazyDataPageCount   = 0;
+        RootDentry->inode->BackingInodeNumber  = 0;
+        RootDentry->inode->LazyLoadRefCount    = 0;
+        RootDentry->inode->LazyLoadContext     = nullptr;
         return true;
     }
 
@@ -990,15 +990,15 @@ bool EnsurePathDentry(Dentry* RootDentry, const char* Path, FileType FinalNodeTy
         }
         else if (IsFinalSegment)
         {
-            Child->inode->NodeType = FinalNodeType;
-            Child->inode->NodeSize = FinalNodeSize;
-            Child->inode->NodeData = FinalNodeData;
-            Child->inode->IsLazyLoad = false;
+            Child->inode->NodeType            = FinalNodeType;
+            Child->inode->NodeSize            = FinalNodeSize;
+            Child->inode->NodeData            = FinalNodeData;
+            Child->inode->IsLazyLoad          = false;
             Child->inode->LazyDataBackedByPMM = false;
-            Child->inode->LazyDataPageCount = 0;
-            Child->inode->BackingInodeNumber = 0;
-            Child->inode->LazyLoadRefCount = 0;
-            Child->inode->LazyLoadContext = nullptr;
+            Child->inode->LazyDataPageCount   = 0;
+            Child->inode->BackingInodeNumber  = 0;
+            Child->inode->LazyLoadRefCount    = 0;
+            Child->inode->LazyLoadContext     = nullptr;
         }
 
         Current      = Child;
@@ -1069,21 +1069,21 @@ bool MountEXTEntryCallback(const ExtendedFileSystemEntry& Entry, void* Context)
             bool IsLazyInode = ((NodeType == INODE_FILE || NodeType == INODE_SYMLINK) && Entry.Data == nullptr && Entry.InodeNumber != 0);
             if (IsLazyInode)
             {
-                MountedEntry->inode->IsLazyLoad = true;
+                MountedEntry->inode->IsLazyLoad          = true;
                 MountedEntry->inode->LazyDataBackedByPMM = false;
-                MountedEntry->inode->LazyDataPageCount = 0;
-                MountedEntry->inode->BackingInodeNumber = Entry.InodeNumber;
-                MountedEntry->inode->LazyLoadRefCount = 0;
-                MountedEntry->inode->LazyLoadContext = const_cast<void*>(MountContext->FileSystemManager);
+                MountedEntry->inode->LazyDataPageCount   = 0;
+                MountedEntry->inode->BackingInodeNumber  = Entry.InodeNumber;
+                MountedEntry->inode->LazyLoadRefCount    = 0;
+                MountedEntry->inode->LazyLoadContext     = const_cast<void*>(MountContext->FileSystemManager);
             }
             else
             {
-                MountedEntry->inode->IsLazyLoad = false;
+                MountedEntry->inode->IsLazyLoad          = false;
                 MountedEntry->inode->LazyDataBackedByPMM = false;
-                MountedEntry->inode->LazyDataPageCount = 0;
-                MountedEntry->inode->BackingInodeNumber = 0;
-                MountedEntry->inode->LazyLoadRefCount = 0;
-                MountedEntry->inode->LazyLoadContext = nullptr;
+                MountedEntry->inode->LazyDataPageCount   = 0;
+                MountedEntry->inode->BackingInodeNumber  = 0;
+                MountedEntry->inode->LazyLoadRefCount    = 0;
+                MountedEntry->inode->LazyLoadContext     = nullptr;
             }
         }
     }
@@ -1405,13 +1405,12 @@ bool VirtualFileSystem::RenameFile(const char* oldPath, const char* newPath, Fil
         return false;
     }
 
-    if ((NewNameLength == 1 && LastSegmentStart[0] == PATH_DOT)
-        || (NewNameLength == 2 && LastSegmentStart[0] == PATH_DOT && LastSegmentStart[1] == PATH_DOT))
+    if ((NewNameLength == 1 && LastSegmentStart[0] == PATH_DOT) || (NewNameLength == 2 && LastSegmentStart[0] == PATH_DOT && LastSegmentStart[1] == PATH_DOT))
     {
         return false;
     }
 
-    Dentry* TargetParent = Root;
+    Dentry*     TargetParent = Root;
     const char* SegmentStart = NormalizedNewPath;
     while (SegmentStart < LastSegmentStart)
     {
@@ -1432,8 +1431,7 @@ bool VirtualFileSystem::RenameFile(const char* oldPath, const char* newPath, Fil
         }
 
         uint64_t SegmentLength = static_cast<uint64_t>(SegmentEnd - SegmentStart);
-        if ((SegmentLength == 1 && SegmentStart[0] == PATH_DOT)
-            || (SegmentLength == 2 && SegmentStart[0] == PATH_DOT && SegmentStart[1] == PATH_DOT))
+        if ((SegmentLength == 1 && SegmentStart[0] == PATH_DOT) || (SegmentLength == 2 && SegmentStart[0] == PATH_DOT && SegmentStart[1] == PATH_DOT))
         {
             return false;
         }

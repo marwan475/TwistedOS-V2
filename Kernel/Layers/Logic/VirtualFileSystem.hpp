@@ -51,12 +51,12 @@ struct INode
     FileType         NodeType;
     uint64_t         NodeSize;
     void*            NodeData;
-    bool             IsLazyLoad         = false;
+    bool             IsLazyLoad          = false;
     bool             LazyDataBackedByPMM = false;
-    uint64_t         LazyDataPageCount  = 0;
-    uint32_t         BackingInodeNumber = 0;
-    uint32_t         LazyLoadRefCount   = 0;
-    void*            LazyLoadContext    = nullptr;
+    uint64_t         LazyDataPageCount   = 0;
+    uint32_t         BackingInodeNumber  = 0;
+    uint32_t         LazyLoadRefCount    = 0;
+    void*            LazyLoadContext     = nullptr;
     INodeOperations* INodeOps;
     FileOperations*  FileOps;
 };

@@ -17,21 +17,21 @@
 
 namespace
 {
-constexpr uint64_t INITIAL_PROCESS_RFLAGS  = 0x202;
-constexpr uint64_t USER_MODE_FLAG_MASK     = 0x3;
-constexpr uint64_t STACK_ALIGNMENT_MASK    = 0xFULL;
-constexpr uint64_t STACK_RETURN_SLOT_SIZE  = 8;
-constexpr uint64_t EXECVE_MAX_VECTOR_COUNT = 128;
-constexpr uint64_t AUXV_AT_NULL            = 0;
-constexpr uint64_t AUXV_AT_PHDR            = 3;
-constexpr uint64_t AUXV_AT_PHENT           = 4;
-constexpr uint64_t AUXV_AT_PHNUM           = 5;
-constexpr uint64_t AUXV_AT_PAGESZ          = 6;
-constexpr uint64_t AUXV_AT_BASE            = 7;
-constexpr uint64_t AUXV_AT_ENTRY           = 9;
-constexpr uint64_t AUXV_AT_EXECFN          = 31;
-constexpr uint16_t ELF_TYPE_DYN            = 3;
-constexpr uint64_t ELF_INTERPRETER_PATH_MAX = 256;
+constexpr uint64_t INITIAL_PROCESS_RFLAGS    = 0x202;
+constexpr uint64_t USER_MODE_FLAG_MASK       = 0x3;
+constexpr uint64_t STACK_ALIGNMENT_MASK      = 0xFULL;
+constexpr uint64_t STACK_RETURN_SLOT_SIZE    = 8;
+constexpr uint64_t EXECVE_MAX_VECTOR_COUNT   = 128;
+constexpr uint64_t AUXV_AT_NULL              = 0;
+constexpr uint64_t AUXV_AT_PHDR              = 3;
+constexpr uint64_t AUXV_AT_PHENT             = 4;
+constexpr uint64_t AUXV_AT_PHNUM             = 5;
+constexpr uint64_t AUXV_AT_PAGESZ            = 6;
+constexpr uint64_t AUXV_AT_BASE              = 7;
+constexpr uint64_t AUXV_AT_ENTRY             = 9;
+constexpr uint64_t AUXV_AT_EXECFN            = 31;
+constexpr uint16_t ELF_TYPE_DYN              = 3;
+constexpr uint64_t ELF_INTERPRETER_PATH_MAX  = 256;
 constexpr uint64_t ELF_ET_DYN_MAIN_LOAD_BIAS = USER_PROCESS_VIRTUAL_BASE;
 constexpr uint64_t ELF_INTERPRETER_LOAD_BIAS = 0x0000000100000000ULL;
 
@@ -315,7 +315,7 @@ void ReleaseRunningExecutable(ResourceLayer* Resource, Process* TargetProcess)
         return;
     }
 
-    Dentry* ExecutableEntry = TargetProcess->RunningExecutableDentry;
+    Dentry* ExecutableEntry                = TargetProcess->RunningExecutableDentry;
     TargetProcess->RunningExecutableDentry = nullptr;
 
     if (ExecutableEntry == nullptr || ExecutableEntry->inode == nullptr || !ExecutableEntry->inode->IsLazyLoad)
@@ -1592,7 +1592,7 @@ uint8_t LogicLayer::ChangeProcessExecution(uint8_t Id, const char* FilePath, con
         AuxProgramHeaderCount     = Header.ProgramHeaderEntryCount;
         AuxEntryPoint             = Header.Entry + ProgramLoadBias;
 
-        NewAddressSpace = MapELF(reinterpret_cast<uint64_t>(CopiedImage), CodeSize, Header, nullptr, &ProgramLoadBias, &InterpreterBase, &InterpreterEntry);
+        NewAddressSpace   = MapELF(reinterpret_cast<uint64_t>(CopiedImage), CodeSize, Header, nullptr, &ProgramLoadBias, &InterpreterBase, &InterpreterEntry);
         NewUserEntryPoint = (InterpreterEntry != 0) ? InterpreterEntry : (Header.Entry + ProgramLoadBias);
         AuxBaseAddress    = InterpreterBase;
     }
@@ -1614,8 +1614,8 @@ uint8_t LogicLayer::ChangeProcessExecution(uint8_t Id, const char* FilePath, con
     NewState.cs       = USER_CS;
     NewState.ss       = USER_SS;
 
-    if (!InitializeExecveUserEntry(Resource, NewAddressSpace, &NewState, Argv, Argc, Envp, Envc, FilePath, AuxProgramHeaderAddress, AuxProgramHeaderEntrySize,
-                                   AuxProgramHeaderCount, AuxEntryPoint, AuxBaseAddress))
+    if (!InitializeExecveUserEntry(Resource, NewAddressSpace, &NewState, Argv, Argc, Envp, Envc, FilePath, AuxProgramHeaderAddress, AuxProgramHeaderEntrySize, AuxProgramHeaderCount, AuxEntryPoint,
+                                   AuxBaseAddress))
     {
         if (IsELF)
         {
@@ -2035,7 +2035,7 @@ uint8_t LogicLayer::CreateUserProcess(uint64_t CodeAddr, uint64_t CodeSize, cons
         AuxProgramHeaderCount     = Header.ProgramHeaderEntryCount;
         AuxEntryPoint             = Header.Entry + ProgramLoadBias;
 
-        AddressSpace = MapELF(CodeAddr, CodeSize, Header, nullptr, &ProgramLoadBias, &InterpreterBase, &InterpreterEntry);
+        AddressSpace   = MapELF(CodeAddr, CodeSize, Header, nullptr, &ProgramLoadBias, &InterpreterBase, &InterpreterEntry);
         UserEntryPoint = (InterpreterEntry != 0) ? InterpreterEntry : (Header.Entry + ProgramLoadBias);
         AuxBaseAddress = InterpreterBase;
     }
@@ -2053,17 +2053,17 @@ uint8_t LogicLayer::CreateUserProcess(uint64_t CodeAddr, uint64_t CodeSize, cons
 
     CpuState State = {};
     State.rip      = UserEntryPoint;
-    State.rflags   = INITIAL_PROCESS_RFLAGS;                                      // Bit1 always set, IF enabled
-    State.rbp      = 0;                                                           // bottom of stack frame
+    State.rflags   = INITIAL_PROCESS_RFLAGS; // Bit1 always set, IF enabled
+    State.rbp      = 0;                      // bottom of stack frame
 
-    State.cs   = USER_CS;
-    State.ss   = USER_SS;
+    State.cs = USER_CS;
+    State.ss = USER_SS;
 
     if (IsELF)
     {
-        const char* InitialArgvStorage[2] = {};
-        const char* const* Argv           = nullptr;
-        uint64_t           Argc           = 0;
+        const char*        InitialArgvStorage[2] = {};
+        const char* const* Argv                  = nullptr;
+        uint64_t           Argc                  = 0;
 
         if (InitialArgv0 != nullptr && InitialArgv0[0] != '\0')
         {
@@ -2073,8 +2073,8 @@ uint8_t LogicLayer::CreateUserProcess(uint64_t CodeAddr, uint64_t CodeSize, cons
             Argc                  = 1;
         }
 
-        if (!InitializeExecveUserEntry(Resource, AddressSpace, &State, Argv, Argc, nullptr, 0, InitialArgv0, AuxProgramHeaderAddress, AuxProgramHeaderEntrySize,
-                           AuxProgramHeaderCount, AuxEntryPoint, AuxBaseAddress))
+        if (!InitializeExecveUserEntry(Resource, AddressSpace, &State, Argv, Argc, nullptr, 0, InitialArgv0, AuxProgramHeaderAddress, AuxProgramHeaderEntrySize, AuxProgramHeaderCount, AuxEntryPoint,
+                                       AuxBaseAddress))
         {
             CleanUpELF(AddressSpace);
             delete AddressSpace;
@@ -2174,8 +2174,8 @@ VirtualAddressSpace* LogicLayer::MapRawBinary(uint64_t CodeAddr, uint64_t CodeSi
  * Returns:
  *   VirtualAddressSpace* - Initialized ELF address space or nullptr on failure.
  */
-VirtualAddressSpace* LogicLayer::MapELF(uint64_t CodeAddr, uint64_t CodeSize, const ELFHeader& Header, const VirtualAddressSpaceELF* SourceRuntimeELFAddressSpace,
-                                        uint64_t* ProgramLoadBiasOut, uint64_t* InterpreterBaseOut, uint64_t* InterpreterEntryOut)
+VirtualAddressSpace* LogicLayer::MapELF(uint64_t CodeAddr, uint64_t CodeSize, const ELFHeader& Header, const VirtualAddressSpaceELF* SourceRuntimeELFAddressSpace, uint64_t* ProgramLoadBiasOut,
+                                        uint64_t* InterpreterBaseOut, uint64_t* InterpreterEntryOut)
 {
     if (ProgramLoadBiasOut != nullptr)
     {

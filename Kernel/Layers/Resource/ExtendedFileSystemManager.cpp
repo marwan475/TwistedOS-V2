@@ -2361,9 +2361,9 @@ bool ExtendedFileSystemManager::RenameFile(const char* OldPath, const char* NewP
             return false;
         }
 
-        uint32_t LastSegmentIndex  = *SegmentCount - 1;
-        uint32_t LastSegmentLength = SegmentLengths[LastSegmentIndex];
-        const char* LastSegment    = Segments[LastSegmentIndex];
+        uint32_t    LastSegmentIndex  = *SegmentCount - 1;
+        uint32_t    LastSegmentLength = SegmentLengths[LastSegmentIndex];
+        const char* LastSegment       = Segments[LastSegmentIndex];
 
         if ((LastSegmentLength == 1 && LastSegment[0] == '.') || (LastSegmentLength == 2 && LastSegment[0] == '.' && LastSegment[1] == '.'))
         {

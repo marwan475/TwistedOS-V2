@@ -325,8 +325,8 @@ bool ResourceLayer::InitializeExtendedFileSystemManager(const RootFileSystemPart
     {
         Terminal->printf_("ext filesystem found: device=%s partition=%u start_lba=%lu sectors=%lu ext2_block=%u\n", (PartitionInfo->DevicePath[0] != '\0') ? PartitionInfo->DevicePath : "<none>",
                           PartitionInfo->PartitionIndex, static_cast<unsigned long>(PartitionInfo->StartLBA), static_cast<unsigned long>(PartitionInfo->SectorCount), EFSManager->GetBlockSizeBytes());
-        //EFSManager->PrintFileSystem(Terminal);
-        //EFSManager->PrintFileTree(Terminal);
+        // EFSManager->PrintFileSystem(Terminal);
+        // EFSManager->PrintFileTree(Terminal);
     }
 
     return true;

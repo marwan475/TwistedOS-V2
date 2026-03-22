@@ -263,7 +263,7 @@ int Console::PickGraphicsModeByResolution(UINT32 targetWidth, UINT32 targetHeigh
 {
     auto absDiff = [](UINT32 left, UINT32 right) -> UINT64 { return (left >= right) ? (UINT64) (left - right) : (UINT64) (right - left); };
 
-    INT32 MaxMode = Gop->Mode->MaxMode;
+    INT32 MaxMode  = Gop->Mode->MaxMode;
     INT32 bestMode = Gop->Mode->Mode;
 
     UINT64 bestDistance = ~0ULL;

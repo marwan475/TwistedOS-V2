@@ -18,27 +18,27 @@
 
 namespace
 {
-constexpr int64_t LINUX_ERR_EFAULT  = -14;
-constexpr int64_t LINUX_ERR_ENOENT  = -2;
-constexpr int64_t LINUX_ERR_ENOMEM  = -12;
-constexpr int64_t LINUX_ERR_EAGAIN  = -11;
-constexpr int64_t LINUX_ERR_EMFILE  = -24;
-constexpr int64_t LINUX_ERR_EINVAL  = -22;
-constexpr int64_t LINUX_ERR_EBADF   = -9;
-constexpr int64_t LINUX_ERR_EINTR   = -4;
-constexpr int64_t LINUX_ERR_ESRCH   = -3;
-constexpr int64_t LINUX_ERR_ENOSYS  = -38;
-constexpr int64_t LINUX_ERR_ENOTTY  = -25;
-constexpr int64_t LINUX_ERR_EACCES  = -13;
-constexpr int64_t LINUX_ERR_ECHILD  = -10;
-constexpr int64_t LINUX_ERR_ENODEV  = -19;
-constexpr int64_t LINUX_ERR_ENOTDIR = -20;
-constexpr int64_t LINUX_ERR_EISDIR  = -21;
-constexpr int64_t LINUX_ERR_EPERM   = -1;
-constexpr int64_t LINUX_ERR_ERANGE  = -34;
-constexpr int64_t LINUX_ERR_EEXIST  = -17;
+constexpr int64_t LINUX_ERR_EFAULT    = -14;
+constexpr int64_t LINUX_ERR_ENOENT    = -2;
+constexpr int64_t LINUX_ERR_ENOMEM    = -12;
+constexpr int64_t LINUX_ERR_EAGAIN    = -11;
+constexpr int64_t LINUX_ERR_EMFILE    = -24;
+constexpr int64_t LINUX_ERR_EINVAL    = -22;
+constexpr int64_t LINUX_ERR_EBADF     = -9;
+constexpr int64_t LINUX_ERR_EINTR     = -4;
+constexpr int64_t LINUX_ERR_ESRCH     = -3;
+constexpr int64_t LINUX_ERR_ENOSYS    = -38;
+constexpr int64_t LINUX_ERR_ENOTTY    = -25;
+constexpr int64_t LINUX_ERR_EACCES    = -13;
+constexpr int64_t LINUX_ERR_ECHILD    = -10;
+constexpr int64_t LINUX_ERR_ENODEV    = -19;
+constexpr int64_t LINUX_ERR_ENOTDIR   = -20;
+constexpr int64_t LINUX_ERR_EISDIR    = -21;
+constexpr int64_t LINUX_ERR_EPERM     = -1;
+constexpr int64_t LINUX_ERR_ERANGE    = -34;
+constexpr int64_t LINUX_ERR_EEXIST    = -17;
 constexpr int64_t LINUX_ERR_ENOTEMPTY = -39;
-constexpr int64_t LINUX_ERR_ESPIPE  = -29;
+constexpr int64_t LINUX_ERR_ESPIPE    = -29;
 
 constexpr uint64_t SYSCALL_COPY_CHUNK_SIZE   = 4096;
 constexpr uint64_t SYSCALL_PATH_MAX          = 4096;
@@ -1526,7 +1526,7 @@ int64_t TranslationLayer::HandlePollSystemCall(void* PollFdArray, uint64_t PollF
 
         for (uint64_t Index = 0; Index < PollFdCount; ++Index)
         {
-            LinuxPollFd KernelPollFd = {};
+            LinuxPollFd KernelPollFd      = {};
             const void* UserPollFdAddress = reinterpret_cast<const void*>(reinterpret_cast<uint64_t>(PollFdArray) + (Index * sizeof(LinuxPollFd)));
 
             if (!Logic->CopyFromUserToKernel(UserPollFdAddress, &KernelPollFd, sizeof(KernelPollFd)))
@@ -1554,11 +1554,11 @@ int64_t TranslationLayer::HandlePollSystemCall(void* PollFdArray, uint64_t PollF
                     {
                         if ((KernelPollFd.Events & LINUX_POLLIN) != 0)
                         {
-                            bool IsTTYNode = (OpenFile->Node->NodeType == INODE_DEV && OpenFile->DirectoryEntry != nullptr && OpenFile->DirectoryEntry->name != nullptr &&
-                                              CStrEquals(OpenFile->DirectoryEntry->name, "tty"));
+                            bool IsTTYNode = (OpenFile->Node->NodeType == INODE_DEV && OpenFile->DirectoryEntry != nullptr && OpenFile->DirectoryEntry->name != nullptr
+                                              && CStrEquals(OpenFile->DirectoryEntry->name, "tty"));
                             if (IsTTYNode)
                             {
-                                WantsTTYRead = true;
+                                WantsTTYRead  = true;
                                 TTY* Terminal = reinterpret_cast<TTY*>(OpenFile->Node->NodeData);
                                 if (Terminal != nullptr && Terminal->GetBufferedInputBytes() > 0)
                                 {
@@ -1826,7 +1826,7 @@ int64_t TranslationLayer::HandleOpenAtSystemCall(int64_t DirectoryFileDescriptor
         return LINUX_ERR_ENOENT;
     }
 
-    Dentry*    NodeDentry = nullptr;
+    Dentry*     NodeDentry = nullptr;
     const char* LookupPath = nullptr;
 
     if (KernelPath[0] == '/')
@@ -3538,7 +3538,7 @@ int64_t TranslationLayer::HandleUtimensatSystemCall(int64_t DirectoryFileDescrip
         for (uint64_t Index = 0; Index < 2; ++Index)
         {
             int64_t Nanoseconds = KernelTimes[Index].Nanoseconds;
-            bool    IsSpecial    = (Nanoseconds == LINUX_UTIME_NOW || Nanoseconds == LINUX_UTIME_OMIT);
+            bool    IsSpecial   = (Nanoseconds == LINUX_UTIME_NOW || Nanoseconds == LINUX_UTIME_OMIT);
             if (!IsSpecial && (Nanoseconds < 0 || Nanoseconds > 999999999))
             {
                 return LINUX_ERR_EINVAL;
@@ -4456,15 +4456,15 @@ int64_t TranslationLayer::HandleNanosleepSystemCall(const void* RequestedTime, v
         return LINUX_ERR_EINVAL;
     }
 
-    constexpr uint64_t NANOSECONDS_PER_TICK = 10000000;
-    uint64_t SleepTicksFromSeconds = static_cast<uint64_t>(RequestedKernelTime.Seconds) * 100;
+    constexpr uint64_t NANOSECONDS_PER_TICK  = 10000000;
+    uint64_t           SleepTicksFromSeconds = static_cast<uint64_t>(RequestedKernelTime.Seconds) * 100;
 
     if (RequestedKernelTime.Seconds > 0 && (SleepTicksFromSeconds / 100) != static_cast<uint64_t>(RequestedKernelTime.Seconds))
     {
         return LINUX_ERR_EINVAL;
     }
 
-    uint64_t RequestedNanoseconds = static_cast<uint64_t>(RequestedKernelTime.Nanoseconds);
+    uint64_t RequestedNanoseconds      = static_cast<uint64_t>(RequestedKernelTime.Nanoseconds);
     uint64_t SleepTicksFromNanoseconds = (RequestedNanoseconds + (NANOSECONDS_PER_TICK - 1)) / NANOSECONDS_PER_TICK;
 
     uint64_t SleepTicks = SleepTicksFromSeconds + SleepTicksFromNanoseconds;

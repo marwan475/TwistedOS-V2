@@ -93,23 +93,40 @@ static uint32_t TranslateAnsiColorCode(uint8_t Code, bool IsBackground)
 
     switch (Code)
     {
-        case 0: return 0x00000000;
-        case 1: return 0x00AA0000;
-        case 2: return 0x0000AA00;
-        case 3: return 0x00AA5500;
-        case 4: return 0x000000AA;
-        case 5: return 0x00AA00AA;
-        case 6: return 0x0000AAAA;
-        case 7: return 0x00AAAAAA;
-        case 8: return 0x00555555;
-        case 9: return 0x00FF5555;
-        case 10: return 0x0055FF55;
-        case 11: return 0x00FFFF55;
-        case 12: return 0x005555FF;
-        case 13: return 0x00FF55FF;
-        case 14: return 0x0055FFFF;
-        case 15: return 0x00FFFFFF;
-        default: return IsBackground ? 0x00000000 : 0xFFFFFFFF;
+        case 0:
+            return 0x00000000;
+        case 1:
+            return 0x00AA0000;
+        case 2:
+            return 0x0000AA00;
+        case 3:
+            return 0x00AA5500;
+        case 4:
+            return 0x000000AA;
+        case 5:
+            return 0x00AA00AA;
+        case 6:
+            return 0x0000AAAA;
+        case 7:
+            return 0x00AAAAAA;
+        case 8:
+            return 0x00555555;
+        case 9:
+            return 0x00FF5555;
+        case 10:
+            return 0x0055FF55;
+        case 11:
+            return 0x00FFFF55;
+        case 12:
+            return 0x005555FF;
+        case 13:
+            return 0x00FF55FF;
+        case 14:
+            return 0x0055FFFF;
+        case 15:
+            return 0x00FFFFFF;
+        default:
+            return IsBackground ? 0x00000000 : 0xFFFFFFFF;
     }
 }
 
@@ -190,7 +207,7 @@ FileOperations TTY::TerminalFileOperations = {
 TTY::TTY(FrameBuffer* FrameBuffer, uint32_t InitialCursorX, uint32_t InitialCursorY)
     : FrameBufferDevice(FrameBuffer), CursorX(InitialCursorX), CursorY(InitialCursorY), TextColor(0xFFFFFFFF), BackgroundColor(0x00000000), BufferHead(0), BufferTail(0), BufferedBytes(0),
       CommittedBytes(0), TermiosInputFlags(0), TermiosOutputFlags(0), TermiosControlFlags(0), TermiosLocalFlags(LINUX_TERMIOS_DEFAULT), TermiosLineDiscipline(0),
-    OutputAnsiState(AnsiParseState::Normal), OutputAnsiParams{0, 0, 0, 0}, OutputAnsiParamCount(0), OutputAnsiCurrentValue(0), OutputAnsiReadingValue(false), ForegroundProcessGroup(0)
+      OutputAnsiState(AnsiParseState::Normal), OutputAnsiParams{0, 0, 0, 0}, OutputAnsiParamCount(0), OutputAnsiCurrentValue(0), OutputAnsiReadingValue(false), ForegroundProcessGroup(0)
 {
     for (uint64_t Index = 0; Index < KEYBOARD_BUFFER_CAPACITY; ++Index)
     {
@@ -709,7 +726,7 @@ int64_t TTY::Write(File* OpenFile, const void* Buffer, uint64_t Count)
         return LINUX_ERR_ENODEV;
     }
 
-    const char* InBuffer = reinterpret_cast<const char*>(Buffer);
+    const char* InBuffer                = reinterpret_cast<const char*>(Buffer);
     bool        LastCharacterWasNewline = false;
 
 #ifdef DEBUG_BUILD
@@ -724,7 +741,7 @@ int64_t TTY::Write(File* OpenFile, const void* Buffer, uint64_t Count)
 
     for (uint64_t Index = 0; Index < Count; ++Index)
     {
-        char Character = InBuffer[Index];
+        char Character          = InBuffer[Index];
         LastCharacterWasNewline = (Character == '\n');
         if (OutputAnsiState == AnsiParseState::Normal && Character >= ' ' && Character != 127)
         {

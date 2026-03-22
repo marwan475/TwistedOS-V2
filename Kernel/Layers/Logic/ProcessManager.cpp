@@ -123,13 +123,13 @@ bool InitializeProcessEntry(Process& ProcessEntry, ProcessState Status, ProcessL
         ProcessEntry.ProcessGroupId = static_cast<int32_t>(ProcessEntry.Id);
         ProcessEntry.SessionId      = static_cast<int32_t>(ProcessEntry.Id);
     }
-    ProcessEntry.BlockedSignalMask          = 0;
-    ProcessEntry.ClearChildTidAddress       = nullptr;
-    ProcessEntry.ProgramBreak               = ProgramBreak;
-    ProcessEntry.AddressSpace               = AddressSpace;
-    ProcessEntry.CurrentFileSystemLocation  = nullptr;
-    ProcessEntry.RunningExecutableDentry    = nullptr;
-    ProcessEntry.State                      = State;
+    ProcessEntry.BlockedSignalMask         = 0;
+    ProcessEntry.ClearChildTidAddress      = nullptr;
+    ProcessEntry.ProgramBreak              = ProgramBreak;
+    ProcessEntry.AddressSpace              = AddressSpace;
+    ProcessEntry.CurrentFileSystemLocation = nullptr;
+    ProcessEntry.RunningExecutableDentry   = nullptr;
+    ProcessEntry.State                     = State;
 
     if (ResetFileTable)
     {

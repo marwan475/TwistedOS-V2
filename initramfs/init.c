@@ -5,11 +5,11 @@
 
 int main(void)
 {
-    static const char tty[]         = "/dev/tty";
-    static const char shell[]       = "/bin/sh";
-    static const char init_script[] = "/init.sh";
-    static char* const shell_argv[] = {(char*) shell, (char*) init_script, 0};
-    static char* const shell_envp[] = {0};
+    static const char  tty[]         = "/dev/tty";
+    static const char  shell[]       = "/bin/sh";
+    static const char  init_script[] = "/init.sh";
+    static char* const shell_argv[]  = {(char*) shell, (char*) init_script, 0};
+    static char* const shell_envp[]  = {0};
 
     int tty_fd = open(tty, O_RDWR);
     if (tty_fd >= 0)
