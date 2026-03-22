@@ -29,6 +29,7 @@ constexpr uint64_t AUXV_AT_PHNUM           = 5;
 constexpr uint64_t AUXV_AT_PAGESZ          = 6;
 constexpr uint64_t AUXV_AT_BASE            = 7;
 constexpr uint64_t AUXV_AT_ENTRY           = 9;
+constexpr uint64_t AUXV_AT_EXECFN          = 31;
 constexpr uint16_t ELF_TYPE_DYN            = 3;
 constexpr uint64_t ELF_INTERPRETER_PATH_MAX = 256;
 constexpr uint64_t ELF_ET_DYN_MAIN_LOAD_BIAS = USER_PROCESS_VIRTUAL_BASE;
@@ -353,7 +354,8 @@ void SetKernelSystemCallStackTop(uint64_t StackTop)
 }
 
 bool InitializeExecveUserEntry(ResourceLayer* Resource, VirtualAddressSpace* AddressSpace, CpuState* State, const char* const* Argv, uint64_t Argc, const char* const* Envp, uint64_t Envc,
-                               uint64_t AuxProgramHeaderAddress, uint64_t AuxProgramHeaderEntrySize, uint64_t AuxProgramHeaderCount, uint64_t AuxEntryPoint, uint64_t AuxBaseAddress)
+                               const char* ExecFilePath, uint64_t AuxProgramHeaderAddress, uint64_t AuxProgramHeaderEntrySize, uint64_t AuxProgramHeaderCount, uint64_t AuxEntryPoint,
+                               uint64_t AuxBaseAddress)
 {
     if (Resource == nullptr || AddressSpace == nullptr || State == nullptr)
     {
@@ -474,11 +476,26 @@ bool InitializeExecveUserEntry(ResourceLayer* Resource, VirtualAddressSpace* Add
             break;
         }
 
+        uint64_t ExecfnAddress = 0;
+        if (ExecFilePath != nullptr && ExecFilePath[0] != '\0')
+        {
+            uint64_t ExecfnLength = LocalCStringLength(ExecFilePath) + 1;
+            if (ExecfnLength > (StackCursor - StackBottom))
+            {
+                Success = false;
+                break;
+            }
+
+            StackCursor -= ExecfnLength;
+            memcpy(reinterpret_cast<void*>(StackCursor), ExecFilePath, static_cast<size_t>(ExecfnLength));
+            ExecfnAddress = StackCursor;
+        }
+
         StackCursor &= ~STACK_ALIGNMENT_MASK;
 
         uint64_t ArgvVectorCount = Argc + 1;
         uint64_t EnvpVectorCount = Envc + 1;
-        uint64_t AuxvEntryCount  = 4; // AT_PAGESZ, optional AT_PHDR trio, optional AT_ENTRY, AT_NULL
+        uint64_t AuxvEntryCount  = 2; // AT_PAGESZ, AT_NULL (plus optional entries below)
         if (AuxProgramHeaderAddress != 0 && AuxProgramHeaderEntrySize != 0 && AuxProgramHeaderCount != 0)
         {
             AuxvEntryCount += 3;
@@ -488,6 +505,10 @@ bool InitializeExecveUserEntry(ResourceLayer* Resource, VirtualAddressSpace* Add
             AuxvEntryCount += 1;
         }
         if (AuxBaseAddress != 0)
+        {
+            AuxvEntryCount += 1;
+        }
+        if (ExecfnAddress != 0)
         {
             AuxvEntryCount += 1;
         }
@@ -558,6 +579,11 @@ bool InitializeExecveUserEntry(ResourceLayer* Resource, VirtualAddressSpace* Add
         if (AuxBaseAddress != 0)
         {
             PushAuxvPair(AUXV_AT_BASE, AuxBaseAddress);
+        }
+
+        if (ExecfnAddress != 0)
+        {
+            PushAuxvPair(AUXV_AT_EXECFN, ExecfnAddress);
         }
 
         PushAuxvPair(AUXV_AT_NULL, 0);
@@ -1588,8 +1614,8 @@ uint8_t LogicLayer::ChangeProcessExecution(uint8_t Id, const char* FilePath, con
     NewState.cs       = USER_CS;
     NewState.ss       = USER_SS;
 
-    if (!InitializeExecveUserEntry(Resource, NewAddressSpace, &NewState, Argv, Argc, Envp, Envc, AuxProgramHeaderAddress, AuxProgramHeaderEntrySize, AuxProgramHeaderCount,
-                                   AuxEntryPoint, AuxBaseAddress))
+    if (!InitializeExecveUserEntry(Resource, NewAddressSpace, &NewState, Argv, Argc, Envp, Envc, FilePath, AuxProgramHeaderAddress, AuxProgramHeaderEntrySize,
+                                   AuxProgramHeaderCount, AuxEntryPoint, AuxBaseAddress))
     {
         if (IsELF)
         {
@@ -2047,8 +2073,8 @@ uint8_t LogicLayer::CreateUserProcess(uint64_t CodeAddr, uint64_t CodeSize, cons
             Argc                  = 1;
         }
 
-        if (!InitializeExecveUserEntry(Resource, AddressSpace, &State, Argv, Argc, nullptr, 0, AuxProgramHeaderAddress, AuxProgramHeaderEntrySize, AuxProgramHeaderCount, AuxEntryPoint,
-                           AuxBaseAddress))
+        if (!InitializeExecveUserEntry(Resource, AddressSpace, &State, Argv, Argc, nullptr, 0, InitialArgv0, AuxProgramHeaderAddress, AuxProgramHeaderEntrySize,
+                           AuxProgramHeaderCount, AuxEntryPoint, AuxBaseAddress))
         {
             CleanUpELF(AddressSpace);
             delete AddressSpace;
@@ -2367,7 +2393,7 @@ VirtualAddressSpace* LogicLayer::MapELF(uint64_t CodeAddr, uint64_t CodeSize, co
         for (size_t SourceRegionIndex = 0; SourceRegionIndex < SourceCount; ++SourceRegionIndex)
         {
             const ELFMemoryRegion& SourceRegion = SourceRegions[SourceRegionIndex];
-            if (!SourceRegion.Writable || SourceRegion.PhysicalAddress == 0 || SourceRegion.Size == 0)
+            if (SourceRegion.PhysicalAddress == 0 || SourceRegion.Size == 0)
             {
                 continue;
             }
@@ -2392,8 +2418,28 @@ VirtualAddressSpace* LogicLayer::MapELF(uint64_t CodeAddr, uint64_t CodeSize, co
                 return nullptr;
             }
 
-            uint64_t BytesToCopy = (SourceRegion.Size < MatchingChildRegion->Size) ? SourceRegion.Size : MatchingChildRegion->Size;
-            memcpy(reinterpret_cast<void*>(MatchingChildRegion->PhysicalAddress), reinterpret_cast<const void*>(SourceRegion.PhysicalAddress), static_cast<size_t>(BytesToCopy));
+            uint64_t SourcePageOffset = SourceRegion.VirtualAddress & (PAGE_SIZE - 1);
+            uint64_t ChildPageOffset  = MatchingChildRegion->VirtualAddress & (PAGE_SIZE - 1);
+            if (SourcePageOffset != ChildPageOffset)
+            {
+                CleanUpELF(AddressSpace);
+                delete AddressSpace;
+                return nullptr;
+            }
+
+            uint64_t SourcePageCount = (SourcePageOffset + SourceRegion.Size + PAGE_SIZE - 1) / PAGE_SIZE;
+            uint64_t ChildPageCount  = (ChildPageOffset + MatchingChildRegion->Size + PAGE_SIZE - 1) / PAGE_SIZE;
+            uint64_t PageCount       = (SourcePageCount < ChildPageCount) ? SourcePageCount : ChildPageCount;
+            if (PageCount == 0)
+            {
+                continue;
+            }
+
+            uint64_t SourceCopyStart = AlignDownToPage(SourceRegion.PhysicalAddress);
+            uint64_t ChildCopyStart  = AlignDownToPage(MatchingChildRegion->PhysicalAddress);
+            uint64_t CopyBytes       = PageCount * PAGE_SIZE;
+
+            memcpy(reinterpret_cast<void*>(ChildCopyStart), reinterpret_cast<const void*>(SourceCopyStart), static_cast<size_t>(CopyBytes));
         }
     }
 
