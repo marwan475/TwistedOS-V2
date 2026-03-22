@@ -120,6 +120,13 @@ bool EnsureLazyLoadedINodeData(ResourceLayer* Resource, INode* Node)
 {
     if (Node == nullptr)
     {
+#ifdef DEBUG_BUILD
+        TTY* Terminal = (Resource != nullptr) ? Resource->GetTTY() : nullptr;
+        if (Terminal != nullptr)
+        {
+            Terminal->Serialprintf("lazy_inode_fail: node=null\n");
+        }
+#endif
         return false;
     }
 
@@ -135,6 +142,15 @@ bool EnsureLazyLoadedINodeData(ResourceLayer* Resource, INode* Node)
 
     if (Resource == nullptr || Resource->GetPMM() == nullptr || Node->LazyLoadContext == nullptr || Node->BackingInodeNumber == 0 || Node->NodeSize == 0)
     {
+#ifdef DEBUG_BUILD
+        TTY* Terminal = (Resource != nullptr) ? Resource->GetTTY() : nullptr;
+        if (Terminal != nullptr)
+        {
+            Terminal->Serialprintf("lazy_inode_fail: precheck inode=%u size=%llu lazy_ctx=%p pmm=%p\n", Node->BackingInodeNumber,
+                                   static_cast<unsigned long long>(Node->NodeSize), Node->LazyLoadContext,
+                                   (Resource != nullptr) ? reinterpret_cast<void*>(Resource->GetPMM()) : nullptr);
+        }
+#endif
         return false;
     }
 
@@ -148,6 +164,14 @@ bool EnsureLazyLoadedINodeData(ResourceLayer* Resource, INode* Node)
     void*    FileData  = Resource->GetPMM()->AllocatePagesFromDescriptor(PageCount);
     if (FileData == nullptr)
     {
+#ifdef DEBUG_BUILD
+        TTY* Terminal = Resource->GetTTY();
+        if (Terminal != nullptr)
+        {
+            Terminal->Serialprintf("lazy_inode_fail: pmm_alloc inode=%u size=%llu pages=%llu\n", Node->BackingInodeNumber, static_cast<unsigned long long>(Node->NodeSize),
+                                   static_cast<unsigned long long>(PageCount));
+        }
+#endif
         return false;
     }
 
@@ -155,6 +179,14 @@ bool EnsureLazyLoadedINodeData(ResourceLayer* Resource, INode* Node)
 
     if (!FileSystemManager->LoadInodeData(Node->BackingInodeNumber, FileData, Node->NodeSize))
     {
+#ifdef DEBUG_BUILD
+        TTY* Terminal = Resource->GetTTY();
+        if (Terminal != nullptr)
+        {
+            Terminal->Serialprintf("lazy_inode_fail: load_inode_data inode=%u size=%llu pages=%llu ptr=%p\n", Node->BackingInodeNumber,
+                                   static_cast<unsigned long long>(Node->NodeSize), static_cast<unsigned long long>(PageCount), FileData);
+        }
+#endif
         Resource->GetPMM()->FreePagesFromDescriptor(FileData, PageCount);
         return false;
     }
@@ -162,6 +194,16 @@ bool EnsureLazyLoadedINodeData(ResourceLayer* Resource, INode* Node)
     Node->NodeData            = FileData;
     Node->LazyDataBackedByPMM = true;
     Node->LazyDataPageCount   = PageCount;
+
+#ifdef DEBUG_BUILD
+    TTY* Terminal = Resource->GetTTY();
+    if (Terminal != nullptr)
+    {
+        Terminal->Serialprintf("lazy_inode_ok: inode=%u size=%llu pages=%llu ptr=%p\n", Node->BackingInodeNumber, static_cast<unsigned long long>(Node->NodeSize),
+                               static_cast<unsigned long long>(PageCount), FileData);
+    }
+#endif
+
     return true;
 }
 

@@ -8,6 +8,11 @@
 #include <Logging/FrameBufferConsole.hpp>
 #include <Memory/PhysicalMemoryManager.hpp>
 
+namespace
+{
+constexpr uint64_t PMM_BUDDY_PHYSICAL_LIMIT = 0x40000000ULL;
+}
+
 /**
  * Function: PhysicalMemoryManager::PhysicalMemoryManager
  * Description: Initializes the physical memory manager state from boot memory map information.
@@ -484,6 +489,21 @@ void PhysicalMemoryManager::InitializeMemoryDescriptors()
 
             CandidatePhysicalStart = NextPageAddress;
             CandidatePages         = RemainingPagesInDescriptor;
+        }
+
+        if (CandidatePhysicalStart >= PMM_BUDDY_PHYSICAL_LIMIT)
+        {
+            continue;
+        }
+
+        uint64_t CandidateEnd = CandidatePhysicalStart + (CandidatePages * PAGE_SIZE);
+        if (CandidateEnd > PMM_BUDDY_PHYSICAL_LIMIT)
+        {
+            CandidatePages = (PMM_BUDDY_PHYSICAL_LIMIT - CandidatePhysicalStart) / PAGE_SIZE;
+            if (CandidatePages == 0)
+            {
+                continue;
+            }
         }
 
         if (CandidatePages > MemoryDescriptorInfo.TotalNumberOfPages)

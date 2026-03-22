@@ -73,6 +73,7 @@ class KernelHeapManager
 
 public:
     KernelHeapManager(uint64_t HeapStart, uint64_t HeapEnd);
+    void  Initialize(uint64_t HeapStart, uint64_t HeapEnd);
     void* kmalloc(size_t Size);
     void  kfree(void* Ptr);
 };

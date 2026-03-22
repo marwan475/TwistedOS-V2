@@ -56,6 +56,7 @@ struct INode
     uint64_t         LazyDataPageCount   = 0;
     uint32_t         BackingInodeNumber  = 0;
     uint32_t         LazyLoadRefCount    = 0;
+    bool             DirectoryHydrated    = false;
     void*            LazyLoadContext     = nullptr;
     INodeOperations* INodeOps;
     FileOperations*  FileOps;

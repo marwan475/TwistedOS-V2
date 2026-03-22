@@ -6,6 +6,7 @@
 
 #include "KernelHeapManager.hpp"
 
+#include <Logging/FrameBufferConsole.hpp>
 #include <stddef.h>
 
 namespace
@@ -30,6 +31,14 @@ constexpr size_t SLAB_CLASS_SIZES[7] = {
  */
 KernelHeapManager::KernelHeapManager(uint64_t HeapStart, uint64_t HeapEnd) : HeapStart(HeapStart), HeapEnd(HeapEnd)
 {
+    Initialize(HeapStart, HeapEnd);
+}
+
+void KernelHeapManager::Initialize(uint64_t HeapStart, uint64_t HeapEnd)
+{
+    this->HeapStart = HeapStart;
+    this->HeapEnd   = HeapEnd;
+
     if (this->HeapStart != 0)
     {
         uint64_t ExpectedEnd = this->HeapStart + static_cast<uint64_t>(KERNEL_HEAP_SIZE);
@@ -368,6 +377,10 @@ void KernelHeapManager::ReleaseSlabRun(size_t StartSlab, size_t SlabSpan)
  */
 void* KernelHeapManager::kmalloc(size_t Size)
 {
+#ifdef DEBUG_BUILD
+    FrameBufferConsole* DebugConsole = FrameBufferConsole::GetActive();
+#endif
+
     if (Size == 0)
     {
         return nullptr;
@@ -388,6 +401,12 @@ void* KernelHeapManager::kmalloc(size_t Size)
             int64_t NewSlabIndex = FindFreeSlabRun(1);
             if (NewSlabIndex < 0)
             {
+#ifdef DEBUG_BUILD
+                if (DebugConsole != nullptr)
+                {
+                    DebugConsole->dbgprintf_("kmalloc_fail: size=%llu class=%llu reason=no_free_slab\n", static_cast<unsigned long long>(Size), static_cast<unsigned long long>(ClassIndex));
+                }
+#endif
                 return nullptr;
             }
 
@@ -423,8 +442,9 @@ void* KernelHeapManager::kmalloc(size_t Size)
         Header->SlabIndex        = static_cast<uint32_t>(AvailableSlabIndex);
         Header->ClassIndex       = static_cast<uint16_t>(ClassIndex);
         Header->Reserved         = 0;
+        void* UserPointer        = reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(Header) + sizeof(AllocationHeader));
 
-        return reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(Header) + sizeof(AllocationHeader));
+        return UserPointer;
     }
 
     if (Size > (SIZE_MAX - sizeof(AllocationHeader)))
@@ -442,6 +462,13 @@ void* KernelHeapManager::kmalloc(size_t Size)
     int64_t StartSlab = FindFreeSlabRun(SlabSpanNeeded);
     if (StartSlab < 0)
     {
+#ifdef DEBUG_BUILD
+        if (DebugConsole != nullptr)
+        {
+            DebugConsole->dbgprintf_("kmalloc_fail: size=%llu slabs=%llu reason=no_contiguous_run\n", static_cast<unsigned long long>(Size),
+                                     static_cast<unsigned long long>(SlabSpanNeeded));
+        }
+#endif
         return nullptr;
     }
 
@@ -477,7 +504,9 @@ void* KernelHeapManager::kmalloc(size_t Size)
     Header->ClassIndex              = LARGE_CLASS_SENTINEL;
     Header->Reserved                = 0;
 
-    return reinterpret_cast<void*>(HeaderAddress + sizeof(AllocationHeader));
+    void* UserPointer = reinterpret_cast<void*>(HeaderAddress + sizeof(AllocationHeader));
+
+    return UserPointer;
 }
 
 /**

@@ -164,7 +164,7 @@ Keyboard* ResourceLayer::GetKeyboard() const
  */
 void ResourceLayer::InitializeKernelHeapManager()
 {
-    KHM = KernelHeapManager(KernelHeapVirtualAddrStart, KernelHeapVirtualAddrEnd);
+    KHM.Initialize(KernelHeapVirtualAddrStart, KernelHeapVirtualAddrEnd);
     Console->printf_("Kernel Heap Manager Initialized\n");
 }
 
@@ -375,7 +375,7 @@ void* ResourceLayer::kmalloc(size_t Size)
  */
 void ResourceLayer::kfree(void* Ptr)
 {
-    KHM.kfree(Ptr);
+    return KHM.kfree(Ptr);
 }
 
 uint64_t ResourceLayer::ReadCurrentPageTable() const
