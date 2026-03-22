@@ -65,6 +65,8 @@ public:
     int64_t HandleDup2SystemCall(uint64_t OldFileDescriptor, uint64_t NewFileDescriptor);
     int64_t HandlePauseSystemCall();
     int64_t HandleNanosleepSystemCall(const void* RequestedTime, void* RemainingTime);
+    int64_t HandleGettimeofdaySystemCall(void* TimeValue, void* TimeZone);
+    int64_t HandleClockGettimeSystemCall(int64_t ClockId, void* TimeSpec);
     int64_t HandleForkSystemCall();
     int64_t HandleVforkSystemCall();
     int64_t HandleExitGroupSystemCall(int64_t Status);

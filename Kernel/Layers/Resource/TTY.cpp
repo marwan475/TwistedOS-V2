@@ -68,6 +68,51 @@ struct LinuxWinSize
     uint16_t YPixel;
 };
 
+static uint32_t TranslateAnsiColorCode(uint8_t Code, bool IsBackground)
+{
+    if (Code >= 30 && Code <= 37)
+    {
+        Code = static_cast<uint8_t>(Code - 30);
+    }
+    else if (Code >= 90 && Code <= 97)
+    {
+        Code = static_cast<uint8_t>(Code - 90 + 8);
+    }
+    else if (Code >= 40 && Code <= 47)
+    {
+        Code = static_cast<uint8_t>(Code - 40);
+    }
+    else if (Code >= 100 && Code <= 107)
+    {
+        Code = static_cast<uint8_t>(Code - 100 + 8);
+    }
+    else
+    {
+        return IsBackground ? 0x00000000 : 0xFFFFFFFF;
+    }
+
+    switch (Code)
+    {
+        case 0: return 0x00000000;
+        case 1: return 0x00AA0000;
+        case 2: return 0x0000AA00;
+        case 3: return 0x00AA5500;
+        case 4: return 0x000000AA;
+        case 5: return 0x00AA00AA;
+        case 6: return 0x0000AAAA;
+        case 7: return 0x00AAAAAA;
+        case 8: return 0x00555555;
+        case 9: return 0x00FF5555;
+        case 10: return 0x0055FF55;
+        case 11: return 0x00FFFF55;
+        case 12: return 0x005555FF;
+        case 13: return 0x00FF55FF;
+        case 14: return 0x0055FFFF;
+        case 15: return 0x00FFFFFF;
+        default: return IsBackground ? 0x00000000 : 0xFFFFFFFF;
+    }
+}
+
 static void SerialInit()
 {
     X86OutB(COM1_PORT + 1, 0x00);
@@ -290,6 +335,53 @@ void TTY::HandleOutputChar(char Character)
             return;
         }
 
+        if (Character == 'm')
+        {
+            if (OutputAnsiParamCount == 0)
+            {
+                OutputAnsiParams[OutputAnsiParamCount++] = 0;
+            }
+
+            for (uint8_t Index = 0; Index < OutputAnsiParamCount; ++Index)
+            {
+                uint8_t Parameter = OutputAnsiParams[Index];
+
+                if (Parameter == 0)
+                {
+                    TextColor       = 0xFFFFFFFF;
+                    BackgroundColor = 0x00000000;
+                    continue;
+                }
+
+                if (Parameter == 39)
+                {
+                    TextColor = 0xFFFFFFFF;
+                    continue;
+                }
+
+                if (Parameter == 49)
+                {
+                    BackgroundColor = 0x00000000;
+                    continue;
+                }
+
+                if ((Parameter >= 30 && Parameter <= 37) || (Parameter >= 90 && Parameter <= 97))
+                {
+                    TextColor = TranslateAnsiColorCode(Parameter, false);
+                    continue;
+                }
+
+                if ((Parameter >= 40 && Parameter <= 47) || (Parameter >= 100 && Parameter <= 107))
+                {
+                    BackgroundColor = TranslateAnsiColorCode(Parameter, true);
+                    continue;
+                }
+            }
+
+            ResetAnsiParser();
+            return;
+        }
+
         ResetAnsiParser();
         return;
     }
@@ -472,11 +564,17 @@ void TTY::PutChar(char Character)
         return;
     }
 
+    if (CursorX + FONT_WIDTH > FrameBufferDevice->GetWidth())
+    {
+        CursorX = 0;
+        CursorY += FONT_HEIGHT;
+    }
+
     DrawChar(CursorX, CursorY, Character);
 
     CursorX += FONT_WIDTH;
 
-    if (CursorX + FONT_WIDTH >= FrameBufferDevice->GetWidth())
+    if (CursorX >= FrameBufferDevice->GetWidth())
     {
         CursorX = 0;
         CursorY += FONT_HEIGHT;
@@ -612,6 +710,7 @@ int64_t TTY::Write(File* OpenFile, const void* Buffer, uint64_t Count)
     }
 
     const char* InBuffer = reinterpret_cast<const char*>(Buffer);
+    bool        LastCharacterWasNewline = false;
 
 #ifdef DEBUG_BUILD
     EnsureSerialInitialized();
@@ -626,6 +725,7 @@ int64_t TTY::Write(File* OpenFile, const void* Buffer, uint64_t Count)
     for (uint64_t Index = 0; Index < Count; ++Index)
     {
         char Character = InBuffer[Index];
+        LastCharacterWasNewline = (Character == '\n');
         if (OutputAnsiState == AnsiParseState::Normal && Character >= ' ' && Character != 127)
         {
             PutChar(Character);
@@ -633,6 +733,12 @@ int64_t TTY::Write(File* OpenFile, const void* Buffer, uint64_t Count)
         }
 
         HandleOutputChar(Character);
+    }
+
+    uint32_t MaxColumns = FrameBufferDevice->GetWidth() / FONT_WIDTH;
+    if (!LastCharacterWasNewline && MaxColumns > 0 && Count >= MaxColumns)
+    {
+        PutChar('\n');
     }
 
     OpenFile->CurrentOffset += Count;

@@ -135,6 +135,9 @@ int64_t TranslationLayer::HandlePosixSystemCallNumber(uint64_t SystemCallNumber,
         case 87: // unlink
             return HandleUnlinkSystemCall(reinterpret_cast<const char*>(Arg1));
             break;
+        case 96: // gettimeofday
+            return HandleGettimeofdaySystemCall(reinterpret_cast<void*>(Arg1), reinterpret_cast<void*>(Arg2));
+            break;
         case 102: // getuid
             return HandleGetuidSystemCall();
             break;
@@ -182,6 +185,9 @@ int64_t TranslationLayer::HandlePosixSystemCallNumber(uint64_t SystemCallNumber,
             break;
         case 218: // set_tid_address
             return HandleSetTidAddressSystemCall(reinterpret_cast<int*>(Arg1));
+            break;
+        case 228: // clock_gettime
+            return HandleClockGettimeSystemCall(static_cast<int64_t>(Arg1), reinterpret_cast<void*>(Arg2));
             break;
         case 231: // exit_group
             return HandleExitGroupSystemCall(static_cast<int64_t>(Arg1));

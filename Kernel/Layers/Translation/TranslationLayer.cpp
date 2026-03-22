@@ -4490,6 +4490,48 @@ int64_t TranslationLayer::HandleNanosleepSystemCall(const void* RequestedTime, v
     return 0;
 }
 
+int64_t TranslationLayer::HandleGettimeofdaySystemCall(void* TimeValue, void* TimeZone)
+{
+    if (Logic == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    LinuxTimeVal KernelTimeValue = {};
+
+    if (TimeValue != nullptr)
+    {
+        if (!Logic->CopyFromKernelToUser(&KernelTimeValue, TimeValue, sizeof(KernelTimeValue)))
+        {
+            return LINUX_ERR_EFAULT;
+        }
+    }
+
+    if (TimeZone != nullptr)
+    {
+        uint64_t ZeroTimeZone = 0;
+        if (!Logic->CopyFromKernelToUser(&ZeroTimeZone, TimeZone, sizeof(ZeroTimeZone)))
+        {
+            return LINUX_ERR_EFAULT;
+        }
+    }
+
+    return 0;
+}
+
+int64_t TranslationLayer::HandleClockGettimeSystemCall(int64_t ClockId, void* TimeSpec)
+{
+    (void) ClockId;
+
+    if (Logic == nullptr || TimeSpec == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    LinuxTimeSpec KernelTimeSpec = {};
+    return Logic->CopyFromKernelToUser(&KernelTimeSpec, TimeSpec, sizeof(KernelTimeSpec)) ? 0 : LINUX_ERR_EFAULT;
+}
+
 int64_t TranslationLayer::HandleForkSystemCall()
 {
     if (Logic == nullptr)
