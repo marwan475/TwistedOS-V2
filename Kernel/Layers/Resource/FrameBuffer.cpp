@@ -240,12 +240,13 @@ int64_t FrameBuffer::MemoryMap(File* OpenFile, uint64_t Length, uint64_t Offset,
     return static_cast<int64_t>(Length);
 }
 
-int64_t FrameBuffer::Ioctl(File* OpenFile, uint64_t Request, uint64_t Argument, LogicLayer* Logic)
+int64_t FrameBuffer::Ioctl(File* OpenFile, uint64_t Request, uint64_t Argument, LogicLayer* Logic, Process* RunningProcess)
 {
     (void) OpenFile;
     (void) Request;
     (void) Argument;
     (void) Logic;
+    (void) RunningProcess;
     return LINUX_ERR_ENOTTY;
 }
 
@@ -302,7 +303,7 @@ int64_t FrameBuffer::MemoryMapFileOperation(File* OpenFile, uint64_t Length, uin
     return FB->MemoryMap(OpenFile, Length, Offset, AddressSpace, Address);
 }
 
-int64_t FrameBuffer::IoctlFileOperation(File* OpenFile, uint64_t Request, uint64_t Argument, LogicLayer* Logic)
+int64_t FrameBuffer::IoctlFileOperation(File* OpenFile, uint64_t Request, uint64_t Argument, LogicLayer* Logic, Process* RunningProcess)
 {
     if (OpenFile == nullptr || OpenFile->Node == nullptr)
     {
@@ -315,7 +316,7 @@ int64_t FrameBuffer::IoctlFileOperation(File* OpenFile, uint64_t Request, uint64
         return LINUX_ERR_EINVAL;
     }
 
-    return FB->Ioctl(OpenFile, Request, Argument, Logic);
+    return FB->Ioctl(OpenFile, Request, Argument, Logic, RunningProcess);
 }
 
 uint32_t* FrameBuffer::GetBuffer() const

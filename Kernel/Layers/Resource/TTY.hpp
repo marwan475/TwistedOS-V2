@@ -13,6 +13,7 @@
 struct File;
 struct FileOperations;
 class LogicLayer;
+struct Process;
 
 class TTY
 {
@@ -48,6 +49,7 @@ private:
     uint8_t        OutputAnsiParamCount;
     uint8_t        OutputAnsiCurrentValue;
     bool           OutputAnsiReadingValue;
+    int32_t        ForegroundProcessGroup;
 
     void     ClearScreen();
     void     DrawChar(uint32_t X, uint32_t Y, char Character);
@@ -67,7 +69,7 @@ public:
 
     int64_t Read(File* OpenFile, void* Buffer, uint64_t Count);
     int64_t Write(File* OpenFile, const void* Buffer, uint64_t Count);
-    int64_t Ioctl(File* OpenFile, uint64_t Request, uint64_t Argument, LogicLayer* Logic);
+    int64_t Ioctl(File* OpenFile, uint64_t Request, uint64_t Argument, LogicLayer* Logic, Process* RunningProcess);
     int     Serialprintf(const char* Format, ...);
     int     printf_(const char* Format, ...);
 
@@ -81,5 +83,5 @@ public:
     static int64_t WriteFileOperation(File* OpenFile, const void* Buffer, uint64_t Count);
     static int64_t SeekFileOperation(File* OpenFile, int64_t Offset, int32_t Whence);
     static int64_t MemoryMapFileOperation(File* OpenFile, uint64_t Length, uint64_t Offset, VirtualAddressSpace* AddressSpace, uint64_t* Address);
-    static int64_t IoctlFileOperation(File* OpenFile, uint64_t Request, uint64_t Argument, LogicLayer* Logic);
+    static int64_t IoctlFileOperation(File* OpenFile, uint64_t Request, uint64_t Argument, LogicLayer* Logic, Process* RunningProcess);
 };

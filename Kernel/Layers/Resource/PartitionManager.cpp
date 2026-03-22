@@ -409,12 +409,13 @@ int64_t PartitionMemoryMapFileOperation(File* OpenFile, uint64_t Length, uint64_
     return LINUX_ERR_ESPIPE;
 }
 
-int64_t PartitionIoctlFileOperation(File* OpenFile, uint64_t Request, uint64_t Argument, LogicLayer* Logic)
+int64_t PartitionIoctlFileOperation(File* OpenFile, uint64_t Request, uint64_t Argument, LogicLayer* Logic, Process* RunningProcess)
 {
     (void) OpenFile;
     (void) Request;
     (void) Argument;
     (void) Logic;
+    (void) RunningProcess;
     return LINUX_ERR_ESPIPE;
 }
 

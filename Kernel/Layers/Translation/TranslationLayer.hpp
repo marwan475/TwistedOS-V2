@@ -52,8 +52,14 @@ public:
     int64_t HandleBrkSystemCall(uint64_t Address);
     int64_t HandleGetuidSystemCall();
     int64_t HandleGetgidSystemCall();
+    int64_t HandleUnameSystemCall(void* Buffer);
     int64_t HandleGetpidSystemCall();
     int64_t HandleGetppidSystemCall();
+    int64_t HandleSetpgidSystemCall(int64_t Pid, int64_t ProcessGroupId);
+    int64_t HandleGetpgrpSystemCall();
+    int64_t HandleSetsidSystemCall();
+    int64_t HandleGetpgidSystemCall(int64_t Pid);
+    int64_t HandleGetsidSystemCall(int64_t Pid);
     int64_t HandleGeteuidSystemCall();
     int64_t HandleGetegidSystemCall();
     int64_t HandleDup2SystemCall(uint64_t OldFileDescriptor, uint64_t NewFileDescriptor);

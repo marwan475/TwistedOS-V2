@@ -101,6 +101,8 @@ struct Process
     void*                       KernelSystemCallStackBase = nullptr;
     uint64_t                    KernelSystemCallStackTop  = 0;
     uint64_t                    UserFSBase                = 0;
+    int32_t                     ProcessGroupId            = 0;
+    int32_t                     SessionId                 = 0;
     uint64_t                    BlockedSignalMask         = 0;
     int*                        ClearChildTidAddress      = nullptr;
     uint64_t                    ProgramBreak              = 0;

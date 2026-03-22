@@ -26,6 +26,7 @@ constexpr int64_t LINUX_ERR_EMFILE  = -24;
 constexpr int64_t LINUX_ERR_EINVAL  = -22;
 constexpr int64_t LINUX_ERR_EBADF   = -9;
 constexpr int64_t LINUX_ERR_EINTR   = -4;
+constexpr int64_t LINUX_ERR_ESRCH   = -3;
 constexpr int64_t LINUX_ERR_ENOSYS  = -38;
 constexpr int64_t LINUX_ERR_ENOTTY  = -25;
 constexpr int64_t LINUX_ERR_EACCES  = -13;
@@ -96,6 +97,16 @@ struct LinuxPollFd
     int32_t FileDescriptor;
     int16_t Events;
     int16_t Revents;
+};
+
+struct LinuxUtsName
+{
+    char SysName[65];
+    char NodeName[65];
+    char Release[65];
+    char Version[65];
+    char Machine[65];
+    char DomainName[65];
 };
 
 constexpr int64_t LINUX_UTIME_NOW  = 1073741823;
@@ -1687,7 +1698,7 @@ int64_t TranslationLayer::HandleIoctlSystemCall(uint64_t FileDescriptor, uint64_
         return LINUX_ERR_ENOTTY;
     }
 
-    return OpenFile->Node->FileOps->Ioctl(OpenFile, Request, Argument, Logic);
+    return OpenFile->Node->FileOps->Ioctl(OpenFile, Request, Argument, Logic, CurrentProcess);
 }
 
 int64_t TranslationLayer::HandleOpenSystemCall(const char* Path, uint64_t Flags)
@@ -4107,9 +4118,213 @@ int64_t TranslationLayer::HandleGetppidSystemCall()
     return static_cast<int64_t>(CurrentProcess->ParrentId);
 }
 
+int64_t TranslationLayer::HandleSetpgidSystemCall(int64_t Pid, int64_t ProcessGroupId)
+{
+    if (Logic == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    ProcessManager* PM = Logic->GetProcessManager();
+    if (PM == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    Process* CurrentProcess = PM->GetRunningProcess();
+    if (CurrentProcess == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    int64_t EffectivePid = (Pid == 0) ? static_cast<int64_t>(CurrentProcess->Id) : Pid;
+    if (EffectivePid <= 0 || EffectivePid > 0xFF)
+    {
+        return LINUX_ERR_EINVAL;
+    }
+
+    Process* TargetProcess = PM->GetProcessById(static_cast<uint8_t>(EffectivePid));
+    if (TargetProcess == nullptr || TargetProcess->Status == PROCESS_TERMINATED)
+    {
+        return LINUX_ERR_ESRCH;
+    }
+
+    if (TargetProcess->Id != CurrentProcess->Id)
+    {
+        return LINUX_ERR_EPERM;
+    }
+
+    int64_t EffectiveProcessGroupId = (ProcessGroupId == 0) ? EffectivePid : ProcessGroupId;
+    if (EffectiveProcessGroupId <= 0)
+    {
+        return LINUX_ERR_EINVAL;
+    }
+
+    TargetProcess->ProcessGroupId = static_cast<int32_t>(EffectiveProcessGroupId);
+    if (TargetProcess->SessionId <= 0)
+    {
+        TargetProcess->SessionId = static_cast<int32_t>(CurrentProcess->Id);
+    }
+
+    return 0;
+}
+
+int64_t TranslationLayer::HandleGetpgrpSystemCall()
+{
+    if (Logic == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    ProcessManager* PM = Logic->GetProcessManager();
+    if (PM == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    Process* CurrentProcess = PM->GetRunningProcess();
+    if (CurrentProcess == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    if (CurrentProcess->ProcessGroupId <= 0)
+    {
+        CurrentProcess->ProcessGroupId = static_cast<int32_t>(CurrentProcess->Id);
+    }
+
+    return static_cast<int64_t>(CurrentProcess->ProcessGroupId);
+}
+
+int64_t TranslationLayer::HandleSetsidSystemCall()
+{
+    if (Logic == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    ProcessManager* PM = Logic->GetProcessManager();
+    if (PM == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    Process* CurrentProcess = PM->GetRunningProcess();
+    if (CurrentProcess == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    int64_t CurrentProcessId = static_cast<int64_t>(CurrentProcess->Id);
+    if (CurrentProcess->ProcessGroupId == CurrentProcessId)
+    {
+        return LINUX_ERR_EPERM;
+    }
+
+    CurrentProcess->SessionId      = static_cast<int32_t>(CurrentProcessId);
+    CurrentProcess->ProcessGroupId = static_cast<int32_t>(CurrentProcessId);
+    return CurrentProcessId;
+}
+
+int64_t TranslationLayer::HandleGetpgidSystemCall(int64_t Pid)
+{
+    if (Logic == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    ProcessManager* PM = Logic->GetProcessManager();
+    if (PM == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    Process* CurrentProcess = PM->GetRunningProcess();
+    if (CurrentProcess == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    int64_t EffectivePid = (Pid == 0) ? static_cast<int64_t>(CurrentProcess->Id) : Pid;
+    if (EffectivePid <= 0 || EffectivePid > 0xFF)
+    {
+        return LINUX_ERR_EINVAL;
+    }
+
+    Process* TargetProcess = PM->GetProcessById(static_cast<uint8_t>(EffectivePid));
+    if (TargetProcess == nullptr || TargetProcess->Status == PROCESS_TERMINATED)
+    {
+        return LINUX_ERR_ESRCH;
+    }
+
+    if (TargetProcess->ProcessGroupId <= 0)
+    {
+        TargetProcess->ProcessGroupId = static_cast<int32_t>(TargetProcess->Id);
+    }
+
+    return static_cast<int64_t>(TargetProcess->ProcessGroupId);
+}
+
+int64_t TranslationLayer::HandleGetsidSystemCall(int64_t Pid)
+{
+    if (Logic == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    ProcessManager* PM = Logic->GetProcessManager();
+    if (PM == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    Process* CurrentProcess = PM->GetRunningProcess();
+    if (CurrentProcess == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    int64_t EffectivePid = (Pid == 0) ? static_cast<int64_t>(CurrentProcess->Id) : Pid;
+    if (EffectivePid <= 0 || EffectivePid > 0xFF)
+    {
+        return LINUX_ERR_EINVAL;
+    }
+
+    Process* TargetProcess = PM->GetProcessById(static_cast<uint8_t>(EffectivePid));
+    if (TargetProcess == nullptr || TargetProcess->Status == PROCESS_TERMINATED)
+    {
+        return LINUX_ERR_ESRCH;
+    }
+
+    if (TargetProcess->SessionId <= 0)
+    {
+        TargetProcess->SessionId = static_cast<int32_t>(TargetProcess->Id);
+    }
+
+    return static_cast<int64_t>(TargetProcess->SessionId);
+}
+
 int64_t TranslationLayer::HandleGetuidSystemCall()
 {
     return 0;
+}
+
+int64_t TranslationLayer::HandleUnameSystemCall(void* Buffer)
+{
+    if (Logic == nullptr || Buffer == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    LinuxUtsName Uts = {};
+    strcpy(Uts.SysName, "TwistedOS");
+    strcpy(Uts.NodeName, "twistedos");
+    strcpy(Uts.Release, "0.1.0");
+    strcpy(Uts.Version, "TwistedOS");
+    strcpy(Uts.Machine, "x86_64");
+    Uts.DomainName[0] = '\0';
+
+    return Logic->CopyFromKernelToUser(&Uts, Buffer, sizeof(Uts)) ? 0 : LINUX_ERR_EFAULT;
 }
 
 int64_t TranslationLayer::HandleGetgidSystemCall()
@@ -4341,6 +4556,8 @@ int64_t TranslationLayer::HandleVforkSystemCall()
 
     ChildProcess->ParrentId                 = ParentProcess->Id;
     ChildProcess->UserFSBase                = ParentProcess->UserFSBase;
+    ChildProcess->ProcessGroupId            = ParentProcess->ProcessGroupId;
+    ChildProcess->SessionId                 = ParentProcess->SessionId;
     ChildProcess->BlockedSignalMask         = ParentProcess->BlockedSignalMask;
     ChildProcess->ClearChildTidAddress      = ParentProcess->ClearChildTidAddress;
     ChildProcess->ProgramBreak              = ParentProcess->ProgramBreak;

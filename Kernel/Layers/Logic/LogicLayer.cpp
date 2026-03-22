@@ -1799,6 +1799,8 @@ uint8_t LogicLayer::CopyProcess(uint8_t Id)
 
     ChildProcess->ParrentId                 = SourceProcess->Id;
     ChildProcess->UserFSBase                = SourceProcess->UserFSBase;
+    ChildProcess->ProcessGroupId            = SourceProcess->ProcessGroupId;
+    ChildProcess->SessionId                 = SourceProcess->SessionId;
     ChildProcess->BlockedSignalMask         = SourceProcess->BlockedSignalMask;
     ChildProcess->ClearChildTidAddress      = SourceProcess->ClearChildTidAddress;
     ChildProcess->ProgramBreak              = SourceProcess->ProgramBreak;

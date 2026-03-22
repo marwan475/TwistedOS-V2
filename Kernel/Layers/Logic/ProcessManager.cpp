@@ -113,6 +113,16 @@ bool InitializeProcessEntry(Process& ProcessEntry, ProcessState Status, ProcessL
     ProcessEntry.KernelSystemCallStackBase  = KernelSystemCallStackBase;
     ProcessEntry.KernelSystemCallStackTop   = ComputeKernelSystemCallStackTop(ProcessEntry.KernelSystemCallStackBase);
     ProcessEntry.UserFSBase                 = 0;
+    if (Status == PROCESS_TERMINATED)
+    {
+        ProcessEntry.ProcessGroupId = 0;
+        ProcessEntry.SessionId      = 0;
+    }
+    else
+    {
+        ProcessEntry.ProcessGroupId = static_cast<int32_t>(ProcessEntry.Id);
+        ProcessEntry.SessionId      = static_cast<int32_t>(ProcessEntry.Id);
+    }
     ProcessEntry.BlockedSignalMask          = 0;
     ProcessEntry.ClearChildTidAddress       = nullptr;
     ProcessEntry.ProgramBreak               = ProgramBreak;

@@ -33,6 +33,8 @@ constexpr uint64_t LINUX_IOCTL_TCGETS     = 0x5401;
 constexpr uint64_t LINUX_IOCTL_TCSETS     = 0x5402;
 constexpr uint64_t LINUX_IOCTL_TCSETSW    = 0x5403;
 constexpr uint64_t LINUX_IOCTL_TCSETSF    = 0x5404;
+constexpr uint64_t LINUX_IOCTL_TIOCGPGRP  = 0x540F;
+constexpr uint64_t LINUX_IOCTL_TIOCSPGRP  = 0x5410;
 constexpr uint64_t LINUX_IOCTL_TIOCGWINSZ = 0x5413;
 constexpr uint64_t LINUX_IOCTL_TIOCSWINSZ = 0x5414;
 constexpr uint64_t LINUX_IOCTL_FIONREAD   = 0x541B;
@@ -143,7 +145,7 @@ FileOperations TTY::TerminalFileOperations = {
 TTY::TTY(FrameBuffer* FrameBuffer, uint32_t InitialCursorX, uint32_t InitialCursorY)
     : FrameBufferDevice(FrameBuffer), CursorX(InitialCursorX), CursorY(InitialCursorY), TextColor(0xFFFFFFFF), BackgroundColor(0x00000000), BufferHead(0), BufferTail(0), BufferedBytes(0),
       CommittedBytes(0), TermiosInputFlags(0), TermiosOutputFlags(0), TermiosControlFlags(0), TermiosLocalFlags(LINUX_TERMIOS_DEFAULT), TermiosLineDiscipline(0),
-      OutputAnsiState(AnsiParseState::Normal), OutputAnsiParams{0, 0, 0, 0}, OutputAnsiParamCount(0), OutputAnsiCurrentValue(0), OutputAnsiReadingValue(false)
+    OutputAnsiState(AnsiParseState::Normal), OutputAnsiParams{0, 0, 0, 0}, OutputAnsiParamCount(0), OutputAnsiCurrentValue(0), OutputAnsiReadingValue(false), ForegroundProcessGroup(0)
 {
     for (uint64_t Index = 0; Index < KEYBOARD_BUFFER_CAPACITY; ++Index)
     {
@@ -637,7 +639,7 @@ int64_t TTY::Write(File* OpenFile, const void* Buffer, uint64_t Count)
     return static_cast<int64_t>(Count);
 }
 
-int64_t TTY::Ioctl(File* OpenFile, uint64_t Request, uint64_t Argument, LogicLayer* Logic)
+int64_t TTY::Ioctl(File* OpenFile, uint64_t Request, uint64_t Argument, LogicLayer* Logic, Process* RunningProcess)
 {
     if (OpenFile == nullptr || OpenFile->Node == nullptr || Logic == nullptr)
     {
@@ -730,6 +732,50 @@ int64_t TTY::Ioctl(File* OpenFile, uint64_t Request, uint64_t Argument, LogicLay
 
         LinuxWinSize Incoming = {};
         return Logic->CopyFromUserToKernel(reinterpret_cast<const void*>(Argument), &Incoming, sizeof(Incoming)) ? 0 : LINUX_ERR_EFAULT;
+    }
+
+    if (Request == LINUX_IOCTL_TIOCGPGRP)
+    {
+        if (Argument == 0)
+        {
+            return LINUX_ERR_EFAULT;
+        }
+
+        if (ForegroundProcessGroup <= 0)
+        {
+            int32_t DefaultProcessGroup = 1;
+            if (RunningProcess != nullptr)
+            {
+                DefaultProcessGroup = (RunningProcess->ProcessGroupId > 0) ? RunningProcess->ProcessGroupId : static_cast<int32_t>(RunningProcess->Id);
+            }
+
+            ForegroundProcessGroup = DefaultProcessGroup;
+        }
+
+        int32_t ProcessGroupId = ForegroundProcessGroup;
+        return Logic->CopyFromKernelToUser(&ProcessGroupId, reinterpret_cast<void*>(Argument), sizeof(ProcessGroupId)) ? 0 : LINUX_ERR_EFAULT;
+    }
+
+    if (Request == LINUX_IOCTL_TIOCSPGRP)
+    {
+        if (Argument == 0)
+        {
+            return LINUX_ERR_EFAULT;
+        }
+
+        int32_t RequestedProcessGroup = 0;
+        if (!Logic->CopyFromUserToKernel(reinterpret_cast<const void*>(Argument), &RequestedProcessGroup, sizeof(RequestedProcessGroup)))
+        {
+            return LINUX_ERR_EFAULT;
+        }
+
+        if (RequestedProcessGroup <= 0)
+        {
+            return LINUX_ERR_EINVAL;
+        }
+
+        ForegroundProcessGroup = RequestedProcessGroup;
+        return 0;
     }
 
     if (Request == LINUX_IOCTL_FIONREAD)
@@ -883,7 +929,7 @@ int64_t TTY::MemoryMapFileOperation(File* OpenFile, uint64_t Length, uint64_t Of
     return LINUX_ERR_ENOSYS;
 }
 
-int64_t TTY::IoctlFileOperation(File* OpenFile, uint64_t Request, uint64_t Argument, LogicLayer* Logic)
+int64_t TTY::IoctlFileOperation(File* OpenFile, uint64_t Request, uint64_t Argument, LogicLayer* Logic, Process* RunningProcess)
 {
     if (OpenFile == nullptr || OpenFile->Node == nullptr)
     {
@@ -896,5 +942,5 @@ int64_t TTY::IoctlFileOperation(File* OpenFile, uint64_t Request, uint64_t Argum
         return LINUX_ERR_EINVAL;
     }
 
-    return Terminal->Ioctl(OpenFile, Request, Argument, Logic);
+    return Terminal->Ioctl(OpenFile, Request, Argument, Logic, RunningProcess);
 }

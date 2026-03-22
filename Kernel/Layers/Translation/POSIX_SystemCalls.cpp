@@ -105,6 +105,9 @@ int64_t TranslationLayer::HandlePosixSystemCallNumber(uint64_t SystemCallNumber,
         case 61: // wait4
             return HandleWaitSystemCall(static_cast<int64_t>(Arg1), reinterpret_cast<int*>(Arg2), static_cast<int64_t>(Arg3), reinterpret_cast<void*>(Arg4));
             break;
+        case 63: // uname
+            return HandleUnameSystemCall(reinterpret_cast<void*>(Arg1));
+            break;
         case 72: // fcntl
             return HandleFcntlSystemCall(Arg1, Arg2, Arg3);
             break;
@@ -141,11 +144,26 @@ int64_t TranslationLayer::HandlePosixSystemCallNumber(uint64_t SystemCallNumber,
         case 108: // getegid
             return HandleGetegidSystemCall();
             break;
+        case 109: // setpgid
+            return HandleSetpgidSystemCall(static_cast<int64_t>(Arg1), static_cast<int64_t>(Arg2));
+            break;
         case 110: // getppid
             return HandleGetppidSystemCall();
             break;
+        case 111: // getpgrp
+            return HandleGetpgrpSystemCall();
+            break;
+        case 112: // setsid
+            return HandleSetsidSystemCall();
+            break;
         case 132: // utime
             return HandleUtimeSystemCall(reinterpret_cast<const char*>(Arg1), reinterpret_cast<const void*>(Arg2));
+            break;
+        case 121: // getpgid
+            return HandleGetpgidSystemCall(static_cast<int64_t>(Arg1));
+            break;
+        case 124: // getsid
+            return HandleGetsidSystemCall(static_cast<int64_t>(Arg1));
             break;
         case 158: // arch_prctl
             return HandleArchPrctlSystemCall(Arg1, Arg2);
