@@ -51,6 +51,12 @@ int64_t TranslationLayer::HandlePosixSystemCallNumber(uint64_t SystemCallNumber,
         case 6: // lstat
             return HandleLstatSystemCall(reinterpret_cast<const char*>(Arg1), reinterpret_cast<void*>(Arg2));
             break;
+        case 7: // poll
+            return HandlePollSystemCall(reinterpret_cast<void*>(Arg1), Arg2, static_cast<int64_t>(Arg3));
+            break;
+        case 8: // lseek
+            return HandleLseekSystemCall(Arg1, static_cast<int64_t>(Arg2), static_cast<int64_t>(Arg3));
+            break;
         case 9: // mmap
             return HandleMmapSystemCall(reinterpret_cast<void*>(Arg1), Arg2, static_cast<int64_t>(Arg3), static_cast<int64_t>(Arg4), static_cast<int64_t>(Arg5), static_cast<int64_t>(Arg6));
             break;

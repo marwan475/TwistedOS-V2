@@ -24,6 +24,8 @@ public:
     int64_t HandleReadSystemCall(uint64_t FileDescriptor, void* Buffer, uint64_t Count);
     int64_t HandleWriteSystemCall(uint64_t FileDescriptor, const void* Buffer, uint64_t Count);
     int64_t HandleWritevSystemCall(uint64_t FileDescriptor, const void* Iov, uint64_t IovCount);
+    int64_t HandlePollSystemCall(void* PollFdArray, uint64_t PollFdCount, int64_t TimeoutMilliseconds);
+    int64_t HandleLseekSystemCall(uint64_t FileDescriptor, int64_t Offset, int64_t Whence);
     int64_t HandleIoctlSystemCall(uint64_t FileDescriptor, uint64_t Request, uint64_t Argument);
     int64_t HandleOpenSystemCall(const char* Path, uint64_t Flags);
     int64_t HandleOpenAtSystemCall(int64_t DirectoryFileDescriptor, const char* Path, uint64_t Flags, uint64_t Mode);

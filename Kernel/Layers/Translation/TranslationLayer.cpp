@@ -37,6 +37,7 @@ constexpr int64_t LINUX_ERR_EPERM   = -1;
 constexpr int64_t LINUX_ERR_ERANGE  = -34;
 constexpr int64_t LINUX_ERR_EEXIST  = -17;
 constexpr int64_t LINUX_ERR_ENOTEMPTY = -39;
+constexpr int64_t LINUX_ERR_ESPIPE  = -29;
 
 constexpr uint64_t SYSCALL_COPY_CHUNK_SIZE   = 4096;
 constexpr uint64_t SYSCALL_PATH_MAX          = 4096;
@@ -90,6 +91,13 @@ struct LinuxTimeSpec
     int64_t Nanoseconds;
 };
 
+struct LinuxPollFd
+{
+    int32_t FileDescriptor;
+    int16_t Events;
+    int16_t Revents;
+};
+
 constexpr int64_t LINUX_UTIME_NOW  = 1073741823;
 constexpr int64_t LINUX_UTIME_OMIT = 1073741822;
 
@@ -139,6 +147,16 @@ constexpr uint64_t LINUX_F_DUPFD_CLOEXEC = 1030;
 constexpr uint64_t LINUX_FD_CLOEXEC      = 0x1;
 
 constexpr uint64_t LINUX_FCNTL_SETFL_ALLOWED = (LINUX_O_APPEND | LINUX_O_NONBLOCK | LINUX_O_ASYNC | LINUX_O_DIRECT | LINUX_O_NOATIME);
+
+constexpr int32_t LINUX_SEEK_SET = 0;
+constexpr int32_t LINUX_SEEK_CUR = 1;
+constexpr int32_t LINUX_SEEK_END = 2;
+
+constexpr int16_t LINUX_POLLIN   = 0x0001;
+constexpr int16_t LINUX_POLLOUT  = 0x0004;
+constexpr int16_t LINUX_POLLERR  = 0x0008;
+constexpr int16_t LINUX_POLLHUP  = 0x0010;
+constexpr int16_t LINUX_POLLNVAL = 0x0020;
 
 constexpr int64_t LINUX_AT_FDCWD            = -100;
 constexpr int64_t LINUX_AT_SYMLINK_NOFOLLOW = 0x100;
@@ -1365,6 +1383,273 @@ int64_t TranslationLayer::HandleWritevSystemCall(uint64_t FileDescriptor, const 
     }
 
     return static_cast<int64_t>(TotalWritten);
+}
+
+int64_t TranslationLayer::HandleLseekSystemCall(uint64_t FileDescriptor, int64_t Offset, int64_t Whence)
+{
+    if (Logic == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    ProcessManager* PM = Logic->GetProcessManager();
+    if (PM == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    Process* CurrentProcess = PM->GetRunningProcess();
+    if (CurrentProcess == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    if (FileDescriptor >= MAX_OPEN_FILES_PER_PROCESS)
+    {
+        return LINUX_ERR_EBADF;
+    }
+
+    File* OpenFile = CurrentProcess->FileTable[FileDescriptor];
+    if (OpenFile == nullptr || OpenFile->Node == nullptr)
+    {
+        return LINUX_ERR_EBADF;
+    }
+
+    if (Whence != LINUX_SEEK_SET && Whence != LINUX_SEEK_CUR && Whence != LINUX_SEEK_END)
+    {
+        return LINUX_ERR_EINVAL;
+    }
+
+    if (OpenFile->Node->FileOps != nullptr && OpenFile->Node->FileOps->Seek != nullptr)
+    {
+        int64_t SeekResult = OpenFile->Node->FileOps->Seek(OpenFile, Offset, static_cast<int32_t>(Whence));
+        if (SeekResult != LINUX_ERR_ENOSYS)
+        {
+            return SeekResult;
+        }
+    }
+
+    if (OpenFile->Node->NodeType == INODE_DEV)
+    {
+        return LINUX_ERR_ESPIPE;
+    }
+
+    int64_t BaseOffset = 0;
+    switch (Whence)
+    {
+        case LINUX_SEEK_SET:
+            BaseOffset = 0;
+            break;
+        case LINUX_SEEK_CUR:
+            BaseOffset = static_cast<int64_t>(OpenFile->CurrentOffset);
+            break;
+        case LINUX_SEEK_END:
+            BaseOffset = static_cast<int64_t>(OpenFile->Node->NodeSize);
+            break;
+        default:
+            return LINUX_ERR_EINVAL;
+    }
+
+    if ((Offset > 0 && BaseOffset > (INT64_MAX - Offset)) || (Offset < 0 && BaseOffset < (INT64_MIN - Offset)))
+    {
+        return LINUX_ERR_EINVAL;
+    }
+
+    int64_t NewOffset = BaseOffset + Offset;
+    if (NewOffset < 0)
+    {
+        return LINUX_ERR_EINVAL;
+    }
+
+    OpenFile->CurrentOffset = static_cast<uint64_t>(NewOffset);
+    return NewOffset;
+}
+
+int64_t TranslationLayer::HandlePollSystemCall(void* PollFdArray, uint64_t PollFdCount, int64_t TimeoutMilliseconds)
+{
+    if (Logic == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    if (PollFdCount > MAX_OPEN_FILES_PER_PROCESS)
+    {
+        return LINUX_ERR_EINVAL;
+    }
+
+    if (PollFdCount > 0 && PollFdArray == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    ProcessManager* PM = Logic->GetProcessManager();
+    if (PM == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    Process* CurrentProcess = PM->GetRunningProcess();
+    if (CurrentProcess == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    if (PollFdCount == 0)
+    {
+        if (TimeoutMilliseconds > 0)
+        {
+            uint64_t SleepTicks = static_cast<uint64_t>((TimeoutMilliseconds + 9) / 10);
+            if (SleepTicks == 0)
+            {
+                SleepTicks = 1;
+            }
+            Logic->SleepProcess(CurrentProcess->Id, SleepTicks);
+        }
+        return 0;
+    }
+
+    auto EvaluatePollState = [&](bool* HasTTYReadableWait) -> int64_t
+    {
+        int64_t ReadyDescriptors = 0;
+        bool    WantsTTYRead     = false;
+
+        for (uint64_t Index = 0; Index < PollFdCount; ++Index)
+        {
+            LinuxPollFd KernelPollFd = {};
+            const void* UserPollFdAddress = reinterpret_cast<const void*>(reinterpret_cast<uint64_t>(PollFdArray) + (Index * sizeof(LinuxPollFd)));
+
+            if (!Logic->CopyFromUserToKernel(UserPollFdAddress, &KernelPollFd, sizeof(KernelPollFd)))
+            {
+                return LINUX_ERR_EFAULT;
+            }
+
+            KernelPollFd.Revents = 0;
+
+            if (KernelPollFd.FileDescriptor >= 0)
+            {
+                uint64_t FileDescriptor = static_cast<uint64_t>(KernelPollFd.FileDescriptor);
+                if (FileDescriptor >= MAX_OPEN_FILES_PER_PROCESS)
+                {
+                    KernelPollFd.Revents = LINUX_POLLNVAL;
+                }
+                else
+                {
+                    File* OpenFile = CurrentProcess->FileTable[FileDescriptor];
+                    if (OpenFile == nullptr || OpenFile->Node == nullptr)
+                    {
+                        KernelPollFd.Revents = LINUX_POLLNVAL;
+                    }
+                    else
+                    {
+                        if ((KernelPollFd.Events & LINUX_POLLIN) != 0)
+                        {
+                            bool IsTTYNode = (OpenFile->Node->NodeType == INODE_DEV && OpenFile->DirectoryEntry != nullptr && OpenFile->DirectoryEntry->name != nullptr &&
+                                              CStrEquals(OpenFile->DirectoryEntry->name, "tty"));
+                            if (IsTTYNode)
+                            {
+                                WantsTTYRead = true;
+                                TTY* Terminal = reinterpret_cast<TTY*>(OpenFile->Node->NodeData);
+                                if (Terminal != nullptr && Terminal->GetBufferedInputBytes() > 0)
+                                {
+                                    KernelPollFd.Revents |= LINUX_POLLIN;
+                                }
+                            }
+                            else if (OpenFile->Node->NodeType != INODE_DIR)
+                            {
+                                KernelPollFd.Revents |= LINUX_POLLIN;
+                            }
+                        }
+
+                        if ((KernelPollFd.Events & LINUX_POLLOUT) != 0 && OpenFile->AccessFlags != READ)
+                        {
+                            KernelPollFd.Revents |= LINUX_POLLOUT;
+                        }
+                    }
+                }
+            }
+
+            if ((KernelPollFd.Revents & (LINUX_POLLERR | LINUX_POLLHUP | LINUX_POLLNVAL | LINUX_POLLIN | LINUX_POLLOUT)) != 0)
+            {
+                ++ReadyDescriptors;
+            }
+
+            void* UserPollFdWriteAddress = reinterpret_cast<void*>(reinterpret_cast<uint64_t>(PollFdArray) + (Index * sizeof(LinuxPollFd)));
+            if (!Logic->CopyFromKernelToUser(&KernelPollFd, UserPollFdWriteAddress, sizeof(KernelPollFd)))
+            {
+                return LINUX_ERR_EFAULT;
+            }
+        }
+
+        if (HasTTYReadableWait != nullptr)
+        {
+            *HasTTYReadableWait = WantsTTYRead;
+        }
+
+        return ReadyDescriptors;
+    };
+
+    bool    HasTTYReadableWait = false;
+    int64_t ReadyCount         = EvaluatePollState(&HasTTYReadableWait);
+    if (ReadyCount < 0)
+    {
+        return ReadyCount;
+    }
+
+    if (ReadyCount > 0)
+    {
+        return ReadyCount;
+    }
+
+    if (TimeoutMilliseconds == 0)
+    {
+        return 0;
+    }
+
+    if (!HasTTYReadableWait)
+    {
+        if (TimeoutMilliseconds > 0)
+        {
+            uint64_t SleepTicks = static_cast<uint64_t>((TimeoutMilliseconds + 9) / 10);
+            if (SleepTicks == 0)
+            {
+                SleepTicks = 1;
+            }
+            Logic->SleepProcess(CurrentProcess->Id, SleepTicks);
+        }
+        return 0;
+    }
+
+    if (TimeoutMilliseconds < 0)
+    {
+        while (true)
+        {
+            Logic->BlockProcessForTTYInput(CurrentProcess->Id);
+
+            bool DummyTTYWaitFlag = false;
+            ReadyCount            = EvaluatePollState(&DummyTTYWaitFlag);
+            if (ReadyCount != 0)
+            {
+                return ReadyCount;
+            }
+        }
+    }
+
+    int64_t RemainingMilliseconds = TimeoutMilliseconds;
+    while (RemainingMilliseconds > 0)
+    {
+        Logic->SleepProcess(CurrentProcess->Id, 1);
+
+        bool DummyTTYWaitFlag = false;
+        ReadyCount            = EvaluatePollState(&DummyTTYWaitFlag);
+        if (ReadyCount != 0)
+        {
+            return ReadyCount;
+        }
+
+        RemainingMilliseconds -= 10;
+    }
+
+    return 0;
 }
 
 int64_t TranslationLayer::HandleIoctlSystemCall(uint64_t FileDescriptor, uint64_t Request, uint64_t Argument)
