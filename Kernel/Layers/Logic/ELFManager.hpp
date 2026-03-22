@@ -59,6 +59,9 @@ public:
     bool                      ValidateELF64(const ELFHeader& Header) const;
     bool                      ValidateProgramHeaderTable(const ELFHeader& Header, uint64_t ImageSize) const;
     const ELFProgramHeader64* GetProgramHeaderTable(uint64_t PhysicalAddress, const ELFHeader& Header) const;
+    bool                      IsDynamicImage(const ELFHeader& Header) const;
+    bool                      GetInterpreterPath(uint64_t PhysicalAddress, uint64_t ImageSize, const ELFHeader& Header, char* InterpreterPathBuffer,
+                                                 uint64_t InterpreterPathBufferSize) const;
     bool                      IsLoadableSegment(const ELFProgramHeader64& ProgramHeader) const;
     bool                      IsWritableSegment(const ELFProgramHeader64& ProgramHeader) const;
     bool                      ValidateProgramSegment(const ELFProgramHeader64& ProgramHeader, uint64_t ImageSize) const;

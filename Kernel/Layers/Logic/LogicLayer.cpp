@@ -27,7 +27,12 @@ constexpr uint64_t AUXV_AT_PHDR            = 3;
 constexpr uint64_t AUXV_AT_PHENT           = 4;
 constexpr uint64_t AUXV_AT_PHNUM           = 5;
 constexpr uint64_t AUXV_AT_PAGESZ          = 6;
+constexpr uint64_t AUXV_AT_BASE            = 7;
 constexpr uint64_t AUXV_AT_ENTRY           = 9;
+constexpr uint16_t ELF_TYPE_DYN            = 3;
+constexpr uint64_t ELF_INTERPRETER_PATH_MAX = 256;
+constexpr uint64_t ELF_ET_DYN_MAIN_LOAD_BIAS = USER_PROCESS_VIRTUAL_BASE;
+constexpr uint64_t ELF_INTERPRETER_LOAD_BIAS = 0x0000000100000000ULL;
 
 bool TranslateELFFileOffsetToVirtualAddress(const ELFProgramHeader64* ProgramHeaders, uint16_t ProgramHeaderCount, uint64_t FileOffset, uint64_t* VirtualAddressOut)
 {
@@ -159,6 +164,132 @@ bool EnsureLazyLoadedINodeData(ResourceLayer* Resource, INode* Node)
     return true;
 }
 
+uint64_t GetELFLoadBias(const ELFHeader& Header, bool IsInterpreter)
+{
+    if (Header.Type != ELF_TYPE_DYN)
+    {
+        return 0;
+    }
+
+    return IsInterpreter ? ELF_INTERPRETER_LOAD_BIAS : ELF_ET_DYN_MAIN_LOAD_BIAS;
+}
+
+bool AppendELFLoadSegmentsToAddressSpace(ResourceLayer* Resource, ELFManager* ELF, VirtualAddressSpaceELF* AddressSpace, uint64_t ImageAddress, uint64_t ImageSize, const ELFHeader& Header,
+                                         uint64_t LoadBias)
+{
+    if (Resource == nullptr || ELF == nullptr || AddressSpace == nullptr)
+    {
+        return false;
+    }
+
+    if (!ELF->ValidateProgramHeaderTable(Header, ImageSize))
+    {
+        return false;
+    }
+
+    const ELFProgramHeader64* ProgramHeaders = ELF->GetProgramHeaderTable(ImageAddress, Header);
+    if (ProgramHeaders == nullptr)
+    {
+        return false;
+    }
+
+    for (uint16_t ProgramHeaderIndex = 0; ProgramHeaderIndex < Header.ProgramHeaderEntryCount; ++ProgramHeaderIndex)
+    {
+        const ELFProgramHeader64& ProgramHeader = ProgramHeaders[ProgramHeaderIndex];
+        if (!ELF->IsLoadableSegment(ProgramHeader))
+        {
+            continue;
+        }
+
+        if (!ELF->ValidateProgramSegment(ProgramHeader, ImageSize))
+        {
+            return false;
+        }
+
+        if (ProgramHeader.VirtualAddress > (UINT64_MAX - LoadBias))
+        {
+            return false;
+        }
+
+        uint64_t SegmentVirtualAddress = ProgramHeader.VirtualAddress + LoadBias;
+        bool     IsWritableSegment     = ELF->IsWritableSegment(ProgramHeader);
+
+        if (ProgramHeader.FileSize != 0)
+        {
+            ELFMemoryRegion FileRegion = {};
+            FileRegion.PhysicalAddress = ImageAddress + ProgramHeader.Offset;
+            FileRegion.VirtualAddress  = SegmentVirtualAddress;
+            FileRegion.Size            = ProgramHeader.FileSize;
+            FileRegion.Writable        = IsWritableSegment;
+
+            if (!AddressSpace->AddMemoryRegion(FileRegion))
+            {
+                return false;
+            }
+        }
+
+        if (ProgramHeader.MemorySize > ProgramHeader.FileSize)
+        {
+            uint64_t BssVirtualStart = SegmentVirtualAddress + ProgramHeader.FileSize;
+            uint64_t BssRemaining    = ProgramHeader.MemorySize - ProgramHeader.FileSize;
+
+            uint64_t BssTailBytes = 0;
+            if ((BssVirtualStart & (PAGE_SIZE - 1)) != 0)
+            {
+                uint64_t TailCapacity = PAGE_SIZE - (BssVirtualStart & (PAGE_SIZE - 1));
+                BssTailBytes          = (BssRemaining < TailCapacity) ? BssRemaining : TailCapacity;
+
+                if (BssTailBytes != 0)
+                {
+                    uint64_t BssTailVirtual  = BssVirtualStart;
+                    uint64_t BssTailPhysical = ImageAddress + ProgramHeader.Offset + ProgramHeader.FileSize;
+                    kmemset(reinterpret_cast<void*>(BssTailPhysical), 0, static_cast<size_t>(BssTailBytes));
+
+                    ELFMemoryRegion BssTailRegion = {};
+                    BssTailRegion.PhysicalAddress = BssTailPhysical;
+                    BssTailRegion.VirtualAddress  = BssTailVirtual;
+                    BssTailRegion.Size            = BssTailBytes;
+                    BssTailRegion.Writable        = IsWritableSegment;
+
+                    if (!AddressSpace->AddMemoryRegion(BssTailRegion))
+                    {
+                        return false;
+                    }
+
+                    BssVirtualStart += BssTailBytes;
+                    BssRemaining -= BssTailBytes;
+                }
+            }
+
+            if (BssRemaining != 0)
+            {
+                uint64_t BssPages    = (BssRemaining + PAGE_SIZE - 1) / PAGE_SIZE;
+                void*    BssPhysical = Resource->GetPMM()->AllocatePagesFromDescriptor(BssPages);
+                if (BssPhysical == nullptr)
+                {
+                    return false;
+                }
+
+                kmemset(BssPhysical, 0, static_cast<size_t>(BssPages * PAGE_SIZE));
+
+                ELFMemoryRegion BssRegion = {};
+                BssRegion.PhysicalAddress = reinterpret_cast<uint64_t>(BssPhysical);
+                BssRegion.VirtualAddress  = BssVirtualStart;
+                BssRegion.Size            = BssRemaining;
+                BssRegion.Writable        = IsWritableSegment;
+
+                if (!AddressSpace->AddMemoryRegion(BssRegion))
+                {
+                    Resource->GetPMM()->FreePagesFromDescriptor(BssPhysical, BssPages);
+                    return false;
+                }
+            }
+        }
+    }
+
+    return true;
+}
+
 void RetainRunningExecutable(Process* TargetProcess, Dentry* ExecutableEntry)
 {
     if (TargetProcess == nullptr)
@@ -222,7 +353,7 @@ void SetKernelSystemCallStackTop(uint64_t StackTop)
 }
 
 bool InitializeExecveUserEntry(ResourceLayer* Resource, VirtualAddressSpace* AddressSpace, CpuState* State, const char* const* Argv, uint64_t Argc, const char* const* Envp, uint64_t Envc,
-                               uint64_t AuxProgramHeaderAddress, uint64_t AuxProgramHeaderEntrySize, uint64_t AuxProgramHeaderCount, uint64_t AuxEntryPoint)
+                               uint64_t AuxProgramHeaderAddress, uint64_t AuxProgramHeaderEntrySize, uint64_t AuxProgramHeaderCount, uint64_t AuxEntryPoint, uint64_t AuxBaseAddress)
 {
     if (Resource == nullptr || AddressSpace == nullptr || State == nullptr)
     {
@@ -356,6 +487,10 @@ bool InitializeExecveUserEntry(ResourceLayer* Resource, VirtualAddressSpace* Add
         {
             AuxvEntryCount += 1;
         }
+        if (AuxBaseAddress != 0)
+        {
+            AuxvEntryCount += 1;
+        }
 
         uint64_t StackWordCount = 1 + ArgvVectorCount + EnvpVectorCount + (AuxvEntryCount * 2);
         uint64_t StackBytes     = StackWordCount * sizeof(uint64_t);
@@ -418,6 +553,11 @@ bool InitializeExecveUserEntry(ResourceLayer* Resource, VirtualAddressSpace* Add
         if (AuxEntryPoint != 0)
         {
             PushAuxvPair(AUXV_AT_ENTRY, AuxEntryPoint);
+        }
+
+        if (AuxBaseAddress != 0)
+        {
+            PushAuxvPair(AUXV_AT_BASE, AuxBaseAddress);
         }
 
         PushAuxvPair(AUXV_AT_NULL, 0);
@@ -1397,6 +1537,10 @@ uint8_t LogicLayer::ChangeProcessExecution(uint8_t Id, const char* FilePath, con
     uint64_t             AuxProgramHeaderEntrySize = 0;
     uint64_t             AuxProgramHeaderCount     = 0;
     uint64_t             AuxEntryPoint             = 0;
+    uint64_t             AuxBaseAddress            = 0;
+    uint64_t             ProgramLoadBias           = 0;
+    uint64_t             InterpreterBase           = 0;
+    uint64_t             InterpreterEntry          = 0;
 
     if (ELF != nullptr)
     {
@@ -1412,12 +1556,19 @@ uint8_t LogicLayer::ChangeProcessExecution(uint8_t Id, const char* FilePath, con
             TranslateELFFileOffsetToVirtualAddress(ProgramHeaders, Header.ProgramHeaderEntryCount, Header.ProgramHeaderOffset, &AuxProgramHeaderAddress);
         }
 
+        ProgramLoadBias = GetELFLoadBias(Header, false);
+        if (AuxProgramHeaderAddress != 0)
+        {
+            AuxProgramHeaderAddress += ProgramLoadBias;
+        }
+
         AuxProgramHeaderEntrySize = Header.ProgramHeaderEntrySize;
         AuxProgramHeaderCount     = Header.ProgramHeaderEntryCount;
-        AuxEntryPoint             = Header.Entry;
+        AuxEntryPoint             = Header.Entry + ProgramLoadBias;
 
-        NewAddressSpace   = MapELF(reinterpret_cast<uint64_t>(CopiedImage), CodeSize, Header);
-        NewUserEntryPoint = Header.Entry;
+        NewAddressSpace = MapELF(reinterpret_cast<uint64_t>(CopiedImage), CodeSize, Header, nullptr, &ProgramLoadBias, &InterpreterBase, &InterpreterEntry);
+        NewUserEntryPoint = (InterpreterEntry != 0) ? InterpreterEntry : (Header.Entry + ProgramLoadBias);
+        AuxBaseAddress    = InterpreterBase;
     }
     else
     {
@@ -1437,7 +1588,8 @@ uint8_t LogicLayer::ChangeProcessExecution(uint8_t Id, const char* FilePath, con
     NewState.cs       = USER_CS;
     NewState.ss       = USER_SS;
 
-    if (!InitializeExecveUserEntry(Resource, NewAddressSpace, &NewState, Argv, Argc, Envp, Envc, AuxProgramHeaderAddress, AuxProgramHeaderEntrySize, AuxProgramHeaderCount, AuxEntryPoint))
+    if (!InitializeExecveUserEntry(Resource, NewAddressSpace, &NewState, Argv, Argc, Envp, Envc, AuxProgramHeaderAddress, AuxProgramHeaderEntrySize, AuxProgramHeaderCount,
+                                   AuxEntryPoint, AuxBaseAddress))
     {
         if (IsELF)
         {
@@ -1826,6 +1978,10 @@ uint8_t LogicLayer::CreateUserProcess(uint64_t CodeAddr, uint64_t CodeSize, cons
     uint64_t             AuxProgramHeaderEntrySize = 0;
     uint64_t             AuxProgramHeaderCount     = 0;
     uint64_t             AuxEntryPoint             = 0;
+    uint64_t             AuxBaseAddress            = 0;
+    uint64_t             ProgramLoadBias           = 0;
+    uint64_t             InterpreterBase           = 0;
+    uint64_t             InterpreterEntry          = 0;
 
     if (ELF != nullptr)
     {
@@ -1841,12 +1997,19 @@ uint8_t LogicLayer::CreateUserProcess(uint64_t CodeAddr, uint64_t CodeSize, cons
             TranslateELFFileOffsetToVirtualAddress(ProgramHeaders, Header.ProgramHeaderEntryCount, Header.ProgramHeaderOffset, &AuxProgramHeaderAddress);
         }
 
+        ProgramLoadBias = GetELFLoadBias(Header, false);
+        if (AuxProgramHeaderAddress != 0)
+        {
+            AuxProgramHeaderAddress += ProgramLoadBias;
+        }
+
         AuxProgramHeaderEntrySize = Header.ProgramHeaderEntrySize;
         AuxProgramHeaderCount     = Header.ProgramHeaderEntryCount;
-        AuxEntryPoint             = Header.Entry;
+        AuxEntryPoint             = Header.Entry + ProgramLoadBias;
 
-        AddressSpace   = MapELF(CodeAddr, CodeSize, Header);
-        UserEntryPoint = Header.Entry;
+        AddressSpace = MapELF(CodeAddr, CodeSize, Header, nullptr, &ProgramLoadBias, &InterpreterBase, &InterpreterEntry);
+        UserEntryPoint = (InterpreterEntry != 0) ? InterpreterEntry : (Header.Entry + ProgramLoadBias);
+        AuxBaseAddress = InterpreterBase;
     }
     else
     {
@@ -1882,7 +2045,8 @@ uint8_t LogicLayer::CreateUserProcess(uint64_t CodeAddr, uint64_t CodeSize, cons
             Argc                  = 1;
         }
 
-        if (!InitializeExecveUserEntry(Resource, AddressSpace, &State, Argv, Argc, nullptr, 0, AuxProgramHeaderAddress, AuxProgramHeaderEntrySize, AuxProgramHeaderCount, AuxEntryPoint))
+        if (!InitializeExecveUserEntry(Resource, AddressSpace, &State, Argv, Argc, nullptr, 0, AuxProgramHeaderAddress, AuxProgramHeaderEntrySize, AuxProgramHeaderCount, AuxEntryPoint,
+                           AuxBaseAddress))
         {
             CleanUpELF(AddressSpace);
             delete AddressSpace;
@@ -1982,8 +2146,24 @@ VirtualAddressSpace* LogicLayer::MapRawBinary(uint64_t CodeAddr, uint64_t CodeSi
  * Returns:
  *   VirtualAddressSpace* - Initialized ELF address space or nullptr on failure.
  */
-VirtualAddressSpace* LogicLayer::MapELF(uint64_t CodeAddr, uint64_t CodeSize, const ELFHeader& Header, const VirtualAddressSpaceELF* SourceRuntimeELFAddressSpace)
+VirtualAddressSpace* LogicLayer::MapELF(uint64_t CodeAddr, uint64_t CodeSize, const ELFHeader& Header, const VirtualAddressSpaceELF* SourceRuntimeELFAddressSpace,
+                                        uint64_t* ProgramLoadBiasOut, uint64_t* InterpreterBaseOut, uint64_t* InterpreterEntryOut)
 {
+    if (ProgramLoadBiasOut != nullptr)
+    {
+        *ProgramLoadBiasOut = 0;
+    }
+
+    if (InterpreterBaseOut != nullptr)
+    {
+        *InterpreterBaseOut = 0;
+    }
+
+    if (InterpreterEntryOut != nullptr)
+    {
+        *InterpreterEntryOut = 0;
+    }
+
     if (ELF == nullptr || !ELF->ValidateProgramHeaderTable(Header, CodeSize))
     {
         return nullptr;
@@ -1993,6 +2173,12 @@ VirtualAddressSpace* LogicLayer::MapELF(uint64_t CodeAddr, uint64_t CodeSize, co
     if (ProgramHeaders == nullptr)
     {
         return nullptr;
+    }
+
+    uint64_t MainLoadBias = GetELFLoadBias(Header, false);
+    if (ProgramLoadBiasOut != nullptr)
+    {
+        *ProgramLoadBiasOut = MainLoadBias;
     }
 
     uint64_t LowestVirtualAddress = 0;
@@ -2012,8 +2198,18 @@ VirtualAddressSpace* LogicLayer::MapELF(uint64_t CodeAddr, uint64_t CodeSize, co
             return nullptr;
         }
 
-        uint64_t SegmentStart = ProgramHeader.VirtualAddress;
-        uint64_t SegmentEnd   = AlignUpToPage(ProgramHeader.VirtualAddress + ProgramHeader.MemorySize);
+        if (ProgramHeader.VirtualAddress > (UINT64_MAX - MainLoadBias))
+        {
+            return nullptr;
+        }
+
+        uint64_t SegmentStart = ProgramHeader.VirtualAddress + MainLoadBias;
+        if (SegmentStart > (UINT64_MAX - ProgramHeader.MemorySize))
+        {
+            return nullptr;
+        }
+
+        uint64_t SegmentEnd = AlignUpToPage(SegmentStart + ProgramHeader.MemorySize);
 
         if (!HasLoadableSegment || SegmentStart < LowestVirtualAddress)
         {
@@ -2069,23 +2265,18 @@ VirtualAddressSpace* LogicLayer::MapELF(uint64_t CodeAddr, uint64_t CodeSize, co
         return nullptr;
     }
 
-    for (uint16_t ProgramHeaderIndex = 0; ProgramHeaderIndex < Header.ProgramHeaderEntryCount; ++ProgramHeaderIndex)
+    if (!AppendELFLoadSegmentsToAddressSpace(Resource, ELF, AddressSpace, CodeAddr, CodeSize, Header, MainLoadBias))
     {
-        const ELFProgramHeader64& ProgramHeader = ProgramHeaders[ProgramHeaderIndex];
-        if (!ELF->IsLoadableSegment(ProgramHeader))
-        {
-            continue;
-        }
+        Resource->GetPMM()->FreePagesFromDescriptor(ProcessHeap, USER_PROCESS_HEAP_SIZE / PAGE_SIZE);
+        Resource->GetPMM()->FreePagesFromDescriptor(ProcessStack, USER_PROCESS_STACK_SIZE / PAGE_SIZE);
+        delete AddressSpace;
+        return nullptr;
+    }
 
-        bool IsWritableSegment = ELF->IsWritableSegment(ProgramHeader);
-
-        ELFMemoryRegion FileRegion = {};
-        FileRegion.PhysicalAddress = CodeAddr + ProgramHeader.Offset;
-        FileRegion.VirtualAddress  = ProgramHeader.VirtualAddress;
-        FileRegion.Size            = ProgramHeader.FileSize;
-        FileRegion.Writable        = IsWritableSegment;
-
-        if (!AddressSpace->AddMemoryRegion(FileRegion))
+    char InterpreterPath[ELF_INTERPRETER_PATH_MAX] = {};
+    if (ELF->GetInterpreterPath(CodeAddr, CodeSize, Header, InterpreterPath, sizeof(InterpreterPath)))
+    {
+        if (VFS == nullptr)
         {
             Resource->GetPMM()->FreePagesFromDescriptor(ProcessHeap, USER_PROCESS_HEAP_SIZE / PAGE_SIZE);
             Resource->GetPMM()->FreePagesFromDescriptor(ProcessStack, USER_PROCESS_STACK_SIZE / PAGE_SIZE);
@@ -2093,71 +2284,57 @@ VirtualAddressSpace* LogicLayer::MapELF(uint64_t CodeAddr, uint64_t CodeSize, co
             return nullptr;
         }
 
-        if (ProgramHeader.MemorySize > ProgramHeader.FileSize)
+        Dentry* InterpreterDentry = VFS->Lookup(InterpreterPath);
+        if (InterpreterDentry == nullptr || InterpreterDentry->inode == nullptr || InterpreterDentry->inode->NodeType != INODE_FILE || InterpreterDentry->inode->NodeSize == 0
+            || !EnsureLazyLoadedINodeData(Resource, InterpreterDentry->inode))
         {
-            uint64_t BssVirtualStart = ProgramHeader.VirtualAddress + ProgramHeader.FileSize;
-            uint64_t BssRemaining    = ProgramHeader.MemorySize - ProgramHeader.FileSize;
+            Resource->GetPMM()->FreePagesFromDescriptor(ProcessHeap, USER_PROCESS_HEAP_SIZE / PAGE_SIZE);
+            Resource->GetPMM()->FreePagesFromDescriptor(ProcessStack, USER_PROCESS_STACK_SIZE / PAGE_SIZE);
+            delete AddressSpace;
+            return nullptr;
+        }
 
-            uint64_t BssTailBytes = 0;
-            if ((BssVirtualStart & (PAGE_SIZE - 1)) != 0)
-            {
-                uint64_t TailCapacity = PAGE_SIZE - (BssVirtualStart & (PAGE_SIZE - 1));
-                BssTailBytes          = (BssRemaining < TailCapacity) ? BssRemaining : TailCapacity;
+        uint64_t InterpreterSize  = InterpreterDentry->inode->NodeSize;
+        uint64_t InterpreterPages = (InterpreterSize + PAGE_SIZE - 1) / PAGE_SIZE;
+        void*    InterpreterImage = Resource->GetPMM()->AllocatePagesFromDescriptor(InterpreterPages);
+        if (InterpreterImage == nullptr)
+        {
+            Resource->GetPMM()->FreePagesFromDescriptor(ProcessHeap, USER_PROCESS_HEAP_SIZE / PAGE_SIZE);
+            Resource->GetPMM()->FreePagesFromDescriptor(ProcessStack, USER_PROCESS_STACK_SIZE / PAGE_SIZE);
+            delete AddressSpace;
+            return nullptr;
+        }
 
-                if (BssTailBytes != 0)
-                {
-                    uint64_t BssTailVirtual  = BssVirtualStart;
-                    uint64_t BssTailPhysical = CodeAddr + ProgramHeader.Offset + ProgramHeader.FileSize;
-                    kmemset(reinterpret_cast<void*>(BssTailPhysical), 0, static_cast<size_t>(BssTailBytes));
+        kmemset(InterpreterImage, 0, static_cast<size_t>(InterpreterPages * PAGE_SIZE));
+        memcpy(InterpreterImage, InterpreterDentry->inode->NodeData, static_cast<size_t>(InterpreterSize));
 
-                    ELFMemoryRegion BssTailRegion = {};
-                    BssTailRegion.PhysicalAddress = BssTailPhysical;
-                    BssTailRegion.VirtualAddress  = BssTailVirtual;
-                    BssTailRegion.Size            = BssTailBytes;
-                    BssTailRegion.Writable        = IsWritableSegment;
+        ELFHeader InterpreterHeader = ELF->ParseELF(reinterpret_cast<uint64_t>(InterpreterImage));
+        if (!ELF->ValidateELF64(InterpreterHeader))
+        {
+            Resource->GetPMM()->FreePagesFromDescriptor(InterpreterImage, InterpreterPages);
+            Resource->GetPMM()->FreePagesFromDescriptor(ProcessHeap, USER_PROCESS_HEAP_SIZE / PAGE_SIZE);
+            Resource->GetPMM()->FreePagesFromDescriptor(ProcessStack, USER_PROCESS_STACK_SIZE / PAGE_SIZE);
+            delete AddressSpace;
+            return nullptr;
+        }
 
-                    if (!AddressSpace->AddMemoryRegion(BssTailRegion))
-                    {
-                        Resource->GetPMM()->FreePagesFromDescriptor(ProcessHeap, USER_PROCESS_HEAP_SIZE / PAGE_SIZE);
-                        Resource->GetPMM()->FreePagesFromDescriptor(ProcessStack, USER_PROCESS_STACK_SIZE / PAGE_SIZE);
-                        delete AddressSpace;
-                        return nullptr;
-                    }
+        uint64_t InterpreterLoadBias = GetELFLoadBias(InterpreterHeader, true);
+        if (!AppendELFLoadSegmentsToAddressSpace(Resource, ELF, AddressSpace, reinterpret_cast<uint64_t>(InterpreterImage), InterpreterSize, InterpreterHeader, InterpreterLoadBias))
+        {
+            Resource->GetPMM()->FreePagesFromDescriptor(ProcessHeap, USER_PROCESS_HEAP_SIZE / PAGE_SIZE);
+            Resource->GetPMM()->FreePagesFromDescriptor(ProcessStack, USER_PROCESS_STACK_SIZE / PAGE_SIZE);
+            delete AddressSpace;
+            return nullptr;
+        }
 
-                    BssVirtualStart += BssTailBytes;
-                    BssRemaining -= BssTailBytes;
-                }
-            }
+        if (InterpreterEntryOut != nullptr)
+        {
+            *InterpreterEntryOut = InterpreterHeader.Entry + InterpreterLoadBias;
+        }
 
-            if (BssRemaining != 0)
-            {
-                uint64_t BssPages    = (BssRemaining + PAGE_SIZE - 1) / PAGE_SIZE;
-                void*    BssPhysical = Resource->GetPMM()->AllocatePagesFromDescriptor(BssPages);
-                if (BssPhysical == nullptr)
-                {
-                    Resource->GetPMM()->FreePagesFromDescriptor(ProcessHeap, USER_PROCESS_HEAP_SIZE / PAGE_SIZE);
-                    Resource->GetPMM()->FreePagesFromDescriptor(ProcessStack, USER_PROCESS_STACK_SIZE / PAGE_SIZE);
-                    delete AddressSpace;
-                    return nullptr;
-                }
-
-                kmemset(BssPhysical, 0, static_cast<size_t>(BssPages * PAGE_SIZE));
-
-                ELFMemoryRegion BssRegion = {};
-                BssRegion.PhysicalAddress = reinterpret_cast<uint64_t>(BssPhysical);
-                BssRegion.VirtualAddress  = BssVirtualStart;
-                BssRegion.Size            = BssRemaining;
-                BssRegion.Writable        = IsWritableSegment;
-
-                if (!AddressSpace->AddMemoryRegion(BssRegion))
-                {
-                    Resource->GetPMM()->FreePagesFromDescriptor(BssPhysical, BssPages);
-                    Resource->GetPMM()->FreePagesFromDescriptor(ProcessHeap, USER_PROCESS_HEAP_SIZE / PAGE_SIZE);
-                    Resource->GetPMM()->FreePagesFromDescriptor(ProcessStack, USER_PROCESS_STACK_SIZE / PAGE_SIZE);
-                    delete AddressSpace;
-                    return nullptr;
-                }
-            }
+        if (InterpreterBaseOut != nullptr)
+        {
+            *InterpreterBaseOut = InterpreterLoadBias;
         }
     }
 

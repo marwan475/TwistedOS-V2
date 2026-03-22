@@ -31,7 +31,8 @@ private:
     bool                    IsScheduling = false;
 
     VirtualAddressSpace* MapRawBinary(uint64_t CodeAddr, uint64_t CodeSize);
-    VirtualAddressSpace* MapELF(uint64_t CodeAddr, uint64_t CodeSize, const ELFHeader& Header, const VirtualAddressSpaceELF* SourceRuntimeELFAddressSpace = nullptr);
+    VirtualAddressSpace* MapELF(uint64_t CodeAddr, uint64_t CodeSize, const ELFHeader& Header, const VirtualAddressSpaceELF* SourceRuntimeELFAddressSpace = nullptr,
+                                uint64_t* ProgramLoadBiasOut = nullptr, uint64_t* InterpreterBaseOut = nullptr, uint64_t* InterpreterEntryOut = nullptr);
     void                 CleanUpELF(VirtualAddressSpace* AddressSpace);
     void                 CleanUpRawBinary(VirtualAddressSpace* AddressSpace);
 

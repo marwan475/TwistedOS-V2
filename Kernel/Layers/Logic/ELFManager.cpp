@@ -6,6 +6,8 @@
 
 #include "ELFManager.hpp"
 
+#include <CommonUtils.hpp>
+
 namespace
 {
 constexpr uint8_t  ELF_MAGIC_0                   = 0x7F;
@@ -15,7 +17,9 @@ constexpr uint8_t  ELF_MAGIC_3                   = 'F';
 constexpr uint8_t  ELF_CLASS_64                  = 2;
 constexpr uint8_t  ELF_DATA_LSB                  = 1;
 constexpr uint32_t ELF_VERSION_CURRENT           = 1;
+constexpr uint16_t ELF_TYPE_DYN                  = 3;
 constexpr uint32_t ELF_PROGRAM_HEADER_LOAD       = 1;
+constexpr uint32_t ELF_PROGRAM_HEADER_INTERP     = 3;
 constexpr uint32_t ELF_PROGRAM_HEADER_FLAG_WRITE = 0x2;
 
 /**
@@ -144,6 +148,95 @@ const ELFProgramHeader64* ELFManager::GetProgramHeaderTable(uint64_t PhysicalAdd
     }
 
     return reinterpret_cast<const ELFProgramHeader64*>(PhysicalAddress + Header.ProgramHeaderOffset);
+}
+
+/**
+ * Function: ELFManager::IsDynamicImage
+ * Description: Checks whether the ELF image type is ET_DYN.
+ * Parameters:
+ *   const ELFHeader& Header - ELF header to inspect.
+ * Returns:
+ *   bool - True if image is dynamic type.
+ */
+bool ELFManager::IsDynamicImage(const ELFHeader& Header) const
+{
+    return Header.Type == ELF_TYPE_DYN;
+}
+
+/**
+ * Function: ELFManager::GetInterpreterPath
+ * Description: Reads PT_INTERP path from an ELF image when present.
+ * Parameters:
+ *   uint64_t PhysicalAddress - Base physical address of ELF image.
+ *   uint64_t ImageSize - ELF image size in bytes.
+ *   const ELFHeader& Header - Parsed ELF header.
+ *   char* InterpreterPathBuffer - Output buffer for interpreter path.
+ *   uint64_t InterpreterPathBufferSize - Size of output buffer in bytes.
+ * Returns:
+ *   bool - True when PT_INTERP exists and path was copied.
+ */
+bool ELFManager::GetInterpreterPath(uint64_t PhysicalAddress, uint64_t ImageSize, const ELFHeader& Header, char* InterpreterPathBuffer, uint64_t InterpreterPathBufferSize) const
+{
+    if (PhysicalAddress == 0 || InterpreterPathBuffer == nullptr || InterpreterPathBufferSize == 0)
+    {
+        return false;
+    }
+
+    if (!ValidateProgramHeaderTable(Header, ImageSize))
+    {
+        return false;
+    }
+
+    const ELFProgramHeader64* ProgramHeaders = GetProgramHeaderTable(PhysicalAddress, Header);
+    if (ProgramHeaders == nullptr)
+    {
+        return false;
+    }
+
+    for (uint16_t ProgramHeaderIndex = 0; ProgramHeaderIndex < Header.ProgramHeaderEntryCount; ++ProgramHeaderIndex)
+    {
+        const ELFProgramHeader64& ProgramHeader = ProgramHeaders[ProgramHeaderIndex];
+        if (ProgramHeader.Type != ELF_PROGRAM_HEADER_INTERP || ProgramHeader.FileSize == 0)
+        {
+            continue;
+        }
+
+        if (!RangeFitsInImage(ProgramHeader.Offset, ProgramHeader.FileSize, ImageSize))
+        {
+            return false;
+        }
+
+        if (ProgramHeader.FileSize > InterpreterPathBufferSize)
+        {
+            return false;
+        }
+
+        const char* InterpreterPath = reinterpret_cast<const char*>(PhysicalAddress + ProgramHeader.Offset);
+
+        bool IsNullTerminated = false;
+        for (uint64_t Index = 0; Index < ProgramHeader.FileSize; ++Index)
+        {
+            if (InterpreterPath[Index] == '\0')
+            {
+                IsNullTerminated = true;
+                break;
+            }
+        }
+
+        if (!IsNullTerminated)
+        {
+            return false;
+        }
+
+        for (uint64_t Index = 0; Index < ProgramHeader.FileSize; ++Index)
+        {
+            InterpreterPathBuffer[Index] = InterpreterPath[Index];
+        }
+        InterpreterPathBuffer[InterpreterPathBufferSize - 1] = '\0';
+        return true;
+    }
+
+    return false;
 }
 
 /**
