@@ -86,11 +86,15 @@ TEST1_BIN = $(ROOTFS_DIR)/Test1
 TEST2_SRC = initramfs/Test2.c
 TEST2_BIN = $(ROOTFS_DIR)/Test2
 ESP_SIZE = 64
-ROOTFS_SIZE = 256
+ROOTFS_SIZE ?= 256
+ROOTFS_HEADROOM_MB ?= 256
 EXT2_SOURCE_ROOTFS = RootFileSystem/alpine-rootfs
-IMG_SECTORS = $(shell echo $$(( ($(ESP_SIZE) + $(ROOTFS_SIZE) + 2) * 2048 )))
+ROOTFS_SOURCE_SIZE_MB = $(shell if [ -d "$(EXT2_SOURCE_ROOTFS)" ]; then du -sm "$(EXT2_SOURCE_ROOTFS)" | awk '{print $$1}'; else echo 0; fi)
+ROOTFS_REQUIRED_SIZE_MB = $(shell echo $$(( $(ROOTFS_SOURCE_SIZE_MB) + $(ROOTFS_HEADROOM_MB) )))
+ROOTFS_EFFECTIVE_SIZE_MB = $(shell req=$(ROOTFS_REQUIRED_SIZE_MB); min=$(ROOTFS_SIZE); if [ $$req -gt $$min ]; then echo $$req; else echo $$min; fi)
+IMG_SECTORS = $(shell echo $$(( ($(ESP_SIZE) + $(ROOTFS_EFFECTIVE_SIZE_MB) + 2) * 2048 )))
 ESP_SECTORS = $(shell echo $$(( $(ESP_SIZE) * 2048 )))
-ROOTFS_SECTORS = $(shell echo $$(( $(ROOTFS_SIZE) * 2048 )))
+ROOTFS_SECTORS = $(shell echo $$(( $(ROOTFS_EFFECTIVE_SIZE_MB) * 2048 )))
 GDB = gdb
 QEMU_GDB_PORT = 1234
 QEMU_DEBUG_SERIAL_LOG = $(BUILD)qemu-debug-serial.log
@@ -99,7 +103,7 @@ QEMU_FW = \
 	-drive if=pflash,format=raw,readonly=on,file=Firmware/code.fd \
 	-drive if=pflash,format=raw,file=Firmware/TwistedOS_VARS.fd
 QEMU_COMMON = \
-	-m 512M \
+	-m 2048M \
 	$(QEMU_FW) \
 	-serial stdio
 QEMU_FULL = \
@@ -197,6 +201,7 @@ $(INITRAMFS): $(INIT_BIN) $(TEST1_BIN) $(TEST2_BIN) busybox-rootfs $(ROOTFS_BUSY
 
 $(IMG): $(EFI) $(KERNEL) $(INITRAMFS)
 	rm -f $@
+	@echo "Using ROOTFS size $(ROOTFS_EFFECTIVE_SIZE_MB) MiB (source: $(ROOTFS_SOURCE_SIZE_MB) MiB, headroom: $(ROOTFS_HEADROOM_MB) MiB, minimum: $(ROOTFS_SIZE) MiB)"
 	dd if=/dev/zero of=$@ bs=512 count=$(IMG_SECTORS) status=none
 	parted $@ --script mklabel gpt
 	parted $@ --script mkpart ESP fat32 1MiB $$((1 + $(ESP_SIZE)))MiB
@@ -215,8 +220,15 @@ $(IMG): $(EFI) $(KERNEL) $(INITRAMFS)
 	mcopy -i $$ESP $(BIN)$(KERNEL) ::/kernel.bin; \
 	mcopy -i $$ESP $(BIN)$(INITRAMFS) ::/initramfs.cpio; \
 	dd if=/dev/zero of=$$ROOTFS bs=512 count=$(ROOTFS_SECTORS) status=none; \
-	mkfs.ext2 -F $$ROOTFS >/dev/null; \
-	bash ./scripts/populate-ext2-rootfs.sh $$ROOTFS $(EXT2_SOURCE_ROOTFS); \
+	if command -v mke2fs >/dev/null 2>&1 && mke2fs -F -t ext2 -m 0 -d $(EXT2_SOURCE_ROOTFS) $$ROOTFS >/dev/null 2>&1; then \
+		echo "Populated EXT2 rootfs via mke2fs -d"; \
+	elif mkfs.ext2 -F -m 0 -d $(EXT2_SOURCE_ROOTFS) $$ROOTFS >/dev/null 2>&1; then \
+		echo "Populated EXT2 rootfs via mkfs.ext2 -d"; \
+	else \
+		echo "mke2fs/mkfs.ext2 -d unavailable, falling back to debugfs population"; \
+		mkfs.ext2 -F -m 0 $$ROOTFS >/dev/null; \
+		bash ./scripts/populate-ext2-rootfs.sh $$ROOTFS $(EXT2_SOURCE_ROOTFS); \
+	fi; \
 	dd if=$$ESP of=$@ bs=512 seek=$$START conv=notrunc status=none; \
 	dd if=$$ROOTFS of=$@ bs=512 seek=$$ROOTFS_START conv=notrunc status=none; \
 	rm -f $$ESP $$ROOTFS
