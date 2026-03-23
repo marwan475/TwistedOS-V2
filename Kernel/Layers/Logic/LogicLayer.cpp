@@ -34,6 +34,7 @@ constexpr uint16_t ELF_TYPE_DYN              = 3;
 constexpr uint64_t ELF_INTERPRETER_PATH_MAX  = 256;
 constexpr uint64_t ELF_ET_DYN_MAIN_LOAD_BIAS = USER_PROCESS_VIRTUAL_BASE;
 constexpr uint64_t ELF_INTERPRETER_LOAD_BIAS = 0x0000000100000000ULL;
+constexpr uint8_t  MAX_SCRIPT_INTERPRETER_DEPTH = 4;
 
 bool TranslateELFFileOffsetToVirtualAddress(const ELFProgramHeader64* ProgramHeaders, uint16_t ProgramHeaderCount, uint64_t FileOffset, uint64_t* VirtualAddressOut)
 {
@@ -1545,9 +1546,14 @@ uint8_t LogicLayer::CreateKernelProcess(void (*EntryPoint)())
     return Id;
 }
 
-uint8_t LogicLayer::ChangeProcessExecution(uint8_t Id, const char* FilePath, const char* const* Argv, uint64_t Argc, const char* const* Envp, uint64_t Envc)
+uint8_t LogicLayer::ChangeProcessExecution(uint8_t Id, const char* FilePath, const char* const* Argv, uint64_t Argc, const char* const* Envp, uint64_t Envc, uint8_t ScriptDepth)
 {
     if (PM == nullptr || VFS == nullptr || Resource == nullptr || FilePath == nullptr)
+    {
+        return PROCESS_ID_INVALID;
+    }
+
+    if (ScriptDepth > MAX_SCRIPT_INTERPRETER_DEPTH)
     {
         return PROCESS_ID_INVALID;
     }
@@ -1577,6 +1583,109 @@ uint8_t LogicLayer::ChangeProcessExecution(uint8_t Id, const char* FilePath, con
     if (Entry->inode->NodeSize == 0 || !EnsureLazyLoadedINodeData(Resource, Entry->inode))
     {
         return PROCESS_ID_INVALID;
+    }
+
+    const char* FileData = reinterpret_cast<const char*>(Entry->inode->NodeData);
+    if (FileData != nullptr && Entry->inode->NodeSize >= 2 && FileData[0] == '#' && FileData[1] == '!')
+    {
+        uint64_t Cursor = 2;
+        while (Cursor < Entry->inode->NodeSize && (FileData[Cursor] == ' ' || FileData[Cursor] == '\t'))
+        {
+            ++Cursor;
+        }
+
+        uint64_t InterpreterStart = Cursor;
+        while (Cursor < Entry->inode->NodeSize && FileData[Cursor] != '\0' && FileData[Cursor] != '\n' && FileData[Cursor] != '\r' && FileData[Cursor] != ' '
+               && FileData[Cursor] != '\t')
+        {
+            ++Cursor;
+        }
+
+        uint64_t InterpreterLength = Cursor - InterpreterStart;
+        if (InterpreterLength == 0)
+        {
+            return PROCESS_ID_INVALID;
+        }
+
+        char* InterpreterPath = reinterpret_cast<char*>(Resource->kmalloc(InterpreterLength + 1));
+        if (InterpreterPath == nullptr)
+        {
+            return PROCESS_ID_INVALID;
+        }
+
+        memcpy(InterpreterPath, FileData + InterpreterStart, static_cast<size_t>(InterpreterLength));
+        InterpreterPath[InterpreterLength] = '\0';
+
+        while (Cursor < Entry->inode->NodeSize && (FileData[Cursor] == ' ' || FileData[Cursor] == '\t'))
+        {
+            ++Cursor;
+        }
+
+        uint64_t InterpreterArgStart = Cursor;
+        while (Cursor < Entry->inode->NodeSize && FileData[Cursor] != '\0' && FileData[Cursor] != '\n' && FileData[Cursor] != '\r')
+        {
+            ++Cursor;
+        }
+
+        while (Cursor > InterpreterArgStart && (FileData[Cursor - 1] == ' ' || FileData[Cursor - 1] == '\t'))
+        {
+            --Cursor;
+        }
+
+        uint64_t InterpreterArgLength = Cursor - InterpreterArgStart;
+        char*    InterpreterArg       = nullptr;
+        if (InterpreterArgLength != 0)
+        {
+            InterpreterArg = reinterpret_cast<char*>(Resource->kmalloc(InterpreterArgLength + 1));
+            if (InterpreterArg == nullptr)
+            {
+                Resource->kfree(InterpreterPath);
+                return PROCESS_ID_INVALID;
+            }
+
+            memcpy(InterpreterArg, FileData + InterpreterArgStart, static_cast<size_t>(InterpreterArgLength));
+            InterpreterArg[InterpreterArgLength] = '\0';
+        }
+
+        uint64_t ForwardedArgc = (Argc > 0) ? (Argc - 1) : 0;
+        uint64_t NewArgc       = 2 + ForwardedArgc + ((InterpreterArg != nullptr) ? 1 : 0);
+
+        const char** NewArgv = reinterpret_cast<const char**>(Resource->kmalloc((NewArgc + 1) * sizeof(const char*)));
+        if (NewArgv == nullptr)
+        {
+            if (InterpreterArg != nullptr)
+            {
+                Resource->kfree(InterpreterArg);
+            }
+
+            Resource->kfree(InterpreterPath);
+            return PROCESS_ID_INVALID;
+        }
+
+        uint64_t NewArgIndex = 0;
+        NewArgv[NewArgIndex++] = InterpreterPath;
+        if (InterpreterArg != nullptr)
+        {
+            NewArgv[NewArgIndex++] = InterpreterArg;
+        }
+
+        NewArgv[NewArgIndex++] = FilePath;
+        for (uint64_t ArgIndex = 1; ArgIndex < Argc; ++ArgIndex)
+        {
+            NewArgv[NewArgIndex++] = Argv[ArgIndex];
+        }
+        NewArgv[NewArgIndex] = nullptr;
+
+        uint8_t Result = ChangeProcessExecution(Id, InterpreterPath, NewArgv, NewArgc, Envp, Envc, static_cast<uint8_t>(ScriptDepth + 1));
+
+        Resource->kfree(NewArgv);
+        if (InterpreterArg != nullptr)
+        {
+            Resource->kfree(InterpreterArg);
+        }
+
+        Resource->kfree(InterpreterPath);
+        return Result;
     }
 
     PhysicalMemoryManager* PMM = Resource->GetPMM();

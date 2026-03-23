@@ -879,6 +879,35 @@ bool MappingOverlapsProcessLayout(const Process* CurrentProcess, uint64_t Mappin
     return false;
 }
 
+bool MappingOverlapsReservedProcessLayout(const Process* CurrentProcess, uint64_t MappingStart, uint64_t MappingLength)
+{
+    if (CurrentProcess == nullptr || CurrentProcess->AddressSpace == nullptr)
+    {
+        return true;
+    }
+
+    const VirtualAddressSpace* AddressSpace = CurrentProcess->AddressSpace;
+
+    if (CurrentProcess->FileType == FILE_TYPE_ELF)
+    {
+        const VirtualAddressSpaceELF* ELFAddressSpace = static_cast<const VirtualAddressSpaceELF*>(AddressSpace);
+        const ELFMemoryRegion*        Regions         = ELFAddressSpace->GetMemoryRegions();
+        size_t                        RegionCount     = ELFAddressSpace->GetMemoryRegionCount();
+
+        for (size_t RegionIndex = 0; RegionIndex < RegionCount; ++RegionIndex)
+        {
+            if (RangesOverlap(MappingStart, MappingLength, Regions[RegionIndex].VirtualAddress, Regions[RegionIndex].Size))
+            {
+                return true;
+            }
+        }
+    }
+
+    return RangesOverlap(MappingStart, MappingLength, AddressSpace->GetCodeVirtualAddressStart(), AddressSpace->GetCodeSize())
+        || RangesOverlap(MappingStart, MappingLength, AddressSpace->GetHeapVirtualAddressStart(), AddressSpace->GetHeapSize())
+        || RangesOverlap(MappingStart, MappingLength, AddressSpace->GetStackVirtualAddressStart(), AddressSpace->GetStackSize());
+}
+
 int64_t FindAvailableMappingSlot(const Process* CurrentProcess)
 {
     if (CurrentProcess == nullptr)
@@ -5153,9 +5182,15 @@ int64_t TranslationLayer::HandleMmapSystemCall(void* Address, uint64_t Length, i
         }
 
         MappingStart = RequestedAddress;
-        if (MappingOverlapsProcessLayout(CurrentProcess, MappingStart, MappingLength))
+        if (MappingOverlapsReservedProcessLayout(CurrentProcess, MappingStart, MappingLength))
         {
             return LINUX_ERR_EINVAL;
+        }
+
+        int64_t UnmapResult = HandleMunmapSystemCall(reinterpret_cast<void*>(MappingStart), MappingLength);
+        if (UnmapResult < 0)
+        {
+            return UnmapResult;
         }
     }
     else
@@ -5238,6 +5273,90 @@ int64_t TranslationLayer::HandleMmapSystemCall(void* Address, uint64_t Length, i
 
     uint64_t FileMappedAddress = 0;
     int64_t  MappingResult     = OpenFile->Node->FileOps->MemoryMap(OpenFile, Length, static_cast<uint64_t>(Offset), CurrentProcess->AddressSpace, &FileMappedAddress);
+    if (MappingResult == LINUX_ERR_ENOSYS)
+    {
+        if (ActiveDispatcher == nullptr || ActiveDispatcher->GetResourceLayer() == nullptr || ActiveDispatcher->GetResourceLayer()->GetPMM() == nullptr)
+        {
+            return LINUX_ERR_EFAULT;
+        }
+
+        if (OpenFile->Node->FileOps->Read == nullptr)
+        {
+            return LINUX_ERR_ENOSYS;
+        }
+
+        PhysicalMemoryManager* PMM                = ActiveDispatcher->GetResourceLayer()->GetPMM();
+        uint64_t               PageCount          = MappingLength / PAGE_SIZE;
+        void*                  PhysicalAllocation = PMM->AllocatePagesFromDescriptor(PageCount);
+        if (PhysicalAllocation == nullptr)
+        {
+            return LINUX_ERR_ENOMEM;
+        }
+
+        kmemset(PhysicalAllocation, 0, static_cast<size_t>(PageCount * PAGE_SIZE));
+
+        uint64_t OriginalOffset = OpenFile->CurrentOffset;
+        OpenFile->CurrentOffset = static_cast<uint64_t>(Offset);
+
+        uint8_t* DestinationBuffer = reinterpret_cast<uint8_t*>(PhysicalAllocation);
+        uint64_t RemainingBytes    = Length;
+        while (RemainingBytes > 0)
+        {
+            int64_t ReadResult = OpenFile->Node->FileOps->Read(OpenFile, DestinationBuffer, RemainingBytes);
+            if (ReadResult < 0)
+            {
+                OpenFile->CurrentOffset = OriginalOffset;
+                PMM->FreePagesFromDescriptor(PhysicalAllocation, PageCount);
+                return ReadResult;
+            }
+
+            if (ReadResult == 0)
+            {
+                break;
+            }
+
+            DestinationBuffer += static_cast<uint64_t>(ReadResult);
+            RemainingBytes -= static_cast<uint64_t>(ReadResult);
+        }
+
+        OpenFile->CurrentOffset = OriginalOffset;
+
+        uint64_t PageMapL4TableAddr = CurrentProcess->AddressSpace->GetPageMapL4TableAddr();
+        if (PageMapL4TableAddr == 0)
+        {
+            PMM->FreePagesFromDescriptor(PhysicalAllocation, PageCount);
+            return LINUX_ERR_EFAULT;
+        }
+
+        VirtualMemoryManager UserVMM(PageMapL4TableAddr, *PMM);
+        bool                 Writable = (Protection & LINUX_PROT_WRITE) != 0;
+
+        for (uint64_t PageIndex = 0; PageIndex < PageCount; ++PageIndex)
+        {
+            uint64_t PhysicalPage = reinterpret_cast<uint64_t>(PhysicalAllocation) + (PageIndex * PAGE_SIZE);
+            uint64_t VirtualPage  = MappingStart + (PageIndex * PAGE_SIZE);
+            if (!UserVMM.MapPage(PhysicalPage, VirtualPage, PageMappingFlags(true, Writable)))
+            {
+                PMM->FreePagesFromDescriptor(PhysicalAllocation, PageCount);
+                return LINUX_ERR_EFAULT;
+            }
+        }
+
+        if (!RegisterProcessMapping(CurrentProcess, MappingStart, MappingLength, reinterpret_cast<uint64_t>(PhysicalAllocation), true))
+        {
+            PMM->FreePagesFromDescriptor(PhysicalAllocation, PageCount);
+            return LINUX_ERR_ENOMEM;
+        }
+
+        uint64_t ActivePageTable = ActiveDispatcher->GetResourceLayer()->ReadCurrentPageTable();
+        if (ActivePageTable == PageMapL4TableAddr)
+        {
+            ActiveDispatcher->GetResourceLayer()->LoadPageTable(ActivePageTable);
+        }
+
+        return static_cast<int64_t>(MappingStart);
+    }
+
     if (MappingResult < 0)
     {
         return MappingResult;
