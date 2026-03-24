@@ -59,6 +59,8 @@ public:
     int64_t HandleGetppidSystemCall();
     int64_t HandleKillSystemCall(int64_t Pid, int64_t Signal);
     int64_t HandleSetpgidSystemCall(int64_t Pid, int64_t ProcessGroupId);
+    int64_t HandleGetprioritySystemCall(int64_t Which, int64_t Who);
+    int64_t HandleSetprioritySystemCall(int64_t Which, int64_t Who, int64_t NiceValue);
     int64_t HandleGetpgrpSystemCall();
     int64_t HandleSetsidSystemCall();
     int64_t HandleGetpgidSystemCall(int64_t Pid);
@@ -80,6 +82,7 @@ public:
     int64_t HandleMunmapSystemCall(void* Address, uint64_t Length);
     int64_t HandleRtSigactionSystemCall(int64_t Signal, const void* Action, void* OldAction, uint64_t SigsetSize);
     int64_t HandleRtSigprocmaskSystemCall(int64_t How, const void* Set, void* OldSet, uint64_t SigsetSize);
+    int64_t HandleRtSigsuspendSystemCall(const void* Set, uint64_t SigsetSize);
     int64_t HandleArchPrctlSystemCall(uint64_t Code, uint64_t Address);
     int64_t HandleSetTidAddressSystemCall(int* TidPointer);
 

@@ -177,11 +177,20 @@ int64_t TranslationLayer::HandlePosixSystemCallNumber(uint64_t SystemCallNumber,
         case 132: // utime
             return HandleUtimeSystemCall(reinterpret_cast<const char*>(Arg1), reinterpret_cast<const void*>(Arg2));
             break;
+        case 140: // getpriority
+            return HandleGetprioritySystemCall(static_cast<int64_t>(Arg1), static_cast<int64_t>(Arg2));
+            break;
+        case 141: // setpriority
+            return HandleSetprioritySystemCall(static_cast<int64_t>(Arg1), static_cast<int64_t>(Arg2), static_cast<int64_t>(Arg3));
+            break;
         case 121: // getpgid
             return HandleGetpgidSystemCall(static_cast<int64_t>(Arg1));
             break;
         case 124: // getsid
             return HandleGetsidSystemCall(static_cast<int64_t>(Arg1));
+            break;
+        case 130: // rt_sigsuspend
+            return HandleRtSigsuspendSystemCall(reinterpret_cast<const void*>(Arg1), Arg2);
             break;
         case 158: // arch_prctl
             return HandleArchPrctlSystemCall(Arg1, Arg2);

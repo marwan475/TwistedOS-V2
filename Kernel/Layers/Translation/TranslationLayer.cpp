@@ -4406,6 +4406,25 @@ int64_t TranslationLayer::HandleSetpgidSystemCall(int64_t Pid, int64_t ProcessGr
     return 0;
 }
 
+int64_t TranslationLayer::HandleGetprioritySystemCall(int64_t Which, int64_t Who)
+{
+    (void) Which;
+    (void) Who;
+
+    constexpr int64_t LINUX_DEFAULT_KERNEL_PRIORITY = 20;
+    return LINUX_DEFAULT_KERNEL_PRIORITY;
+}
+
+int64_t TranslationLayer::HandleSetprioritySystemCall(int64_t Which, int64_t Who, int64_t NiceValue)
+{
+    (void) Which;
+    (void) Who;
+    (void) NiceValue;
+
+    // Scheduler priority/nice control is currently unsupported;
+    return 0;
+}
+
 int64_t TranslationLayer::HandleGetpgrpSystemCall()
 {
     if (Logic == nullptr)
@@ -6055,6 +6074,47 @@ int64_t TranslationLayer::HandleRtSigprocmaskSystemCall(int64_t How, const void*
     }
 
     return 0;
+}
+
+int64_t TranslationLayer::HandleRtSigsuspendSystemCall(const void* Set, uint64_t SigsetSize)
+{
+    if (Logic == nullptr || Set == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    ProcessManager* PM = Logic->GetProcessManager();
+    if (PM == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    Process* CurrentProcess = PM->GetRunningProcess();
+    if (CurrentProcess == nullptr || CurrentProcess->Level != PROCESS_LEVEL_USER)
+    {
+        return LINUX_ERR_EINVAL;
+    }
+
+    if (SigsetSize != LINUX_RT_SIGSET_SIZE)
+    {
+        return LINUX_ERR_EINVAL;
+    }
+
+    uint64_t TemporaryMask = 0;
+    if (!Logic->CopyFromUserToKernel(Set, &TemporaryMask, sizeof(TemporaryMask)))
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    TemporaryMask &= ~LINUX_UNBLOCKABLE_SIGNAL_MASK;
+
+    uint64_t PreviousMask             = CurrentProcess->BlockedSignalMask;
+    CurrentProcess->BlockedSignalMask = TemporaryMask;
+
+    Logic->BlockProcess(CurrentProcess->Id);
+
+    CurrentProcess->BlockedSignalMask = PreviousMask;
+    return LINUX_ERR_EINTR;
 }
 
 int64_t TranslationLayer::HandleSetTidAddressSystemCall(int* TidPointer)
