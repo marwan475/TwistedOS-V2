@@ -68,12 +68,35 @@ uint64_t ComputeUnixAddressPathLength(const char* Path, uint64_t MaxLength, bool
 	return Length;
 }
 
-bool AreUnixPathsEqual(const char* LeftPath, uint64_t LeftPathLength, const char* RightPath, uint64_t RightPathLength)
+uint64_t GetComparableUnixPathLength(const char* Path, uint64_t PathLength, bool IsAbstract)
+{
+	if (Path == nullptr)
+	{
+		return 0;
+	}
+
+	if (!IsAbstract)
+	{
+		return PathLength;
+	}
+
+	while (PathLength > 0 && Path[PathLength - 1] == '\0')
+	{
+		--PathLength;
+	}
+
+	return PathLength;
+}
+
+bool AreUnixPathsEqual(const char* LeftPath, uint64_t LeftPathLength, const char* RightPath, uint64_t RightPathLength, bool IsAbstract)
 {
 	if (LeftPath == nullptr || RightPath == nullptr)
 	{
 		return false;
 	}
+
+	LeftPathLength  = GetComparableUnixPathLength(LeftPath, LeftPathLength, IsAbstract);
+	RightPathLength = GetComparableUnixPathLength(RightPath, RightPathLength, IsAbstract);
 
 	if (LeftPathLength != RightPathLength)
 	{
@@ -327,6 +350,10 @@ void InterProcessComunicationManager::DestroySocket(Socket* SocketEntry)
 	{
 		delete reinterpret_cast<NetworkSocket*>(SocketEntry->Implementation);
 	}
+	else if (SocketEntry->Domain == LINUX_AF_NETLINK)
+	{
+		delete reinterpret_cast<NetlinkSocket*>(SocketEntry->Implementation);
+	}
 
 	delete SocketEntry;
 }
@@ -356,7 +383,7 @@ Socket* InterProcessComunicationManager::CreateSocket(int64_t Domain, int64_t Ty
 		return nullptr;
 	}
 
-	if (Domain != LINUX_AF_UNIX && Domain != LINUX_AF_INET)
+	if (Domain != LINUX_AF_UNIX && Domain != LINUX_AF_INET && Domain != LINUX_AF_NETLINK)
 	{
 		if (ErrorCode != nullptr)
 		{
@@ -420,7 +447,7 @@ Socket* InterProcessComunicationManager::CreateSocket(int64_t Domain, int64_t Ty
 		SocketImplementation->IsShutdownWrite = false;
 		NewSocket->Implementation  = SocketImplementation;
 	}
-	else
+	else if (Domain == LINUX_AF_INET)
 	{
 		NetworkSocket* SocketImplementation = new NetworkSocket;
 		if (SocketImplementation == nullptr)
@@ -443,6 +470,38 @@ Socket* InterProcessComunicationManager::CreateSocket(int64_t Domain, int64_t Ty
 		SocketImplementation->IsShutdownRead = false;
 		SocketImplementation->IsShutdownWrite = false;
 		NewSocket->Implementation        = SocketImplementation;
+	}
+	else
+	{
+		if (SocketType != LINUX_SOCK_DGRAM && SocketType != LINUX_SOCK_RAW)
+		{
+			delete NewSocket;
+			if (ErrorCode != nullptr)
+			{
+				*ErrorCode = LINUX_SOCKET_ERR_ESOCKTNOSUPPORT;
+			}
+			return nullptr;
+		}
+
+		NetlinkSocket* SocketImplementation = new NetlinkSocket;
+		if (SocketImplementation == nullptr)
+		{
+			delete NewSocket;
+			if (ErrorCode != nullptr)
+			{
+				*ErrorCode = LINUX_SOCKET_ERR_ENOMEM;
+			}
+			return nullptr;
+		}
+
+		SocketImplementation->LocalPid = 0;
+		SocketImplementation->LocalGroups = 0;
+		SocketImplementation->RemotePid = 0;
+		SocketImplementation->RemoteGroups = 0;
+		SocketImplementation->IsBound = false;
+		SocketImplementation->IsShutdownRead = false;
+		SocketImplementation->IsShutdownWrite = false;
+		NewSocket->Implementation = SocketImplementation;
 	}
 
 	SocketList[SocketCount++] = NewSocket;
@@ -575,7 +634,7 @@ int64_t InterProcessComunicationManager::BindSocket(Process* Owner, int64_t File
 				continue;
 			}
 
-			if (AreUnixPathsEqual(CandidateUnix->Path, CandidateUnix->PathLength, UnixAddress->Path, PathLength))
+			if (AreUnixPathsEqual(CandidateUnix->Path, CandidateUnix->PathLength, UnixAddress->Path, PathLength, IsAbstractAddress))
 			{
 				return LINUX_SOCKET_ERR_EADDRINUSE;
 			}
@@ -609,6 +668,47 @@ int64_t InterProcessComunicationManager::BindSocket(Process* Owner, int64_t File
 		SocketImplementation->PathLength = PathLength;
 		SocketImplementation->IsAbstract = IsAbstractAddress;
 		SocketImplementation->IsBound    = true;
+		return 0;
+	}
+
+	if (SocketEntry->Domain == LINUX_AF_NETLINK)
+	{
+		if (SocketAddressLength < sizeof(LinuxSockAddrNl))
+		{
+			return LINUX_SOCKET_ERR_EINVAL;
+		}
+
+		const LinuxSockAddrNl* NetlinkAddress = reinterpret_cast<const LinuxSockAddrNl*>(SocketAddress);
+
+		for (uint64_t SocketIndex = 0; SocketIndex < SocketCount; ++SocketIndex)
+		{
+			Socket* CandidateEntry = SocketList[SocketIndex];
+			if (CandidateEntry == nullptr || CandidateEntry == SocketEntry || CandidateEntry->Domain != LINUX_AF_NETLINK)
+			{
+				continue;
+			}
+
+			NetlinkSocket* CandidateNetlink = reinterpret_cast<NetlinkSocket*>(CandidateEntry->Implementation);
+			if (CandidateNetlink == nullptr || !CandidateNetlink->IsBound)
+			{
+				continue;
+			}
+
+			if (NetlinkAddress->Pid != 0 && CandidateNetlink->LocalPid == NetlinkAddress->Pid)
+			{
+				return LINUX_SOCKET_ERR_EADDRINUSE;
+			}
+		}
+
+		NetlinkSocket* SocketImplementation = reinterpret_cast<NetlinkSocket*>(SocketEntry->Implementation);
+		if (SocketImplementation == nullptr)
+		{
+			return LINUX_SOCKET_ERR_EINVAL;
+		}
+
+		SocketImplementation->LocalPid = NetlinkAddress->Pid;
+		SocketImplementation->LocalGroups = NetlinkAddress->Groups;
+		SocketImplementation->IsBound = true;
 		return 0;
 	}
 
@@ -764,6 +864,11 @@ int64_t InterProcessComunicationManager::ListenSocket(Process* Owner, int64_t Fi
 		return 0;
 	}
 
+	if (SocketEntry->Domain == LINUX_AF_NETLINK)
+	{
+		return LINUX_SOCKET_ERR_EOPNOTSUPP;
+	}
+
 	return LINUX_SOCKET_ERR_EAFNOSUPPORT;
 }
 
@@ -800,7 +905,7 @@ int64_t InterProcessComunicationManager::ConnectSocket(Process* Owner, int64_t F
 		return LINUX_SOCKET_ERR_ENOTSOCK;
 	}
 
-	if (ClientSocket->Type != LINUX_SOCK_STREAM && ClientSocket->Type != LINUX_SOCK_SEQPACKET)
+	if (ClientSocket->Domain != LINUX_AF_NETLINK && ClientSocket->Type != LINUX_SOCK_STREAM && ClientSocket->Type != LINUX_SOCK_SEQPACKET)
 	{
 		return LINUX_SOCKET_ERR_EOPNOTSUPP;
 	}
@@ -809,6 +914,25 @@ int64_t InterProcessComunicationManager::ConnectSocket(Process* Owner, int64_t F
 	if (AddressFamily != static_cast<uint16_t>(ClientSocket->Domain))
 	{
 		return LINUX_SOCKET_ERR_EAFNOSUPPORT;
+	}
+
+	if (ClientSocket->Domain == LINUX_AF_NETLINK)
+	{
+		if (SocketAddressLength < sizeof(LinuxSockAddrNl))
+		{
+			return LINUX_SOCKET_ERR_EINVAL;
+		}
+
+		NetlinkSocket* ClientNetlink = reinterpret_cast<NetlinkSocket*>(ClientSocket->Implementation);
+		if (ClientNetlink == nullptr)
+		{
+			return LINUX_SOCKET_ERR_EINVAL;
+		}
+
+		const LinuxSockAddrNl* NetlinkAddress = reinterpret_cast<const LinuxSockAddrNl*>(SocketAddress);
+		ClientNetlink->RemotePid = NetlinkAddress->Pid;
+		ClientNetlink->RemoteGroups = NetlinkAddress->Groups;
+		return 0;
 	}
 
 	if (ClientSocket->Domain != LINUX_AF_UNIX)
@@ -867,7 +991,7 @@ int64_t InterProcessComunicationManager::ConnectSocket(Process* Owner, int64_t F
 			continue;
 		}
 
-		if (AreUnixPathsEqual(CandidateUnix->Path, CandidateUnix->PathLength, UnixAddress->Path, PathLength))
+		if (AreUnixPathsEqual(CandidateUnix->Path, CandidateUnix->PathLength, UnixAddress->Path, PathLength, IsAbstractAddress))
 		{
 			ListeningSocket = Candidate;
 			ListeningUnix = CandidateUnix;
@@ -1081,6 +1205,27 @@ int64_t InterProcessComunicationManager::ShutdownSocket(Process* Owner, int64_t 
 		if ((SocketEntry->Type == LINUX_SOCK_STREAM || SocketEntry->Type == LINUX_SOCK_SEQPACKET) && !IsConnected)
 		{
 			return LINUX_SOCKET_ERR_ENOTCONN;
+		}
+
+		if (How == LINUX_SHUT_RD || How == LINUX_SHUT_RDWR)
+		{
+			SocketImplementation->IsShutdownRead = true;
+		}
+
+		if (How == LINUX_SHUT_WR || How == LINUX_SHUT_RDWR)
+		{
+			SocketImplementation->IsShutdownWrite = true;
+		}
+
+		return 0;
+	}
+
+	if (SocketEntry->Domain == LINUX_AF_NETLINK)
+	{
+		NetlinkSocket* SocketImplementation = reinterpret_cast<NetlinkSocket*>(SocketEntry->Implementation);
+		if (SocketImplementation == nullptr)
+		{
+			return LINUX_SOCKET_ERR_EINVAL;
 		}
 
 		if (How == LINUX_SHUT_RD || How == LINUX_SHUT_RDWR)

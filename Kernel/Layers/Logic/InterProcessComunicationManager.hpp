@@ -13,7 +13,8 @@
 enum LinuxSocketDomain
 {
     LINUX_AF_UNIX = 1,
-    LINUX_AF_INET = 2
+    LINUX_AF_INET = 2,
+    LINUX_AF_NETLINK = 16
 };
 
 enum LinuxSocketType
@@ -70,6 +71,14 @@ struct LinuxSockAddrUn
     char     Path[108];
 };
 
+struct LinuxSockAddrNl
+{
+    uint16_t Family;
+    uint16_t Pad;
+    uint32_t Pid;
+    uint32_t Groups;
+};
+
 struct NetworkSocket{
     uint32_t LocalIp;
     uint16_t LocalPort;
@@ -78,6 +87,16 @@ struct NetworkSocket{
     bool     IsBound;
     bool     IsListening;
     int32_t  ListenBacklog;
+    bool     IsShutdownRead;
+    bool     IsShutdownWrite;
+};
+
+struct NetlinkSocket{
+    uint32_t LocalPid;
+    uint32_t LocalGroups;
+    uint32_t RemotePid;
+    uint32_t RemoteGroups;
+    bool     IsBound;
     bool     IsShutdownRead;
     bool     IsShutdownWrite;
 };

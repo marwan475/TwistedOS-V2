@@ -35,6 +35,8 @@ public:
     int64_t HandleShutdownSystemCall(uint64_t FileDescriptor, int64_t How);
     int64_t HandleBindSystemCall(uint64_t FileDescriptor, const void* SocketAddress, uint64_t SocketAddressLength);
     int64_t HandleListenSystemCall(uint64_t FileDescriptor, int64_t Backlog);
+    int64_t HandleGetsocknameSystemCall(uint64_t FileDescriptor, void* SocketAddress, void* SocketAddressLength);
+    int64_t HandleSetsockoptSystemCall(uint64_t FileDescriptor, int64_t Level, int64_t OptionName, const void* OptionValue, uint64_t OptionLength);
     int64_t HandleGetsockoptSystemCall(uint64_t FileDescriptor, int64_t Level, int64_t OptionName, void* OptionValue, void* OptionLength);
     int64_t HandleOpenSystemCall(const char* Path, uint64_t Flags);
     int64_t HandleOpenAtSystemCall(int64_t DirectoryFileDescriptor, const char* Path, uint64_t Flags, uint64_t Mode);

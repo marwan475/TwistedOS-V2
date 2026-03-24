@@ -174,8 +174,21 @@ constexpr int64_t LINUX_SOCKET_CALL_NONBLOCK  = static_cast<int64_t>(LINUX_O_NON
 constexpr int64_t LINUX_SOCKET_CALL_CLOEXEC   = static_cast<int64_t>(LINUX_O_CLOEXEC);
 
 constexpr int64_t LINUX_SOL_SOCKET    = 1;
+constexpr int64_t LINUX_SO_REUSEADDR  = 2;
 constexpr int64_t LINUX_SO_TYPE       = 3;
 constexpr int64_t LINUX_SO_ERROR      = 4;
+constexpr int64_t LINUX_SO_BROADCAST  = 6;
+constexpr int64_t LINUX_SO_SNDBUF     = 7;
+constexpr int64_t LINUX_SO_RCVBUF     = 8;
+constexpr int64_t LINUX_SO_KEEPALIVE  = 9;
+constexpr int64_t LINUX_SO_OOBINLINE  = 10;
+constexpr int64_t LINUX_SO_REUSEPORT  = 15;
+constexpr int64_t LINUX_SO_PASSCRED   = 16;
+constexpr int64_t LINUX_SO_RCVLOWAT   = 18;
+constexpr int64_t LINUX_SO_SNDLOWAT   = 19;
+constexpr int64_t LINUX_SO_RCVTIMEO   = 20;
+constexpr int64_t LINUX_SO_SNDTIMEO   = 21;
+constexpr int64_t LINUX_SO_BINDTODEVICE = 25;
 constexpr int64_t LINUX_SO_ACCEPTCONN = 30;
 constexpr int64_t LINUX_SO_PROTOCOL   = 38;
 constexpr int64_t LINUX_SO_DOMAIN     = 39;
@@ -2621,6 +2634,270 @@ int64_t TranslationLayer::HandleListenSystemCall(uint64_t FileDescriptor, int64_
     }
 
     return ListenResult;
+}
+
+int64_t TranslationLayer::HandleGetsocknameSystemCall(uint64_t FileDescriptor, void* SocketAddress, void* SocketAddressLength)
+{
+    if (Logic == nullptr || SocketAddress == nullptr || SocketAddressLength == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    ProcessManager* PM = Logic->GetProcessManager();
+    if (PM == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    Process* CurrentProcess = PM->GetRunningProcess();
+    if (CurrentProcess == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    if (FileDescriptor >= MAX_OPEN_FILES_PER_PROCESS)
+    {
+        return LINUX_ERR_EBADF;
+    }
+
+    File* OpenFile = CurrentProcess->FileTable[FileDescriptor];
+    if (OpenFile == nullptr || OpenFile->Node == nullptr || OpenFile->Node->NodeData == nullptr)
+    {
+        return LINUX_ERR_EBADF;
+    }
+
+    Socket* SocketEntry = reinterpret_cast<Socket*>(OpenFile->Node->NodeData);
+    if (SocketEntry == nullptr)
+    {
+        return LINUX_ERR_ENOTSOCK;
+    }
+
+    uint32_t UserLength = 0;
+    if (!Logic->CopyFromUserToKernel(SocketAddressLength, &UserLength, sizeof(UserLength)))
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    uint8_t  KernelSocketAddress[SYSCALL_MAX_SOCKET_ADDRESS] = {};
+    uint32_t RequiredLength = 0;
+
+    if (SocketEntry->Domain == LINUX_AF_UNIX)
+    {
+        RequiredLength = static_cast<uint32_t>(sizeof(uint16_t));
+        LinuxSockAddrUn* UnixAddress = reinterpret_cast<LinuxSockAddrUn*>(KernelSocketAddress);
+        UnixAddress->Family = static_cast<uint16_t>(LINUX_AF_UNIX);
+
+        UnixSocket* UnixImplementation = reinterpret_cast<UnixSocket*>(SocketEntry->Implementation);
+        if (UnixImplementation != nullptr && UnixImplementation->IsBound && UnixImplementation->Path != nullptr)
+        {
+            uint64_t MaxPathBytes = sizeof(UnixAddress->Path);
+            if (UnixImplementation->IsAbstract)
+            {
+                uint64_t CopyLength = UnixImplementation->PathLength;
+                if (CopyLength > MaxPathBytes)
+                {
+                    CopyLength = MaxPathBytes;
+                }
+
+                for (uint64_t Index = 0; Index < CopyLength; ++Index)
+                {
+                    UnixAddress->Path[Index] = UnixImplementation->Path[Index];
+                }
+
+                RequiredLength = static_cast<uint32_t>(sizeof(uint16_t) + CopyLength);
+            }
+            else
+            {
+                uint64_t CopyLength = UnixImplementation->PathLength;
+                if (MaxPathBytes > 0 && CopyLength > (MaxPathBytes - 1))
+                {
+                    CopyLength = (MaxPathBytes - 1);
+                }
+
+                for (uint64_t Index = 0; Index < CopyLength; ++Index)
+                {
+                    UnixAddress->Path[Index] = UnixImplementation->Path[Index];
+                }
+
+                if (MaxPathBytes > 0)
+                {
+                    UnixAddress->Path[CopyLength] = '\0';
+                    RequiredLength = static_cast<uint32_t>(sizeof(uint16_t) + CopyLength + 1);
+                }
+            }
+        }
+    }
+    else if (SocketEntry->Domain == LINUX_AF_INET)
+    {
+        LinuxSockAddrIn* InternetAddress = reinterpret_cast<LinuxSockAddrIn*>(KernelSocketAddress);
+        InternetAddress->Family = static_cast<uint16_t>(LINUX_AF_INET);
+        InternetAddress->Port   = 0;
+        InternetAddress->Address = 0;
+        for (size_t Index = 0; Index < sizeof(InternetAddress->Zero); ++Index)
+        {
+            InternetAddress->Zero[Index] = 0;
+        }
+
+        NetworkSocket* NetworkImplementation = reinterpret_cast<NetworkSocket*>(SocketEntry->Implementation);
+        if (NetworkImplementation != nullptr)
+        {
+            InternetAddress->Port    = NetworkImplementation->LocalPort;
+            InternetAddress->Address = NetworkImplementation->LocalIp;
+        }
+
+        RequiredLength = static_cast<uint32_t>(sizeof(LinuxSockAddrIn));
+    }
+    else if (SocketEntry->Domain == LINUX_AF_NETLINK)
+    {
+        LinuxSockAddrNl* NetlinkAddress = reinterpret_cast<LinuxSockAddrNl*>(KernelSocketAddress);
+        NetlinkAddress->Family = static_cast<uint16_t>(LINUX_AF_NETLINK);
+        NetlinkAddress->Pad    = 0;
+        NetlinkAddress->Pid    = 0;
+        NetlinkAddress->Groups = 0;
+
+        NetlinkSocket* NetlinkImplementation = reinterpret_cast<NetlinkSocket*>(SocketEntry->Implementation);
+        if (NetlinkImplementation != nullptr)
+        {
+            NetlinkAddress->Pid    = NetlinkImplementation->LocalPid;
+            NetlinkAddress->Groups = NetlinkImplementation->LocalGroups;
+        }
+
+        RequiredLength = static_cast<uint32_t>(sizeof(LinuxSockAddrNl));
+    }
+    else
+    {
+        return LINUX_ERR_EAFNOSUPPORT;
+    }
+
+    uint32_t CopyLength = (UserLength < RequiredLength) ? UserLength : RequiredLength;
+    if (CopyLength > 0 && !Logic->CopyFromKernelToUser(KernelSocketAddress, SocketAddress, CopyLength))
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    if (!Logic->CopyFromKernelToUser(&RequiredLength, SocketAddressLength, sizeof(RequiredLength)))
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    return 0;
+}
+
+int64_t TranslationLayer::HandleSetsockoptSystemCall(uint64_t FileDescriptor, int64_t Level, int64_t OptionName, const void* OptionValue, uint64_t OptionLength)
+{
+    if (Logic == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    ProcessManager* PM = Logic->GetProcessManager();
+    if (PM == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    Process* CurrentProcess = PM->GetRunningProcess();
+    if (CurrentProcess == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    if (FileDescriptor >= MAX_OPEN_FILES_PER_PROCESS)
+    {
+        return LINUX_ERR_EBADF;
+    }
+
+    File* OpenFile = CurrentProcess->FileTable[FileDescriptor];
+    if (OpenFile == nullptr || OpenFile->Node == nullptr || OpenFile->Node->NodeData == nullptr)
+    {
+        return LINUX_ERR_EBADF;
+    }
+
+    Socket* SocketEntry = reinterpret_cast<Socket*>(OpenFile->Node->NodeData);
+    if (SocketEntry == nullptr)
+    {
+        return LINUX_ERR_ENOTSOCK;
+    }
+
+    if (Level != LINUX_SOL_SOCKET)
+    {
+        return LINUX_ERR_ENOPROTOOPT;
+    }
+
+    switch (OptionName)
+    {
+        case LINUX_SO_REUSEADDR:
+        case LINUX_SO_BROADCAST:
+        case LINUX_SO_SNDBUF:
+        case LINUX_SO_RCVBUF:
+        case LINUX_SO_KEEPALIVE:
+        case LINUX_SO_OOBINLINE:
+        case LINUX_SO_REUSEPORT:
+        case LINUX_SO_PASSCRED:
+        case LINUX_SO_RCVLOWAT:
+        case LINUX_SO_SNDLOWAT:
+        {
+            if (OptionValue == nullptr || OptionLength < sizeof(int32_t))
+            {
+                return LINUX_ERR_EINVAL;
+            }
+
+            int32_t IntegerOption = 0;
+            if (!Logic->CopyFromUserToKernel(OptionValue, &IntegerOption, sizeof(IntegerOption)))
+            {
+                return LINUX_ERR_EFAULT;
+            }
+
+            (void) IntegerOption;
+            return 0;
+        }
+
+        case LINUX_SO_RCVTIMEO:
+        case LINUX_SO_SNDTIMEO:
+        {
+            if (OptionValue == nullptr || OptionLength < sizeof(LinuxTimeVal))
+            {
+                return LINUX_ERR_EINVAL;
+            }
+
+            LinuxTimeVal TimeValue = {};
+            if (!Logic->CopyFromUserToKernel(OptionValue, &TimeValue, sizeof(TimeValue)))
+            {
+                return LINUX_ERR_EFAULT;
+            }
+
+            if (TimeValue.Seconds < 0 || TimeValue.Microseconds < 0)
+            {
+                return LINUX_ERR_EINVAL;
+            }
+
+            return 0;
+        }
+
+        case LINUX_SO_BINDTODEVICE:
+        {
+            if (OptionLength == 0)
+            {
+                return 0;
+            }
+
+            if (OptionValue == nullptr || OptionLength > SYSCALL_PATH_MAX)
+            {
+                return LINUX_ERR_EINVAL;
+            }
+
+            char DeviceName[SYSCALL_PATH_MAX] = {};
+            if (!Logic->CopyFromUserToKernel(OptionValue, DeviceName, OptionLength))
+            {
+                return LINUX_ERR_EFAULT;
+            }
+
+            return 0;
+        }
+
+        default:
+            return LINUX_ERR_ENOPROTOOPT;
+    }
 }
 
 int64_t TranslationLayer::HandleGetsockoptSystemCall(uint64_t FileDescriptor, int64_t Level, int64_t OptionName, void* OptionValue, void* OptionLength)
