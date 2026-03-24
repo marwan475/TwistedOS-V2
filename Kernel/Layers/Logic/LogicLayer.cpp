@@ -1699,6 +1699,157 @@ bool LogicLayer::InitializeExtendedFileSystem(const char* DevicePath, const char
     return true;
 }
 
+bool LogicLayer::InitializeProcFileSystem(const char* MountLocation)
+{
+    if (Resource == nullptr || VFS == nullptr || MountLocation == nullptr)
+    {
+        return false;
+    }
+
+    TTY* Terminal = Resource->GetTTY();
+
+    auto BuildPath = [](const char* Base, const char* Suffix, char* Output, uint64_t OutputSize) -> bool
+    {
+        if (Base == nullptr || Suffix == nullptr || Output == nullptr || OutputSize == 0)
+        {
+            return false;
+        }
+
+        uint64_t BaseLength   = LocalCStringLength(Base);
+        uint64_t SuffixLength = LocalCStringLength(Suffix);
+        bool     BaseIsRoot   = (BaseLength == 1 && Base[0] == '/');
+        bool     NeedSlash    = (!BaseIsRoot && BaseLength > 0 && Base[BaseLength - 1] != '/');
+        uint64_t Required     = BaseLength + (NeedSlash ? 1 : 0) + SuffixLength + 1;
+        if (Required > OutputSize)
+        {
+            return false;
+        }
+
+        uint64_t Cursor = 0;
+        memcpy(Output + Cursor, Base, static_cast<size_t>(BaseLength));
+        Cursor += BaseLength;
+
+        if (NeedSlash)
+        {
+            Output[Cursor++] = '/';
+        }
+
+        memcpy(Output + Cursor, Suffix, static_cast<size_t>(SuffixLength));
+        Cursor += SuffixLength;
+        Output[Cursor] = '\0';
+        return true;
+    };
+
+    auto EnsureDirectory = [&](const char* Path) -> bool
+    {
+        Dentry* Existing = VFS->Lookup(Path);
+        if (Existing != nullptr)
+        {
+            return Existing->inode != nullptr && Existing->inode->NodeType == INODE_DIR;
+        }
+
+        return VFS->CreateFile(Path, INODE_DIR);
+    };
+
+    auto EnsureTextFile = [&](const char* Path, const char* Content) -> bool
+    {
+        Dentry* Existing = VFS->Lookup(Path);
+        if (Existing == nullptr)
+        {
+            if (!VFS->CreateFile(Path, INODE_FILE))
+            {
+                return false;
+            }
+
+            Existing = VFS->Lookup(Path);
+        }
+
+        if (Existing == nullptr || Existing->inode == nullptr || Existing->inode->NodeType != INODE_FILE)
+        {
+            return false;
+        }
+
+        uint64_t ContentLength = LocalCStringLength(Content);
+        char*    ContentBuffer = nullptr;
+        if (ContentLength > 0)
+        {
+            ContentBuffer = reinterpret_cast<char*>(kmalloc(ContentLength));
+            if (ContentBuffer == nullptr)
+            {
+                return false;
+            }
+
+            memcpy(ContentBuffer, Content, static_cast<size_t>(ContentLength));
+        }
+
+        Existing->inode->NodeData            = ContentBuffer;
+        Existing->inode->NodeSize            = ContentLength;
+        Existing->inode->IsLazyLoad          = false;
+        Existing->inode->LazyDataBackedByPMM = false;
+        Existing->inode->LazyDataPageCount   = 0;
+        Existing->inode->BackingInodeNumber  = 0;
+        Existing->inode->LazyLoadRefCount    = 0;
+        Existing->inode->LazyLoadContext     = nullptr;
+        return true;
+    };
+
+    if (!EnsureDirectory(MountLocation))
+    {
+        if (Terminal != nullptr)
+        {
+            Terminal->printf_("proc filesystem mount failed: mountpoint=%s\n", MountLocation);
+        }
+        return false;
+    }
+
+    char ProcSelfPath[256] = {};
+    if (!BuildPath(MountLocation, "self", ProcSelfPath, sizeof(ProcSelfPath)) || !EnsureDirectory(ProcSelfPath))
+    {
+        if (Terminal != nullptr)
+        {
+            Terminal->printf_("proc filesystem mount failed: missing self directory at %s\n", MountLocation);
+        }
+        return false;
+    }
+
+    char ProcSelfFdPath[256] = {};
+    if (!BuildPath(MountLocation, "self/fd", ProcSelfFdPath, sizeof(ProcSelfFdPath)) || !EnsureDirectory(ProcSelfFdPath))
+    {
+        if (Terminal != nullptr)
+        {
+            Terminal->printf_("proc filesystem mount failed: missing self/fd directory at %s\n", MountLocation);
+        }
+        return false;
+    }
+
+    char ProcCmdlinePath[256] = {};
+    if (!BuildPath(MountLocation, "cmdline", ProcCmdlinePath, sizeof(ProcCmdlinePath)) || !EnsureTextFile(ProcCmdlinePath, ""))
+    {
+        if (Terminal != nullptr)
+        {
+            Terminal->printf_("proc filesystem mount failed: cmdline file at %s\n", MountLocation);
+        }
+        return false;
+    }
+
+    char ProcMountsPath[256] = {};
+    if (!BuildPath(MountLocation, "mounts", ProcMountsPath, sizeof(ProcMountsPath)) || !EnsureTextFile(ProcMountsPath, "proc /proc proc rw 0 0\n"))
+    {
+        if (Terminal != nullptr)
+        {
+            Terminal->printf_("proc filesystem mount failed: mounts file at %s\n", MountLocation);
+        }
+        return false;
+    }
+
+    if (Terminal != nullptr)
+    {
+        Terminal->printf_("proc filesystem mounted at %s\n", MountLocation);
+    }
+
+    return true;
+}
+
 /**
  * Function: LogicLayer::CreateNullProcess
  * Description: Creates idle kernel process and marks it running for initial scheduling.

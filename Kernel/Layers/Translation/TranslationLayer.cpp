@@ -614,9 +614,79 @@ bool CStrEquals(const char* Left, const char* Right)
     return Left[Index] == Right[Index];
 }
 
+bool CStrStartsWith(const char* String, const char* Prefix)
+{
+    if (String == nullptr || Prefix == nullptr)
+    {
+        return false;
+    }
+
+    uint64_t Index = 0;
+    while (Prefix[Index] != '\0')
+    {
+        if (String[Index] != Prefix[Index])
+        {
+            return false;
+        }
+
+        ++Index;
+    }
+
+    return true;
+}
+
 bool IsSupportedMountFileSystemType(const char* FileSystemType)
 {
-    return CStrEquals(FileSystemType, "ext2");
+    return CStrEquals(FileSystemType, "ext2") || CStrEquals(FileSystemType, "proc");
+}
+
+bool BuildAbsolutePathFromDentry(const Dentry* Node, char* Buffer, uint64_t BufferSize);
+
+const Dentry* FindDentryByINodeRecursive(const Dentry* Current, const INode* TargetNode)
+{
+    if (Current == nullptr || TargetNode == nullptr)
+    {
+        return nullptr;
+    }
+
+    if (Current->inode == TargetNode)
+    {
+        return Current;
+    }
+
+    for (uint64_t ChildIndex = 0; ChildIndex < Current->child_count; ++ChildIndex)
+    {
+        const Dentry* Child = Current->children[ChildIndex];
+        const Dentry* Match = FindDentryByINodeRecursive(Child, TargetNode);
+        if (Match != nullptr)
+        {
+            return Match;
+        }
+    }
+
+    return nullptr;
+}
+
+bool BuildAbsolutePathFromINode(VirtualFileSystem* VFS, const INode* Node, char* Buffer, uint64_t BufferSize)
+{
+    if (VFS == nullptr || Node == nullptr || Buffer == nullptr || BufferSize == 0)
+    {
+        return false;
+    }
+
+    Dentry* Root = VFS->Lookup("/");
+    if (Root == nullptr)
+    {
+        return false;
+    }
+
+    const Dentry* MatchedDentry = FindDentryByINodeRecursive(Root, Node);
+    if (MatchedDentry == nullptr)
+    {
+        return false;
+    }
+
+    return BuildAbsolutePathFromDentry(MatchedDentry, Buffer, BufferSize);
 }
 
 uint64_t AlignUpValue(uint64_t Value, uint64_t Alignment)
@@ -4623,6 +4693,272 @@ int64_t TranslationLayer::HandleUnlinkSystemCall(const char* Path)
     return 0;
 }
 
+int64_t TranslationLayer::HandleReadlinkSystemCall(const char* Path, char* Buffer, uint64_t BufferSize)
+{
+    if (Logic == nullptr || Path == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    if (BufferSize == 0)
+    {
+        return LINUX_ERR_EINVAL;
+    }
+
+    if (Buffer == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    VirtualFileSystem* VFS = Logic->GetVirtualFileSystem();
+    ProcessManager*    PM  = Logic->GetProcessManager();
+    if (VFS == nullptr || PM == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    Process* CurrentProcess = PM->GetRunningProcess();
+    if (CurrentProcess == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    char KernelPath[SYSCALL_PATH_MAX] = {};
+    if (!CopyUserCString(Logic, Path, KernelPath, sizeof(KernelPath)))
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    if (KernelPath[0] == '\0')
+    {
+        return LINUX_ERR_ENOENT;
+    }
+
+    char        EffectivePath[SYSCALL_PATH_MAX] = {};
+    const char* LookupPath                      = KernelPath;
+
+    if (KernelPath[0] != '/')
+    {
+        Dentry* BaseDirectory = CurrentProcess->CurrentFileSystemLocation;
+        if (BaseDirectory == nullptr)
+        {
+            return LINUX_ERR_ENOENT;
+        }
+
+        char BasePath[SYSCALL_PATH_MAX] = {};
+        if (!BuildAbsolutePathFromDentry(BaseDirectory, BasePath, sizeof(BasePath)))
+        {
+            return LINUX_ERR_EFAULT;
+        }
+
+        uint64_t BasePathLength = CStrLength(BasePath);
+        uint64_t RelativeLength = CStrLength(KernelPath);
+        uint64_t NeedsSeparator = (BasePathLength > 1) ? 1 : 0;
+        uint64_t RequiredBytes  = BasePathLength + NeedsSeparator + RelativeLength + 1;
+        if (RequiredBytes > sizeof(EffectivePath))
+        {
+            return LINUX_ERR_EINVAL;
+        }
+
+        memcpy(EffectivePath, BasePath, static_cast<size_t>(BasePathLength));
+        uint64_t Cursor = BasePathLength;
+        if (NeedsSeparator != 0)
+        {
+            EffectivePath[Cursor++] = '/';
+        }
+
+        memcpy(EffectivePath + Cursor, KernelPath, static_cast<size_t>(RelativeLength));
+        EffectivePath[Cursor + RelativeLength] = '\0';
+        LookupPath                             = EffectivePath;
+    }
+
+    ResourceLayer* Resource = Logic->GetResourceLayer();
+    TTY*           Terminal = (Resource != nullptr) ? Resource->GetTTY() : nullptr;
+    const bool     TraceXorgPathOps = CurrentProcess->DebugIsXorgProcess;
+
+    if (CStrStartsWith(LookupPath, "/proc/self/fd/") || CStrStartsWith(LookupPath, "/proc/thread-self/fd/") || CStrStartsWith(LookupPath, "/proc/"))
+    {
+        const char* FileDescriptorText = nullptr;
+
+        if (CStrStartsWith(LookupPath, "/proc/self/fd/"))
+        {
+            FileDescriptorText = LookupPath + 14;
+        }
+        else if (CStrStartsWith(LookupPath, "/proc/thread-self/fd/"))
+        {
+            FileDescriptorText = LookupPath + 21;
+        }
+        else
+        {
+            const char* Cursor = LookupPath + 6;
+            if (*Cursor >= '0' && *Cursor <= '9')
+            {
+                uint64_t ParsedPid = 0;
+                while (*Cursor >= '0' && *Cursor <= '9')
+                {
+                    ParsedPid = (ParsedPid * 10) + static_cast<uint64_t>(*Cursor - '0');
+                    ++Cursor;
+                }
+
+                if (*Cursor == '/' && CStrStartsWith(Cursor, "/fd/") && ParsedPid == static_cast<uint64_t>(CurrentProcess->Id))
+                {
+                    FileDescriptorText = Cursor + 4;
+                }
+            }
+        }
+
+        if (FileDescriptorText != nullptr && *FileDescriptorText != '\0')
+        {
+            uint64_t FileDescriptor = 0;
+            const char* ParseCursor = FileDescriptorText;
+            while (*ParseCursor >= '0' && *ParseCursor <= '9')
+            {
+                FileDescriptor = (FileDescriptor * 10) + static_cast<uint64_t>(*ParseCursor - '0');
+                ++ParseCursor;
+            }
+
+            while (*ParseCursor == '/')
+            {
+                ++ParseCursor;
+            }
+
+            if (*ParseCursor == '\0' && FileDescriptor < MAX_OPEN_FILES_PER_PROCESS)
+            {
+                File* OpenFile = CurrentProcess->FileTable[static_cast<size_t>(FileDescriptor)];
+                if (OpenFile != nullptr)
+                {
+                    char DescriptorPath[SYSCALL_PATH_MAX] = {};
+
+                    bool HasResolvedDescriptorPath = false;
+                    if (OpenFile->DirectoryEntry != nullptr)
+                    {
+                        HasResolvedDescriptorPath = BuildAbsolutePathFromDentry(OpenFile->DirectoryEntry, DescriptorPath, sizeof(DescriptorPath));
+                    }
+
+                    if (!HasResolvedDescriptorPath && OpenFile->Node != nullptr)
+                    {
+                        HasResolvedDescriptorPath = BuildAbsolutePathFromINode(VFS, OpenFile->Node, DescriptorPath, sizeof(DescriptorPath));
+                    }
+
+                    if (!HasResolvedDescriptorPath)
+                    {
+                        const char* FallbackPath = (OpenFile->Node != nullptr && OpenFile->Node->NodeType == INODE_DEV) ? "/dev/unknown" : "/unknown";
+                        uint64_t    FallbackLen  = CStrLength(FallbackPath);
+                        if (FallbackLen >= sizeof(DescriptorPath))
+                        {
+                            return LINUX_ERR_EFAULT;
+                        }
+
+                        memcpy(DescriptorPath, FallbackPath, static_cast<size_t>(FallbackLen));
+                        DescriptorPath[FallbackLen] = '\0';
+                    }
+
+                    uint64_t TargetLength = CStrLength(DescriptorPath);
+                    uint64_t BytesToCopy  = (TargetLength < BufferSize) ? TargetLength : BufferSize;
+                    if (BytesToCopy == 0)
+                    {
+                        return 0;
+                    }
+
+                    if (!Logic->CopyFromKernelToUser(DescriptorPath, Buffer, BytesToCopy))
+                    {
+                        return LINUX_ERR_EFAULT;
+                    }
+
+                    if (TraceXorgPathOps && Terminal != nullptr)
+                    {
+                        Terminal->Serialprintf("xorg_path_dbg: pid=%u op=readlink path='%s' ret=%lld target='%s'\n", CurrentProcess->Id, LookupPath,
+                                               static_cast<long long>(BytesToCopy), DescriptorPath);
+                    }
+
+                    return static_cast<int64_t>(BytesToCopy);
+                }
+
+                if (TraceXorgPathOps && Terminal != nullptr)
+                {
+                    Terminal->Serialprintf("xorg_path_dbg: pid=%u op=readlink path='%s' ret=%lld reason='fd-not-open'\n", CurrentProcess->Id, LookupPath,
+                                           static_cast<long long>(LINUX_ERR_ENOENT));
+                }
+            }
+
+            if (TraceXorgPathOps && Terminal != nullptr)
+            {
+                Terminal->Serialprintf("xorg_path_dbg: pid=%u op=readlink path='%s' ret=%lld reason='fd-parse-failed'\n", CurrentProcess->Id, LookupPath,
+                                       static_cast<long long>(LINUX_ERR_ENOENT));
+            }
+        }
+    }
+
+    Dentry* NodeDentry = VFS->LookupNoFollowFinal(LookupPath);
+    if (NodeDentry == nullptr || NodeDentry->inode == nullptr)
+    {
+        return LINUX_ERR_ENOENT;
+    }
+
+    if (NodeDentry->inode->NodeType != INODE_SYMLINK)
+    {
+        return LINUX_ERR_EINVAL;
+    }
+
+    uint64_t TargetLength = NodeDentry->inode->NodeSize;
+    uint64_t BytesToCopy  = (TargetLength < BufferSize) ? TargetLength : BufferSize;
+
+    if (BytesToCopy == 0)
+    {
+        return 0;
+    }
+
+    const void* SourceData = NodeDentry->inode->NodeData;
+    void*       TemporaryData = nullptr;
+
+    if (SourceData == nullptr)
+    {
+        if (NodeDentry->inode->IsLazyLoad && NodeDentry->inode->BackingInodeNumber != 0 && NodeDentry->inode->LazyLoadContext != nullptr)
+        {
+            ExtendedFileSystemManager* FileSystemManager = reinterpret_cast<ExtendedFileSystemManager*>(NodeDentry->inode->LazyLoadContext);
+            if (FileSystemManager == nullptr)
+            {
+                return LINUX_ERR_EFAULT;
+            }
+
+            TemporaryData = Logic->kmalloc(BytesToCopy);
+            if (TemporaryData == nullptr)
+            {
+                return LINUX_ERR_ENOMEM;
+            }
+
+            if (!FileSystemManager->LoadInodeDataRange(NodeDentry->inode->BackingInodeNumber, 0, TemporaryData, BytesToCopy))
+            {
+                Logic->kfree(TemporaryData);
+                return LINUX_ERR_EFAULT;
+            }
+
+            SourceData = TemporaryData;
+        }
+        else
+        {
+            return LINUX_ERR_EFAULT;
+        }
+    }
+
+    if (!Logic->CopyFromKernelToUser(SourceData, Buffer, BytesToCopy))
+    {
+        if (TemporaryData != nullptr)
+        {
+            Logic->kfree(TemporaryData);
+        }
+
+        return LINUX_ERR_EFAULT;
+    }
+
+    if (TemporaryData != nullptr)
+    {
+        Logic->kfree(TemporaryData);
+    }
+
+    return static_cast<int64_t>(BytesToCopy);
+}
+
 int64_t TranslationLayer::HandleLinkSystemCall(const char* OldPath, const char* NewPath)
 {
     if (Logic == nullptr || OldPath == nullptr || NewPath == nullptr)
@@ -5481,7 +5817,8 @@ int64_t TranslationLayer::HandleMountSystemCall(const char* Source, const char* 
         return LINUX_ERR_EFAULT;
     }
 
-    const char* MountLocation = KernelTargetPath;
+    char        AbsoluteMountPath[SYSCALL_MOUNT_TARGET_MAX] = {};
+    const char* MountLocation                                = KernelTargetPath;
 
     if (KernelTargetPath[0] != '/')
     {
@@ -5496,8 +5833,6 @@ int64_t TranslationLayer::HandleMountSystemCall(const char* Source, const char* 
         {
             return LINUX_ERR_EFAULT;
         }
-
-        char AbsoluteMountPath[SYSCALL_MOUNT_TARGET_MAX] = {};
 
         uint64_t BasePathLength = CStrLength(BasePath);
         uint64_t RelativeLength = CStrLength(KernelTargetPath);
@@ -5517,7 +5852,12 @@ int64_t TranslationLayer::HandleMountSystemCall(const char* Source, const char* 
 
         memcpy(AbsoluteMountPath + Cursor, KernelTargetPath, static_cast<size_t>(RelativeLength));
         AbsoluteMountPath[Cursor + RelativeLength] = '\0';
-        return Logic->InitializeExtendedFileSystem(KernelSourcePath, AbsoluteMountPath) ? 0 : LINUX_ERR_ENODEV;
+        MountLocation                               = AbsoluteMountPath;
+    }
+
+    if (CStrEquals(KernelFileSystemType, "proc"))
+    {
+        return Logic->InitializeProcFileSystem(MountLocation) ? 0 : LINUX_ERR_ENODEV;
     }
 
     return Logic->InitializeExtendedFileSystem(KernelSourcePath, MountLocation) ? 0 : LINUX_ERR_ENODEV;

@@ -174,6 +174,9 @@ int64_t TranslationLayer::HandlePosixSystemCallNumber(uint64_t SystemCallNumber,
         case 87: // unlink
             return HandleUnlinkSystemCall(reinterpret_cast<const char*>(Arg1));
             break;
+        case 89: // readlink
+            return HandleReadlinkSystemCall(reinterpret_cast<const char*>(Arg1), reinterpret_cast<char*>(Arg2), Arg3);
+            break;
         case 90: // chmod
             return HandleChmodSystemCall(reinterpret_cast<const char*>(Arg1), Arg2);
             break;

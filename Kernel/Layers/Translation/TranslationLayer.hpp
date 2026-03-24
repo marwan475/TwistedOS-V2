@@ -53,6 +53,7 @@ public:
     int64_t HandleMkdirSystemCall(const char* Path, uint64_t Mode);
     int64_t HandleRmdirSystemCall(const char* Path);
     int64_t HandleLinkSystemCall(const char* OldPath, const char* NewPath);
+    int64_t HandleReadlinkSystemCall(const char* Path, char* Buffer, uint64_t BufferSize);
     int64_t HandleUnlinkSystemCall(const char* Path);
     int64_t HandleChmodSystemCall(const char* Path, uint64_t Mode);
     int64_t HandleFchmodSystemCall(uint64_t FileDescriptor, uint64_t Mode);
