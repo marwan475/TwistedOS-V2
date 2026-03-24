@@ -10,6 +10,95 @@
 
 #include <new>
 
+namespace
+{
+constexpr int64_t LINUX_ERR_EFAULT = -14;
+constexpr int64_t LINUX_ERR_ENOSYS = -38;
+constexpr int16_t LINUX_POLLIN     = 0x0001;
+constexpr int16_t LINUX_POLLOUT    = 0x0004;
+constexpr uint8_t INVALID_PROCESS_ID = 0xFF;
+
+int64_t EventQueueReadFileOperation(File* OpenFile, void* Buffer, uint64_t Count)
+{
+    (void) OpenFile;
+    (void) Buffer;
+    (void) Count;
+    return LINUX_ERR_ENOSYS;
+}
+
+int64_t EventQueueWriteFileOperation(File* OpenFile, const void* Buffer, uint64_t Count)
+{
+    (void) OpenFile;
+    (void) Buffer;
+    (void) Count;
+    return LINUX_ERR_ENOSYS;
+}
+
+int64_t EventQueueSeekFileOperation(File* OpenFile, int64_t Offset, int32_t Whence)
+{
+    (void) OpenFile;
+    (void) Offset;
+    (void) Whence;
+    return LINUX_ERR_ENOSYS;
+}
+
+int64_t EventQueueMemoryMapFileOperation(File* OpenFile, uint64_t Length, uint64_t Offset, VirtualAddressSpace* AddressSpace, uint64_t* Address)
+{
+    (void) OpenFile;
+    (void) Length;
+    (void) Offset;
+    (void) AddressSpace;
+    (void) Address;
+    return LINUX_ERR_ENOSYS;
+}
+
+int64_t EventQueuePollFileOperation(File* OpenFile, uint32_t RequestedEvents, uint32_t* ReturnedEvents, LogicLayer* Logic, Process* RunningProcess)
+{
+    (void) Logic;
+    (void) RunningProcess;
+
+    if (OpenFile == nullptr || OpenFile->Node == nullptr || ReturnedEvents == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    EventQueueKernelObject* EventQueue = reinterpret_cast<EventQueueKernelObject*>(OpenFile->Node->NodeData);
+    if (EventQueue == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    uint32_t Revents = 0;
+    if ((RequestedEvents & static_cast<uint32_t>(LINUX_POLLIN)) != 0 && !EventQueue->Events.IsEmpty())
+    {
+        Revents |= static_cast<uint32_t>(LINUX_POLLIN);
+    }
+
+    if ((RequestedEvents & static_cast<uint32_t>(LINUX_POLLOUT)) != 0)
+    {
+        Revents |= static_cast<uint32_t>(LINUX_POLLOUT);
+    }
+
+    *ReturnedEvents = Revents;
+    return 0;
+}
+
+int64_t EventQueueIoctlFileOperation(File* OpenFile, uint64_t Request, uint64_t Argument, LogicLayer* Logic, Process* RunningProcess)
+{
+    (void) OpenFile;
+    (void) Request;
+    (void) Argument;
+    (void) Logic;
+    (void) RunningProcess;
+    return LINUX_ERR_ENOSYS;
+}
+
+FileOperations EventQueueFileOperations = {
+        &EventQueueReadFileOperation, &EventQueueWriteFileOperation, &EventQueueSeekFileOperation, &EventQueueMemoryMapFileOperation, &EventQueuePollFileOperation,
+        &EventQueueIoctlFileOperation,
+};
+} // namespace
+
 /**
  * Function: SynchronizationManager::SynchronizationManager
  * Description: Constructs synchronization manager.
@@ -34,6 +123,55 @@ SynchronizationManager::~SynchronizationManager()
 {
     SleepQueue.ClearAndDelete();
     TTYInputWaitQueue.ClearAndDelete();
+
+    while (!EventQueueStore.IsEmpty())
+    {
+        EventQueueKernelObject* Queue = EventQueueStore.PopFront();
+        ClearEventQueue(Queue);
+        delete Queue;
+    }
+}
+
+EventQueueKernelObject* SynchronizationManager::FindEventQueue(uint8_t ProcessId, uint64_t FileDescriptor) const
+{
+    EventQueueKernelObject* Queue = EventQueueStore.Head();
+    while (Queue != nullptr)
+    {
+        if (Queue->Queue.ProcessId == ProcessId && Queue->Queue.FileDescriptor == FileDescriptor)
+        {
+            return Queue;
+        }
+
+        Queue = EventQueueStore.Next(Queue);
+    }
+
+    return nullptr;
+}
+
+void SynchronizationManager::ClearEventQueue(EventQueueKernelObject* Queue)
+{
+    if (Queue == nullptr)
+    {
+        return;
+    }
+
+    while (!Queue->Watches.IsEmpty())
+    {
+        EpollWatchTag* Watch = Queue->Watches.PopFront();
+        delete Watch;
+    }
+
+    while (!Queue->Events.IsEmpty())
+    {
+        EventQueueEventTag* Event = Queue->Events.PopFront();
+        delete Event;
+    }
+
+    if (Queue->Node != nullptr)
+    {
+        delete Queue->Node;
+        Queue->Node = nullptr;
+    }
 }
 
 /**
@@ -115,6 +253,65 @@ void SynchronizationManager::RemoveFromTTYInputWaitQueue(uint8_t Id)
     delete Node;
 }
 
+bool SynchronizationManager::CreateEventQueue(uint8_t ProcessId, uint64_t FileDescriptor, uint64_t Flags)
+{
+    if (FindEventQueue(ProcessId, FileDescriptor) != nullptr)
+    {
+        return false;
+    }
+
+    EventQueueKernelObject* NewQueue = new EventQueueKernelObject;
+    if (NewQueue == nullptr)
+    {
+        return false;
+    }
+
+    INode* Node = new INode;
+    if (Node == nullptr)
+    {
+        delete NewQueue;
+        return false;
+    }
+
+    *Node             = {};
+    Node->NodeType    = INODE_FILE;
+    Node->NodeData    = NewQueue;
+    Node->FileOps     = &EventQueueFileOperations;
+    NewQueue->Node    = Node;
+
+    NewQueue->Queue.ProcessId      = ProcessId;
+    NewQueue->Queue.FileDescriptor = FileDescriptor;
+    NewQueue->Queue.Flags          = Flags;
+    NewQueue->Next                 = nullptr;
+
+    EventQueueStore.PushBack(NewQueue);
+    return true;
+}
+
+bool SynchronizationManager::RemoveEventQueue(uint8_t ProcessId, uint64_t FileDescriptor)
+{
+    EventQueueKernelObject* Queue = FindEventQueue(ProcessId, FileDescriptor);
+    if (Queue == nullptr)
+    {
+        return false;
+    }
+
+    EventQueueStore.Remove(Queue);
+    ClearEventQueue(Queue);
+    delete Queue;
+    return true;
+}
+
+bool SynchronizationManager::HasEventQueue(uint8_t ProcessId, uint64_t FileDescriptor) const
+{
+    return FindEventQueue(ProcessId, FileDescriptor) != nullptr;
+}
+
+EventQueueKernelObject* SynchronizationManager::GetEventQueue(uint8_t ProcessId, uint64_t FileDescriptor)
+{
+    return FindEventQueue(ProcessId, FileDescriptor);
+}
+
 /**
  * Function: SynchronizationManager::Tick
  * Description: Decrements remaining wait ticks for all sleeping processes.
@@ -153,7 +350,7 @@ uint8_t SynchronizationManager::GetNextProcessToWake()
         return Node->Id;
     }
 
-    return PROCESS_ID_INVALID;
+    return INVALID_PROCESS_ID;
 }
 
 uint8_t SynchronizationManager::GetNextTTYInputWaiter()
@@ -164,5 +361,5 @@ uint8_t SynchronizationManager::GetNextTTYInputWaiter()
         return Node->Id;
     }
 
-    return PROCESS_ID_INVALID;
+    return INVALID_PROCESS_ID;
 }

@@ -228,6 +228,9 @@ int64_t TranslationLayer::HandlePosixSystemCallNumber(uint64_t SystemCallNumber,
         case 280: // utimensat
             return HandleUtimensatSystemCall(static_cast<int64_t>(Arg1), reinterpret_cast<const char*>(Arg2), reinterpret_cast<const void*>(Arg3), static_cast<int64_t>(Arg4));
             break;
+        case 291: // epoll_create1
+            return HandleEpollCreate1SystemCall(static_cast<int64_t>(Arg1));
+            break;
             /*
                     case 4: // stat
                         break;
@@ -800,8 +803,6 @@ int64_t TranslationLayer::HandlePosixSystemCallNumber(uint64_t SystemCallNumber,
                     case 289: // signalfd4
                         break;
                     case 290: // eventfd2
-                        break;
-                    case 291: // epoll_create1
                         break;
                     case 292: // dup3
                         break;

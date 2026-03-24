@@ -44,6 +44,7 @@ public:
     ResourceLayer*     GetResourceLayer() const;
     ELFManager*        GetELFManager() const;
     ProcessManager*    GetProcessManager() const;
+    SynchronizationManager* GetSynchronizationManager() const;
     VirtualFileSystem* GetVirtualFileSystem() const;
     void*              kmalloc(uint64_t Size);
     void               kfree(void* Pointer);

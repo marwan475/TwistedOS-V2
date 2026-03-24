@@ -1437,6 +1437,11 @@ ProcessManager* LogicLayer::GetProcessManager() const
     return PM;
 }
 
+SynchronizationManager* LogicLayer::GetSynchronizationManager() const
+{
+    return Sync;
+}
+
 /**
  * Function: LogicLayer::GetVirtualFileSystem
  * Description: Returns virtual file system instance.

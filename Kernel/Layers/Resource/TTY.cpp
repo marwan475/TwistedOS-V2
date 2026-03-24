@@ -201,7 +201,7 @@ static int FormatToBuffer(char* Buffer, uint64_t BufferSize, const char* Format,
 } // namespace
 
 FileOperations TTY::TerminalFileOperations = {
-        &TTY::ReadFileOperation, &TTY::WriteFileOperation, &TTY::SeekFileOperation, &TTY::MemoryMapFileOperation, &TTY::IoctlFileOperation,
+    &TTY::ReadFileOperation, &TTY::WriteFileOperation, &TTY::SeekFileOperation, &TTY::MemoryMapFileOperation, nullptr, &TTY::IoctlFileOperation,
 };
 
 TTY::TTY(FrameBuffer* FrameBuffer, uint32_t InitialCursorX, uint32_t InitialCursorY)
@@ -809,6 +809,7 @@ int64_t TTY::Write(File* OpenFile, const void* Buffer, uint64_t Count)
     const char* InBuffer                = reinterpret_cast<const char*>(Buffer);
     bool        LastCharacterWasNewline = false;
 
+#ifdef DEBUG_BUILD
     EnsureSerialInitialized();
     int SerialCount = static_cast<int>(Count);
     if (Count > static_cast<uint64_t>(INT32_MAX))
@@ -816,6 +817,7 @@ int64_t TTY::Write(File* OpenFile, const void* Buffer, uint64_t Count)
         SerialCount = INT32_MAX;
     }
     SerialWriteBuffer(InBuffer, SerialCount);
+#endif
 
     for (uint64_t Index = 0; Index < Count; ++Index)
     {

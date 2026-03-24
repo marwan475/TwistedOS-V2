@@ -250,7 +250,7 @@ void PopulateFixedScreenInfo(const FrameBuffer* FB, LinuxFBFixScreenInfo* Info)
 } // namespace
 
 FileOperations FrameBuffer::FrameBufferFileOperations = {
-        nullptr, &FrameBuffer::WriteFileOperation, &FrameBuffer::SeekFileOperation, &FrameBuffer::MemoryMapFileOperation, &FrameBuffer::IoctlFileOperation,
+    nullptr, &FrameBuffer::WriteFileOperation, &FrameBuffer::SeekFileOperation, &FrameBuffer::MemoryMapFileOperation, nullptr, &FrameBuffer::IoctlFileOperation,
 };
 
 /**

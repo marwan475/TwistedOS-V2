@@ -419,8 +419,19 @@ int64_t PartitionIoctlFileOperation(File* OpenFile, uint64_t Request, uint64_t A
     return LINUX_ERR_ESPIPE;
 }
 
+int64_t PartitionPollFileOperation(File* OpenFile, uint32_t RequestedEvents, uint32_t* ReturnedEvents, LogicLayer* Logic, Process* RunningProcess)
+{
+    (void) OpenFile;
+    (void) RequestedEvents;
+    (void) ReturnedEvents;
+    (void) Logic;
+    (void) RunningProcess;
+    return LINUX_ERR_ESPIPE;
+}
+
 FileOperations PartitionBlockDeviceFileOperations = {
-        &PartitionReadFileOperation, &PartitionWriteFileOperation, &PartitionSeekFileOperation, &PartitionMemoryMapFileOperation, &PartitionIoctlFileOperation,
+        &PartitionReadFileOperation, &PartitionWriteFileOperation, &PartitionSeekFileOperation, &PartitionMemoryMapFileOperation, &PartitionPollFileOperation,
+        &PartitionIoctlFileOperation,
 };
 } // namespace
 

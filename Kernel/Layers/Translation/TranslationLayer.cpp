@@ -177,6 +177,8 @@ constexpr int16_t LINUX_POLLERR  = 0x0008;
 constexpr int16_t LINUX_POLLHUP  = 0x0010;
 constexpr int16_t LINUX_POLLNVAL = 0x0020;
 
+constexpr int64_t LINUX_EPOLL_CLOEXEC = static_cast<int64_t>(LINUX_O_CLOEXEC);
+
 constexpr int64_t LINUX_AT_FDCWD            = -100;
 constexpr int64_t LINUX_AT_SYMLINK_NOFOLLOW = 0x100;
 constexpr int64_t LINUX_AT_NO_AUTOMOUNT     = 0x800;
@@ -1675,6 +1677,19 @@ int64_t TranslationLayer::HandlePollSystemCall(void* PollFdArray, uint64_t PollF
                     }
                     else
                     {
+                        if (OpenFile->Node->FileOps != nullptr && OpenFile->Node->FileOps->Poll != nullptr)
+                        {
+                            uint32_t FileRevents = 0;
+                            int64_t  PollResult  = OpenFile->Node->FileOps->Poll(OpenFile, static_cast<uint32_t>(KernelPollFd.Events), &FileRevents, Logic, CurrentProcess);
+                            if (PollResult < 0)
+                            {
+                                return PollResult;
+                            }
+
+                            KernelPollFd.Revents = static_cast<int16_t>(FileRevents & 0xFFFFu);
+                        }
+                        else
+                        {
                         if ((KernelPollFd.Events & LINUX_POLLIN) != 0)
                         {
                             bool IsTTYNode = (OpenFile->Node->NodeType == INODE_DEV && OpenFile->DirectoryEntry != nullptr && OpenFile->DirectoryEntry->name != nullptr
@@ -1697,6 +1712,7 @@ int64_t TranslationLayer::HandlePollSystemCall(void* PollFdArray, uint64_t PollF
                         if ((KernelPollFd.Events & LINUX_POLLOUT) != 0 && OpenFile->AccessFlags != READ)
                         {
                             KernelPollFd.Revents |= LINUX_POLLOUT;
+                        }
                         }
                     }
                 }
@@ -1784,6 +1800,85 @@ int64_t TranslationLayer::HandlePollSystemCall(void* PollFdArray, uint64_t PollF
     }
 
     return 0;
+}
+
+int64_t TranslationLayer::HandleEpollCreate1SystemCall(int64_t Flags)
+{
+    if (Logic == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    ProcessManager* PM = Logic->GetProcessManager();
+    if (PM == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    Process* CurrentProcess = PM->GetRunningProcess();
+    if (CurrentProcess == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    SynchronizationManager* Sync = Logic->GetSynchronizationManager();
+    if (Sync == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    if ((Flags & ~LINUX_EPOLL_CLOEXEC) != 0)
+    {
+        return LINUX_ERR_EINVAL;
+    }
+
+    for (size_t FileDescriptor = 0; FileDescriptor < MAX_OPEN_FILES_PER_PROCESS; ++FileDescriptor)
+    {
+        if (CurrentProcess->FileTable[FileDescriptor] != nullptr)
+        {
+            continue;
+        }
+
+        if (Sync->HasEventQueue(CurrentProcess->Id, FileDescriptor))
+        {
+            continue;
+        }
+
+        File* NewFile = new File;
+        if (NewFile == nullptr)
+        {
+            return LINUX_ERR_ENOMEM;
+        }
+
+        NewFile->FileDescriptor  = FileDescriptor;
+        NewFile->Node            = nullptr;
+        NewFile->CurrentOffset   = 0;
+        NewFile->AccessFlags     = READ_WRITE;
+        NewFile->OpenFlags       = static_cast<uint64_t>(LINUX_O_ACCMODE);
+        NewFile->DescriptorFlags = ((Flags & LINUX_EPOLL_CLOEXEC) != 0) ? LINUX_FD_CLOEXEC : 0;
+        NewFile->DirectoryEntry  = nullptr;
+
+        if (!Sync->CreateEventQueue(CurrentProcess->Id, FileDescriptor, static_cast<uint64_t>(Flags)))
+        {
+            delete NewFile;
+            continue;
+        }
+
+        EventQueueKernelObject* EventQueue = Sync->GetEventQueue(CurrentProcess->Id, FileDescriptor);
+        if (EventQueue == nullptr || EventQueue->Node == nullptr)
+        {
+            Sync->RemoveEventQueue(CurrentProcess->Id, FileDescriptor);
+            delete NewFile;
+            return LINUX_ERR_ENOMEM;
+        }
+
+        NewFile->Node = EventQueue->Node;
+
+        CurrentProcess->FileTable[FileDescriptor] = NewFile;
+        return static_cast<int64_t>(FileDescriptor);
+    }
+
+    return LINUX_ERR_EMFILE;
 }
 
 int64_t TranslationLayer::HandleIoctlSystemCall(uint64_t FileDescriptor, uint64_t Request, uint64_t Argument)
@@ -2776,6 +2871,12 @@ int64_t TranslationLayer::HandleCloseSystemCall(uint64_t FileDescriptor)
     if (OpenFile == nullptr)
     {
         return LINUX_ERR_EBADF;
+    }
+
+    SynchronizationManager* Sync = Logic->GetSynchronizationManager();
+    if (Sync != nullptr)
+    {
+        Sync->RemoveEventQueue(CurrentProcess->Id, FileDescriptor);
     }
 
     delete OpenFile;

@@ -257,8 +257,19 @@ int64_t DefaultIoctlFileOperation(File* OpenFile, uint64_t Request, uint64_t Arg
     return LINUX_ERR_ENOSYS;
 }
 
+int64_t DefaultPollFileOperation(File* OpenFile, uint32_t RequestedEvents, uint32_t* ReturnedEvents, LogicLayer* Logic, Process* RunningProcess)
+{
+    (void) OpenFile;
+    (void) RequestedEvents;
+    (void) ReturnedEvents;
+    (void) Logic;
+    (void) RunningProcess;
+    return LINUX_ERR_ENOSYS;
+}
+
 FileOperations DefaultFileOperations = {
-        &DefaultReadFileOperation, &DefaultWriteFileOperation, &DefaultSeekFileOperation, &DefaultMemoryMapFileOperation, &DefaultIoctlFileOperation,
+        &DefaultReadFileOperation, &DefaultWriteFileOperation, &DefaultSeekFileOperation, &DefaultMemoryMapFileOperation, &DefaultPollFileOperation,
+        &DefaultIoctlFileOperation,
 };
 
 /**
