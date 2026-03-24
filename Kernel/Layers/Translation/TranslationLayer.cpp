@@ -40,6 +40,7 @@ constexpr int64_t LINUX_ERR_EEXIST    = -17;
 constexpr int64_t LINUX_ERR_ENOTEMPTY = -39;
 constexpr int64_t LINUX_ERR_ESPIPE    = -29;
 constexpr int64_t LINUX_ERR_EAFNOSUPPORT = -97;
+constexpr int64_t LINUX_ERR_ESOCKTNOSUPPORT = -94;
 
 constexpr uint64_t SYSCALL_COPY_CHUNK_SIZE   = 4096;
 constexpr uint64_t SYSCALL_PATH_MAX          = 4096;
@@ -151,6 +152,10 @@ constexpr uint64_t LINUX_O_ASYNC    = 0x2000;
 constexpr uint64_t LINUX_O_DIRECT   = 0x4000;
 constexpr uint64_t LINUX_O_NOATIME  = 0x40000;
 constexpr uint64_t LINUX_O_CLOEXEC  = 0x80000;
+
+constexpr int64_t LINUX_SOCKET_CALL_TYPE_MASK = 0xF;
+constexpr int64_t LINUX_SOCKET_CALL_NONBLOCK  = static_cast<int64_t>(LINUX_O_NONBLOCK);
+constexpr int64_t LINUX_SOCKET_CALL_CLOEXEC   = static_cast<int64_t>(LINUX_O_CLOEXEC);
 
 constexpr int64_t LINUX_ACCESS_F_OK = 0;
 constexpr int64_t LINUX_ACCESS_X_OK = 1;
@@ -1921,11 +1926,105 @@ int64_t TranslationLayer::HandleIoctlSystemCall(uint64_t FileDescriptor, uint64_
 
 int64_t TranslationLayer::HandleSocketSystemCall(int64_t Domain, int64_t Type, int64_t Protocol)
 {
-    (void) Domain;
-    (void) Type;
-    (void) Protocol;
+    if (Logic == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
 
-    return LINUX_ERR_EAFNOSUPPORT;
+    ProcessManager* PM = Logic->GetProcessManager();
+    if (PM == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    InterProcessComunicationManager* IPC = Logic->GetInterProcessComunicationManager();
+    if (IPC == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    Process* CurrentProcess = PM->GetRunningProcess();
+    if (CurrentProcess == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    int64_t SocketType  = (Type & LINUX_SOCKET_CALL_TYPE_MASK);
+    int64_t SocketFlags = (Type & ~LINUX_SOCKET_CALL_TYPE_MASK);
+    if ((SocketFlags & ~(LINUX_SOCKET_CALL_NONBLOCK | LINUX_SOCKET_CALL_CLOEXEC)) != 0)
+    {
+        return LINUX_ERR_EINVAL;
+    }
+
+    int64_t FileDescriptor = -1;
+    for (size_t FileIndex = 0; FileIndex < MAX_OPEN_FILES_PER_PROCESS; ++FileIndex)
+    {
+        if (CurrentProcess->FileTable[FileIndex] == nullptr)
+        {
+            FileDescriptor = static_cast<int64_t>(FileIndex);
+            break;
+        }
+    }
+
+    if (FileDescriptor < 0)
+    {
+        return LINUX_ERR_EMFILE;
+    }
+
+    int64_t SocketError = 0;
+    Socket* NewSocket   = IPC->CreateSocket(Domain, SocketType, Protocol, CurrentProcess, FileDescriptor, &SocketError);
+    if (NewSocket == nullptr)
+    {
+        if (SocketError == LINUX_ERR_EAFNOSUPPORT)
+        {
+            return LINUX_ERR_EAFNOSUPPORT;
+        }
+
+        if (SocketError == LINUX_ERR_ESOCKTNOSUPPORT)
+        {
+            return LINUX_ERR_ESOCKTNOSUPPORT;
+        }
+
+        if (SocketError != 0)
+        {
+            return SocketError;
+        }
+
+        return LINUX_ERR_ENOMEM;
+    }
+
+    INode* SocketNode = new INode;
+    if (SocketNode == nullptr)
+    {
+        IPC->CloseSocket(CurrentProcess, FileDescriptor);
+        return LINUX_ERR_ENOMEM;
+    }
+
+    *SocketNode                 = {};
+    SocketNode->NodeType        = INODE_DEV;
+    SocketNode->NodeSize        = 0;
+    SocketNode->NodeData        = NewSocket;
+    SocketNode->INodeOps        = nullptr;
+    SocketNode->FileOps         = &NewSocket->FileOps;
+
+    File* OpenFile = new File;
+    if (OpenFile == nullptr)
+    {
+        delete SocketNode;
+        IPC->CloseSocket(CurrentProcess, FileDescriptor);
+        return LINUX_ERR_ENOMEM;
+    }
+
+    OpenFile->FileDescriptor  = static_cast<uint64_t>(FileDescriptor);
+    OpenFile->Node            = SocketNode;
+    OpenFile->CurrentOffset   = 0;
+    OpenFile->AccessFlags     = READ_WRITE;
+    OpenFile->OpenFlags       = static_cast<uint64_t>(LINUX_O_ACCMODE | ((SocketFlags & LINUX_SOCKET_CALL_NONBLOCK) != 0 ? LINUX_O_NONBLOCK : 0));
+    OpenFile->DescriptorFlags = ((SocketFlags & LINUX_SOCKET_CALL_CLOEXEC) != 0) ? LINUX_FD_CLOEXEC : 0;
+    OpenFile->DirectoryEntry  = nullptr;
+
+    CurrentProcess->FileTable[FileDescriptor] = OpenFile;
+    return FileDescriptor;
 }
 
 int64_t TranslationLayer::HandleOpenSystemCall(const char* Path, uint64_t Flags)
@@ -2877,6 +2976,19 @@ int64_t TranslationLayer::HandleCloseSystemCall(uint64_t FileDescriptor)
     if (Sync != nullptr)
     {
         Sync->RemoveEventQueue(CurrentProcess->Id, FileDescriptor);
+    }
+
+    InterProcessComunicationManager* IPC = Logic->GetInterProcessComunicationManager();
+    bool                              ClosedSocket = false;
+    if (IPC != nullptr)
+    {
+        ClosedSocket = IPC->CloseSocket(CurrentProcess, static_cast<int64_t>(FileDescriptor));
+    }
+
+    if (ClosedSocket && OpenFile->Node != nullptr)
+    {
+        delete OpenFile->Node;
+        OpenFile->Node = nullptr;
     }
 
     delete OpenFile;

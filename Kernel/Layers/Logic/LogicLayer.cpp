@@ -1345,7 +1345,7 @@ void NullProcessEntry()
  * Returns:
  *   LogicLayer - Constructed logic layer instance.
  */
-LogicLayer::LogicLayer() : Resource(nullptr), PM(nullptr), Sched(nullptr), Sync(nullptr), ELF(nullptr)
+LogicLayer::LogicLayer() : Resource(nullptr), PM(nullptr), Sched(nullptr), Sync(nullptr), IPC(nullptr), ELF(nullptr), VFS(nullptr)
 {
 }
 
@@ -1372,6 +1372,11 @@ LogicLayer::~LogicLayer()
     if (Sync != nullptr)
     {
         delete Sync;
+    }
+
+    if (IPC != nullptr)
+    {
+        delete IPC;
     }
 
     if (ELF != nullptr)
@@ -1440,6 +1445,11 @@ ProcessManager* LogicLayer::GetProcessManager() const
 SynchronizationManager* LogicLayer::GetSynchronizationManager() const
 {
     return Sync;
+}
+
+InterProcessComunicationManager* LogicLayer::GetInterProcessComunicationManager() const
+{
+    return IPC;
 }
 
 /**
@@ -1546,6 +1556,17 @@ void LogicLayer::InitializeSynchronizationManager()
 
     Sync = new SynchronizationManager();
     Resource->GetTTY()->printf_("Synchronization Manager Initialized\n");
+}
+
+void LogicLayer::InitializeInterProcessComunicationManager()
+{
+    if (IPC != nullptr)
+    {
+        return;
+    }
+
+    IPC = new InterProcessComunicationManager();
+    Resource->GetTTY()->printf_("Inter Process Comunication Manager Initialized\n");
 }
 
 /**

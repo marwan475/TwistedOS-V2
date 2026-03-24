@@ -7,6 +7,7 @@
 #pragma once
 
 #include "ELFManager.hpp"
+#include "InterProcessComunicationManager.hpp"
 #include "ProcessManager.hpp"
 #include "Scheduler.hpp"
 #include "SynchronizationManager.hpp"
@@ -26,6 +27,7 @@ private:
     ProcessManager*         PM;
     Scheduler*              Sched;
     SynchronizationManager* Sync;
+    InterProcessComunicationManager* IPC;
     ELFManager*             ELF;
     VirtualFileSystem*      VFS;
     bool                    IsScheduling = false;
@@ -45,12 +47,14 @@ public:
     ELFManager*        GetELFManager() const;
     ProcessManager*    GetProcessManager() const;
     SynchronizationManager* GetSynchronizationManager() const;
+    InterProcessComunicationManager* GetInterProcessComunicationManager() const;
     VirtualFileSystem* GetVirtualFileSystem() const;
     void*              kmalloc(uint64_t Size);
     void               kfree(void* Pointer);
     void               InitializeProcessManager();
     void               InitializeScheduler();
     void               InitializeSynchronizationManager();
+    void               InitializeInterProcessComunicationManager();
     void               InitializeELFManager();
     void               InitializeVirtualFileSystem();
     bool               RegisterPartitionDevices();

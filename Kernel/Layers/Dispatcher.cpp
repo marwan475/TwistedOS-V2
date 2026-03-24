@@ -212,6 +212,7 @@ void Dispatcher::InitLogicLayer()
     Logic.InitializeProcessManager();
     Logic.InitializeScheduler();
     Logic.InitializeSynchronizationManager();
+    Logic.InitializeInterProcessComunicationManager();
     Logic.InitializeELFManager();
     Logic.InitializeVirtualFileSystem();
 }
