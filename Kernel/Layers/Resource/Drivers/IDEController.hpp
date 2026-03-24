@@ -26,6 +26,7 @@ public:
     bool     IsInitialized() const;
     bool     HandleInterrupt() const;
     bool     ReadBlock(uint32_t LBA, void* Buffer) const;
+    bool     ReadBlocks(uint32_t LBA, uint32_t SectorCount, void* Buffer) const;
     bool     WriteBlock(uint32_t LBA, const void* Buffer) const;
     uint32_t GetBlockSizeBytes() const;
 };

@@ -1109,7 +1109,7 @@ Socket* InterProcessComunicationManager::AcceptSocket(Process* Owner, int64_t Fi
 	{
 		if (ErrorCode != nullptr)
 		{
-			*ErrorCode = (CreateError != 0) ? CreateError : LINUX_SOCKET_ERR_ENOMEM;
+			*ErrorCode = (CreateError != 0) ? CreateError : static_cast<int64_t>(LINUX_SOCKET_ERR_ENOMEM);
 		}
 		return nullptr;
 	}

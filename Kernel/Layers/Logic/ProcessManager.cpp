@@ -125,6 +125,8 @@ bool InitializeProcessEntry(Process& ProcessEntry, ProcessState Status, ProcessL
     }
     ProcessEntry.BlockedSignalMask         = 0;
     ProcessEntry.PendingSignalMask         = 0;
+    ProcessEntry.DebugSyscallTraceRemaining = 0;
+    ProcessEntry.DebugIsXorgProcess        = false;
     ProcessEntry.ClearChildTidAddress      = nullptr;
     ProcessEntry.ProgramBreak              = ProgramBreak;
     ProcessEntry.RealIntervalTimerRemainingTicks = 0;

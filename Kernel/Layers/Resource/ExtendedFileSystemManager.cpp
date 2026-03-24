@@ -155,7 +155,70 @@ bool ExtendedFileSystemManager::ReadBytesFromDisk(uint32_t OffsetBytes, void* Bu
     uint8_t* Destination = static_cast<uint8_t*>(Buffer);
     uint64_t BytesCopied = 0;
 
-    for (uint64_t SectorIndex = StartSector; SectorIndex <= EndSectorInclusive; ++SectorIndex)
+    uint32_t StartSectorOffset = OffsetBytes % SectorSize;
+    if (StartSectorOffset != 0)
+    {
+        uint64_t AbsoluteSector = PartitionStartLBA + StartSector;
+        if (AbsoluteSector > 0xFFFFFFFFu)
+        {
+            return false;
+        }
+
+        uint8_t SectorBuffer[CONTROLLER_SECTOR_SIZE_BYTES] = {};
+        if (!Controller->ReadBlock(static_cast<uint32_t>(AbsoluteSector), SectorBuffer))
+        {
+            return false;
+        }
+
+        uint32_t FirstChunk = SectorSize - StartSectorOffset;
+        if (FirstChunk > SizeBytes)
+        {
+            FirstChunk = SizeBytes;
+        }
+
+        memcpy(Destination, SectorBuffer + StartSectorOffset, FirstChunk);
+        BytesCopied += FirstChunk;
+    }
+
+    uint64_t NextSector = StartSector + ((StartSectorOffset != 0) ? 1u : 0u);
+
+    while ((BytesCopied + SectorSize) <= SizeBytes && NextSector <= EndSectorInclusive)
+    {
+        uint64_t FullSectorsRemaining = (SizeBytes - BytesCopied) / SectorSize;
+        if (FullSectorsRemaining == 0)
+        {
+            break;
+        }
+
+        uint64_t SectorsUntilEnd = (EndSectorInclusive - NextSector) + 1;
+        uint32_t BatchSectors    = static_cast<uint32_t>((FullSectorsRemaining < SectorsUntilEnd) ? FullSectorsRemaining : SectorsUntilEnd);
+        if (BatchSectors > 255u)
+        {
+            BatchSectors = 255u;
+        }
+
+        uint64_t AbsoluteStartSector = PartitionStartLBA + NextSector;
+        if (AbsoluteStartSector > 0xFFFFFFFFu)
+        {
+            return false;
+        }
+
+        uint8_t* BatchDestination = Destination + BytesCopied;
+        if (!Controller->ReadBlocks(static_cast<uint32_t>(AbsoluteStartSector), BatchSectors, BatchDestination))
+        {
+            return false;
+        }
+
+        BytesCopied += static_cast<uint64_t>(BatchSectors) * SectorSize;
+        NextSector += BatchSectors;
+    }
+
+    if (BytesCopied == SizeBytes)
+    {
+        return true;
+    }
+
+    for (uint64_t SectorIndex = NextSector; SectorIndex <= EndSectorInclusive; ++SectorIndex)
     {
         uint64_t AbsoluteSector = PartitionStartLBA + SectorIndex;
 
@@ -170,7 +233,7 @@ bool ExtendedFileSystemManager::ReadBytesFromDisk(uint32_t OffsetBytes, void* Bu
             return false;
         }
 
-        uint32_t SectorStartOffset = (SectorIndex == StartSector) ? (OffsetBytes % SectorSize) : 0;
+        uint32_t SectorStartOffset = 0;
         uint32_t SectorAvailable   = SectorSize - SectorStartOffset;
         uint64_t Remaining         = static_cast<uint64_t>(SizeBytes) - BytesCopied;
         uint32_t BytesToCopy       = (Remaining < SectorAvailable) ? static_cast<uint32_t>(Remaining) : SectorAvailable;
@@ -784,6 +847,168 @@ bool ExtendedFileSystemManager::LoadInodeData(uint32_t InodeNumber, void* Destin
 
     uint16_t InodeMode = ReadLE16(&InodeBuffer[0]);
     return ReadInodePayload(InodeNumber, InodeBuffer, InodeMode, SizeBytes, DestinationBuffer);
+}
+
+bool ExtendedFileSystemManager::LoadInodeDataRange(uint32_t InodeNumber, uint64_t StartOffset, void* DestinationBuffer, uint64_t SizeBytes) const
+{
+    if (!Initialized || (DestinationBuffer == nullptr && SizeBytes != 0) || BlockSizeBytes == 0)
+    {
+        return false;
+    }
+
+    if (SizeBytes == 0)
+    {
+        return true;
+    }
+
+    uint8_t InodeBuffer[256] = {};
+    if (InodeSizeBytes > sizeof(InodeBuffer) || !ReadInode(InodeNumber, InodeBuffer, sizeof(InodeBuffer)))
+    {
+        return false;
+    }
+
+    uint16_t InodeMode = ReadLE16(&InodeBuffer[0]);
+    uint64_t InodeSize = ReadLE32(&InodeBuffer[4]);
+
+    if (StartOffset > InodeSize)
+    {
+        return false;
+    }
+
+    if (SizeBytes > (InodeSize - StartOffset))
+    {
+        return false;
+    }
+
+    uint8_t* Destination = reinterpret_cast<uint8_t*>(DestinationBuffer);
+    kmemset(Destination, 0, static_cast<size_t>(SizeBytes));
+
+    if ((InodeMode & 0xF000) == EXT2_INODE_MODE_SYMLINK && InodeSize <= 60)
+    {
+        memcpy(Destination, &InodeBuffer[40 + StartOffset], static_cast<size_t>(SizeBytes));
+        return true;
+    }
+
+    if ((BlockSizeBytes % 4) != 0)
+    {
+        return false;
+    }
+
+    uint32_t PointersPerBlock = BlockSizeBytes / 4;
+    uint64_t SingleSpan       = static_cast<uint64_t>(PointersPerBlock);
+    uint64_t DoubleSpan       = SingleSpan * SingleSpan;
+    uint64_t TripleSpan       = DoubleSpan * SingleSpan;
+
+    auto ResolveDataBlockNumber = [&](uint64_t LogicalBlockIndex) -> uint32_t
+    {
+        auto ReadPointerFromBlock = [&](uint32_t PointerBlockNumber, uint32_t PointerIndex) -> uint32_t
+        {
+            if (PointerBlockNumber == 0 || PointerIndex >= PointersPerBlock)
+            {
+                return 0;
+            }
+
+            uint64_t BlockByteOffset = static_cast<uint64_t>(PointerBlockNumber) * BlockSizeBytes;
+            if (BlockByteOffset > 0xFFFFFFFFu)
+            {
+                return 0;
+            }
+
+            uint8_t* PointerBlockData = new uint8_t[BlockSizeBytes];
+            if (PointerBlockData == nullptr)
+            {
+                return 0;
+            }
+
+            bool ReadSuccess = ReadBytesFromDisk(static_cast<uint32_t>(BlockByteOffset), PointerBlockData, BlockSizeBytes);
+            if (!ReadSuccess)
+            {
+                delete[] PointerBlockData;
+                return 0;
+            }
+
+            uint32_t Value = ReadLE32(&PointerBlockData[PointerIndex * 4]);
+            delete[] PointerBlockData;
+            return Value;
+        };
+
+        if (LogicalBlockIndex < 12)
+        {
+            return ReadLE32(&InodeBuffer[40 + (LogicalBlockIndex * 4)]);
+        }
+
+        LogicalBlockIndex -= 12;
+
+        if (LogicalBlockIndex < SingleSpan)
+        {
+            uint32_t SingleIndirectBlock = ReadLE32(&InodeBuffer[88]);
+            return ReadPointerFromBlock(SingleIndirectBlock, static_cast<uint32_t>(LogicalBlockIndex));
+        }
+
+        LogicalBlockIndex -= SingleSpan;
+
+        if (LogicalBlockIndex < DoubleSpan)
+        {
+            uint32_t DoubleIndirectBlock = ReadLE32(&InodeBuffer[92]);
+            uint32_t FirstLevelIndex     = static_cast<uint32_t>(LogicalBlockIndex / SingleSpan);
+            uint32_t SecondLevelIndex    = static_cast<uint32_t>(LogicalBlockIndex % SingleSpan);
+            uint32_t FirstLevelBlock     = ReadPointerFromBlock(DoubleIndirectBlock, FirstLevelIndex);
+            return ReadPointerFromBlock(FirstLevelBlock, SecondLevelIndex);
+        }
+
+        LogicalBlockIndex -= DoubleSpan;
+
+        if (LogicalBlockIndex < TripleSpan)
+        {
+            uint32_t TripleIndirectBlock = ReadLE32(&InodeBuffer[96]);
+            uint32_t FirstLevelIndex     = static_cast<uint32_t>(LogicalBlockIndex / DoubleSpan);
+            uint64_t Remainder           = LogicalBlockIndex % DoubleSpan;
+            uint32_t SecondLevelIndex    = static_cast<uint32_t>(Remainder / SingleSpan);
+            uint32_t ThirdLevelIndex     = static_cast<uint32_t>(Remainder % SingleSpan);
+            uint32_t FirstLevelBlock     = ReadPointerFromBlock(TripleIndirectBlock, FirstLevelIndex);
+            uint32_t SecondLevelBlock    = ReadPointerFromBlock(FirstLevelBlock, SecondLevelIndex);
+            return ReadPointerFromBlock(SecondLevelBlock, ThirdLevelIndex);
+        }
+
+        return 0;
+    };
+
+    uint64_t Remaining            = SizeBytes;
+    uint64_t LogicalBlock         = StartOffset / BlockSizeBytes;
+    uint64_t OffsetInsideBlock    = StartOffset % BlockSizeBytes;
+    uint64_t DestinationWriteHead = 0;
+
+    while (Remaining > 0)
+    {
+        uint64_t AvailableInBlock = BlockSizeBytes - OffsetInsideBlock;
+        uint64_t BytesThisRound   = (Remaining < AvailableInBlock) ? Remaining : AvailableInBlock;
+        uint32_t DataBlock        = ResolveDataBlockNumber(LogicalBlock);
+
+        if (DataBlock != 0)
+        {
+            uint64_t BlockByteOffset = static_cast<uint64_t>(DataBlock) * BlockSizeBytes + OffsetInsideBlock;
+            if (BlockByteOffset > 0xFFFFFFFFu)
+            {
+                return false;
+            }
+
+            if (!ReadBytesFromDisk(static_cast<uint32_t>(BlockByteOffset), Destination + DestinationWriteHead, static_cast<uint32_t>(BytesThisRound)))
+            {
+                return false;
+            }
+        }
+        else
+        {
+            kmemset(Destination + DestinationWriteHead, 0, static_cast<size_t>(BytesThisRound));
+        }
+
+        Remaining -= BytesThisRound;
+        DestinationWriteHead += BytesThisRound;
+        ++LogicalBlock;
+        OffsetInsideBlock = 0;
+    }
+
+    return true;
 }
 
 bool ExtendedFileSystemManager::CreateFile(const char* Path, ExtendedFileSystemEntryType Type)

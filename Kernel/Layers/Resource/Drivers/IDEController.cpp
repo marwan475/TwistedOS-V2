@@ -112,7 +112,12 @@ bool IDEController::HandleInterrupt() const
 
 bool IDEController::ReadBlock(uint32_t LBA, void* Buffer) const
 {
-    if (!Initialized || Buffer == nullptr || !LBAFits28Bit(LBA))
+    return ReadBlocks(LBA, 1, Buffer);
+}
+
+bool IDEController::ReadBlocks(uint32_t LBA, uint32_t SectorCount, void* Buffer) const
+{
+    if (!Initialized || Buffer == nullptr || SectorCount == 0 || SectorCount > 255 || !LBAFits28Bit(LBA) || !LBAFits28Bit(LBA + (SectorCount - 1)))
     {
         return false;
     }
@@ -122,20 +127,23 @@ bool IDEController::ReadBlock(uint32_t LBA, void* Buffer) const
     X86OutB(PrimaryControlBase, 0x02);
     X86OutB(static_cast<uint16_t>(PrimaryIoBase + 6), static_cast<uint8_t>(ATA_DEVICE_LBA_MASTER_BASE | ((LBA >> 24) & 0x0F)));
     X86OutB(static_cast<uint16_t>(PrimaryIoBase + 1), 0x00);
-    X86OutB(static_cast<uint16_t>(PrimaryIoBase + 2), 0x01);
+    X86OutB(static_cast<uint16_t>(PrimaryIoBase + 2), static_cast<uint8_t>(SectorCount));
     X86OutB(static_cast<uint16_t>(PrimaryIoBase + 3), static_cast<uint8_t>(LBA & 0xFF));
     X86OutB(static_cast<uint16_t>(PrimaryIoBase + 4), static_cast<uint8_t>((LBA >> 8) & 0xFF));
     X86OutB(static_cast<uint16_t>(PrimaryIoBase + 5), static_cast<uint8_t>((LBA >> 16) & 0xFF));
     X86OutB(static_cast<uint16_t>(PrimaryIoBase + 7), ATA_COMMAND_READ_SECTORS);
 
-    if (!WaitForControllerReady(true))
+    for (uint32_t SectorIndex = 0; SectorIndex < SectorCount; ++SectorIndex)
     {
-        return false;
-    }
+        if (!WaitForControllerReady(true))
+        {
+            return false;
+        }
 
-    for (uint32_t WordIndex = 0; WordIndex < (BLOCK_SIZE_BYTES / 2); ++WordIndex)
-    {
-        Destination[WordIndex] = X86InW(static_cast<uint16_t>(PrimaryIoBase));
+        for (uint32_t WordIndex = 0; WordIndex < (BLOCK_SIZE_BYTES / 2); ++WordIndex)
+        {
+            Destination[(SectorIndex * (BLOCK_SIZE_BYTES / 2)) + WordIndex] = X86InW(static_cast<uint16_t>(PrimaryIoBase));
+        }
     }
 
     return true;

@@ -214,6 +214,30 @@ int64_t DefaultReadFileOperation(File* OpenFile, void* Buffer, uint64_t Count)
         return 0;
     }
 
+    if (OpenFile->Node->NodeData == nullptr && OpenFile->Node->IsLazyLoad && OpenFile->Node->BackingInodeNumber != 0 && OpenFile->Node->LazyLoadContext != nullptr)
+    {
+        ExtendedFileSystemManager* FileSystemManager = reinterpret_cast<ExtendedFileSystemManager*>(OpenFile->Node->LazyLoadContext);
+        if (FileSystemManager != nullptr && FileSystemManager->IsInitialized())
+        {
+            uint64_t FileSize = OpenFile->Node->NodeSize;
+            if (OpenFile->CurrentOffset >= FileSize)
+            {
+                return 0;
+            }
+
+            uint64_t RemainingBytes = FileSize - OpenFile->CurrentOffset;
+            uint64_t BytesToRead    = (Count < RemainingBytes) ? Count : RemainingBytes;
+
+            if (!FileSystemManager->LoadInodeDataRange(OpenFile->Node->BackingInodeNumber, OpenFile->CurrentOffset, Buffer, BytesToRead))
+            {
+                return LINUX_ERR_EFAULT;
+            }
+
+            OpenFile->CurrentOffset += BytesToRead;
+            return static_cast<int64_t>(BytesToRead);
+        }
+    }
+
     if (OpenFile->Node->NodeData == nullptr)
     {
         if (OpenFile->Node->NodeSize == 0)

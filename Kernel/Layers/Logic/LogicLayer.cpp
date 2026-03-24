@@ -195,6 +195,30 @@ uint64_t LocalCStringLength(const char* String)
     return Length;
 }
 
+bool LocalCStringEquals(const char* Left, const char* Right)
+{
+    if (Left == nullptr || Right == nullptr)
+    {
+        return false;
+    }
+
+    uint64_t Index = 0;
+    while (true)
+    {
+        if (Left[Index] != Right[Index])
+        {
+            return false;
+        }
+
+        if (Left[Index] == '\0')
+        {
+            return true;
+        }
+
+        ++Index;
+    }
+}
+
 bool EnsureLazyLoadedINodeData(ResourceLayer* Resource, INode* Node)
 {
     if (Node == nullptr)
@@ -1758,6 +1782,15 @@ uint8_t LogicLayer::ChangeProcessExecution(uint8_t Id, const char* FilePath, con
         return PROCESS_ID_INVALID;
     }
 
+#ifdef DEBUG_BUILD
+    bool IsXorgExecPath = LocalCStringEquals(FilePath, "/usr/libexec/Xorg") || LocalCStringEquals(FilePath, "/usr/libexec/Xorg.wrap");
+    TTY* ExecDebugTTY = (Resource != nullptr) ? Resource->GetTTY() : nullptr;
+    if (IsXorgExecPath && ExecDebugTTY != nullptr)
+    {
+        ExecDebugTTY->Serialprintf("exec_stage_dbg: pid=%u path='%s' stage=enter\n", Id, FilePath);
+    }
+#endif
+
     Dentry* Entry = VFS->Lookup(FilePath);
     if (Entry == nullptr || Entry->inode == nullptr)
     {
@@ -1773,6 +1806,13 @@ uint8_t LogicLayer::ChangeProcessExecution(uint8_t Id, const char* FilePath, con
     {
         return PROCESS_ID_INVALID;
     }
+
+#ifdef DEBUG_BUILD
+    if (IsXorgExecPath && ExecDebugTTY != nullptr)
+    {
+        ExecDebugTTY->Serialprintf("exec_stage_dbg: pid=%u path='%s' stage=inode_ready size=%llu\n", Id, FilePath, static_cast<unsigned long long>(Entry->inode->NodeSize));
+    }
+#endif
 
     const char* FileData = reinterpret_cast<const char*>(Entry->inode->NodeData);
     if (FileData != nullptr && Entry->inode->NodeSize >= 2 && FileData[0] == '#' && FileData[1] == '!')
@@ -1916,6 +1956,12 @@ uint8_t LogicLayer::ChangeProcessExecution(uint8_t Id, const char* FilePath, con
 
     if (IsELF)
     {
+#ifdef DEBUG_BUILD
+        if (IsXorgExecPath && ExecDebugTTY != nullptr)
+        {
+            ExecDebugTTY->Serialprintf("exec_stage_dbg: pid=%u path='%s' stage=before_map_elf\n", Id, FilePath);
+        }
+#endif
         const ELFProgramHeader64* ProgramHeaders = ELF->GetProgramHeaderTable(reinterpret_cast<uint64_t>(CopiedImage), Header);
         if (ProgramHeaders != nullptr)
         {
@@ -1935,6 +1981,14 @@ uint8_t LogicLayer::ChangeProcessExecution(uint8_t Id, const char* FilePath, con
         NewAddressSpace   = MapELF(reinterpret_cast<uint64_t>(CopiedImage), CodeSize, Header, nullptr, &ProgramLoadBias, &InterpreterBase, &InterpreterEntry);
         NewUserEntryPoint = (InterpreterEntry != 0) ? InterpreterEntry : (Header.Entry + ProgramLoadBias);
         AuxBaseAddress    = InterpreterBase;
+
+    #ifdef DEBUG_BUILD
+        if (IsXorgExecPath && ExecDebugTTY != nullptr)
+        {
+            ExecDebugTTY->Serialprintf("exec_stage_dbg: pid=%u path='%s' stage=after_map_elf addrspace=%p entry=%p interp_entry=%p\n", Id, FilePath, NewAddressSpace,
+                           (void*) NewUserEntryPoint, (void*) InterpreterEntry);
+        }
+    #endif
     }
     else
     {
@@ -1954,6 +2008,13 @@ uint8_t LogicLayer::ChangeProcessExecution(uint8_t Id, const char* FilePath, con
     NewState.cs       = USER_CS;
     NewState.ss       = USER_SS;
 
+#ifdef DEBUG_BUILD
+    if (IsXorgExecPath && ExecDebugTTY != nullptr)
+    {
+        ExecDebugTTY->Serialprintf("exec_stage_dbg: pid=%u path='%s' stage=before_init_stack\n", Id, FilePath);
+    }
+#endif
+
     if (!InitializeExecveUserEntry(Resource, NewAddressSpace, &NewState, Argv, Argc, Envp, Envc, FilePath, AuxProgramHeaderAddress, AuxProgramHeaderEntrySize, AuxProgramHeaderCount, AuxEntryPoint,
                                    AuxBaseAddress))
     {
@@ -1969,6 +2030,13 @@ uint8_t LogicLayer::ChangeProcessExecution(uint8_t Id, const char* FilePath, con
         delete NewAddressSpace;
         return PROCESS_ID_INVALID;
     }
+
+#ifdef DEBUG_BUILD
+    if (IsXorgExecPath && ExecDebugTTY != nullptr)
+    {
+        ExecDebugTTY->Serialprintf("exec_stage_dbg: pid=%u path='%s' stage=after_init_stack rip=%p rsp=%p\n", Id, FilePath, (void*) NewState.rip, (void*) NewState.rsp);
+    }
+#endif
 
     VirtualAddressSpace* OldAddressSpace             = TargetProcess->AddressSpace;
     FILE_TYPE            OldFileType                 = TargetProcess->FileType;
@@ -2005,6 +2073,13 @@ uint8_t LogicLayer::ChangeProcessExecution(uint8_t Id, const char* FilePath, con
     TargetProcess->StackPointer = reinterpret_cast<void*>(NewAddressSpace->GetStackVirtualAddressStart());
     TargetProcess->State        = NewState;
 
+#ifdef DEBUG_BUILD
+    if (IsXorgExecPath && ExecDebugTTY != nullptr)
+    {
+        ExecDebugTTY->Serialprintf("exec_stage_dbg: pid=%u path='%s' stage=state_swapped\n", Id, FilePath);
+    }
+#endif
+
     Process* RunningProcess = PM->GetRunningProcess();
     if (RunningProcess == TargetProcess)
     {
@@ -2035,6 +2110,13 @@ uint8_t LogicLayer::ChangeProcessExecution(uint8_t Id, const char* FilePath, con
         ReleaseRunningExecutable(Resource, TargetProcess);
         RetainRunningExecutable(TargetProcess, Entry);
     }
+
+#ifdef DEBUG_BUILD
+    if (IsXorgExecPath && ExecDebugTTY != nullptr)
+    {
+        ExecDebugTTY->Serialprintf("exec_stage_dbg: pid=%u path='%s' stage=success_return\n", Id, FilePath);
+    }
+#endif
 
     return Id;
 }
@@ -3108,6 +3190,16 @@ bool LogicLayer::SignalProcess(uint8_t Id, int64_t Signal)
 
     uint64_t SignalMaskBit = (1ULL << static_cast<uint64_t>(Signal - 1));
 
+#ifdef DEBUG_BUILD
+    TTY* DebugTerminal = nullptr;
+    {
+        if (Resource != nullptr)
+        {
+            DebugTerminal = Resource->GetTTY();
+        }
+    }
+#endif
+
     auto StopProcess = [&]()
     {
         if (TargetProcess->Status == PROCESS_RUNNING || TargetProcess->Status == PROCESS_READY)
@@ -3172,6 +3264,13 @@ bool LogicLayer::SignalProcess(uint8_t Id, int64_t Signal)
     if ((TargetProcess->BlockedSignalMask & SignalMaskBit) != 0)
     {
         TargetProcess->PendingSignalMask |= SignalMaskBit;
+#ifdef DEBUG_BUILD
+        if (DebugTerminal != nullptr && (Signal == LINUX_SIGNAL_SIGUSR1 || Signal == LINUX_SIGNAL_SIGCHLD || TargetProcess->DebugIsXorgProcess))
+        {
+            DebugTerminal->Serialprintf("sig_dbg: queued pid=%u sig=%lld blocked=%p pending=%p status=%d\n", TargetProcess->Id, static_cast<long long>(Signal),
+                                   (void*) TargetProcess->BlockedSignalMask, (void*) TargetProcess->PendingSignalMask, static_cast<int>(TargetProcess->Status));
+        }
+#endif
         return true;
     }
 
@@ -3249,6 +3348,13 @@ bool LogicLayer::SignalProcess(uint8_t Id, int64_t Signal)
 
     if (TargetProcess->Status == PROCESS_BLOCKED)
     {
+#ifdef DEBUG_BUILD
+        if (DebugTerminal != nullptr && (Signal == LINUX_SIGNAL_SIGUSR1 || Signal == LINUX_SIGNAL_SIGCHLD || TargetProcess->DebugIsXorgProcess))
+        {
+            DebugTerminal->Serialprintf("sig_dbg: waking pid=%u sig=%lld blocked=%p pending=%p\n", TargetProcess->Id, static_cast<long long>(Signal),
+                                   (void*) TargetProcess->BlockedSignalMask, (void*) TargetProcess->PendingSignalMask);
+        }
+#endif
         if (Sync != nullptr)
         {
             Sync->RemoveFromSleepQueue(Id);

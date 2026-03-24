@@ -114,6 +114,8 @@ struct Process
     int32_t                     SessionId                 = 0;
     uint64_t                    BlockedSignalMask         = 0;
     uint64_t                    PendingSignalMask         = 0;
+    uint8_t                     DebugSyscallTraceRemaining = 0;
+    bool                        DebugIsXorgProcess        = false;
     int*                        ClearChildTidAddress      = nullptr;
     uint64_t                    ProgramBreak              = 0;
     uint64_t                    RealIntervalTimerRemainingTicks = 0;

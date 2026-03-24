@@ -7,6 +7,7 @@
 #include "TranslationLayer.hpp"
 
 #include "Layers/Logic/LogicLayer.hpp"
+#include "Layers/Resource/ExtendedFileSystemManager.hpp"
 
 #include <Arch/x86.hpp>
 #include <CommonUtils.hpp>
@@ -51,6 +52,7 @@ constexpr uint64_t SYSCALL_EXEC_MAX_VECTOR   = 128;
 constexpr uint64_t SYSCALL_MAX_PATH_SEGMENTS = 256;
 constexpr uint64_t SYSCALL_IOV_MAX           = 1024;
 constexpr uint64_t SYSCALL_MAX_SOCKET_ADDRESS = 256;
+constexpr uint8_t  XORG_DEBUG_SYSCALL_TRACE_COUNT = 160;
 
 struct LinuxIOVec
 {
@@ -453,6 +455,30 @@ bool DispatchOnePendingUnblockedSignal(LogicLayer* Logic, Process* CurrentProces
     }
 
     return false;
+}
+
+bool KernelStringEquals(const char* Left, const char* Right)
+{
+    if (Left == nullptr || Right == nullptr)
+    {
+        return false;
+    }
+
+    size_t Index = 0;
+    while (true)
+    {
+        if (Left[Index] != Right[Index])
+        {
+            return false;
+        }
+
+        if (Left[Index] == '\0')
+        {
+            return true;
+        }
+
+        ++Index;
+    }
 }
 
 bool IsCanonicalX86_64Address(uint64_t Address)
@@ -3054,6 +3080,10 @@ int64_t TranslationLayer::HandleOpenSystemCall(const char* Path, uint64_t Flags)
         return LINUX_ERR_EFAULT;
     }
 
+    const bool   TraceXorgPathOps = CurrentProcess->DebugIsXorgProcess;
+    ResourceLayer* Resource       = Logic->GetResourceLayer();
+    TTY*          Terminal        = (Resource != nullptr) ? Resource->GetTTY() : nullptr;
+
     char        EffectivePath[SYSCALL_PATH_MAX] = {};
     const char* LookupPath                      = KernelPath;
 
@@ -3092,6 +3122,11 @@ int64_t TranslationLayer::HandleOpenSystemCall(const char* Path, uint64_t Flags)
         LookupPath                             = EffectivePath;
     }
 
+    if (TraceXorgPathOps && Terminal != nullptr)
+    {
+        Terminal->Serialprintf("xorg_path_dbg: pid=%u op=open path='%s' flags=%llX\n", CurrentProcess->Id, LookupPath, static_cast<unsigned long long>(Flags));
+    }
+
     Dentry* NodeDentry = VFS->Lookup(LookupPath);
     if (NodeDentry != nullptr && NodeDentry->inode != nullptr && (Flags & LINUX_O_CREAT) != 0 && (Flags & LINUX_O_EXCL) != 0)
     {
@@ -3102,6 +3137,10 @@ int64_t TranslationLayer::HandleOpenSystemCall(const char* Path, uint64_t Flags)
     {
         if ((Flags & LINUX_O_CREAT) == 0)
         {
+            if (TraceXorgPathOps && Terminal != nullptr)
+            {
+                Terminal->Serialprintf("xorg_path_dbg: pid=%u op=open ret=%lld path='%s'\n", CurrentProcess->Id, static_cast<long long>(LINUX_ERR_ENOENT), LookupPath);
+            }
             return LINUX_ERR_ENOENT;
         }
 
@@ -3113,11 +3152,21 @@ int64_t TranslationLayer::HandleOpenSystemCall(const char* Path, uint64_t Flags)
         NodeDentry = VFS->Lookup(LookupPath);
         if (NodeDentry == nullptr || NodeDentry->inode == nullptr)
         {
+            if (TraceXorgPathOps && Terminal != nullptr)
+            {
+                Terminal->Serialprintf("xorg_path_dbg: pid=%u op=open ret=%lld path='%s'\n", CurrentProcess->Id, static_cast<long long>(LINUX_ERR_ENOENT), LookupPath);
+            }
             return LINUX_ERR_ENOENT;
         }
     }
 
-    return AllocateProcessFileDescriptor(CurrentProcess, NodeDentry, Flags);
+    int64_t Result = AllocateProcessFileDescriptor(CurrentProcess, NodeDentry, Flags);
+    if (TraceXorgPathOps && Terminal != nullptr)
+    {
+        Terminal->Serialprintf("xorg_path_dbg: pid=%u op=open ret=%lld path='%s'\n", CurrentProcess->Id, static_cast<long long>(Result), LookupPath);
+    }
+
+    return Result;
 }
 
 int64_t TranslationLayer::HandleOpenAtSystemCall(int64_t DirectoryFileDescriptor, const char* Path, uint64_t Flags, uint64_t Mode)
@@ -4299,6 +4348,10 @@ int64_t TranslationLayer::HandleAccessSystemCall(const char* Path, int64_t Mode)
         return LINUX_ERR_EFAULT;
     }
 
+    const bool   TraceXorgPathOps = CurrentProcess->DebugIsXorgProcess;
+    ResourceLayer* Resource       = Logic->GetResourceLayer();
+    TTY*          Terminal        = (Resource != nullptr) ? Resource->GetTTY() : nullptr;
+
     char KernelPath[SYSCALL_PATH_MAX] = {};
     if (!CopyUserCString(Logic, Path, KernelPath, sizeof(KernelPath)))
     {
@@ -4348,20 +4401,42 @@ int64_t TranslationLayer::HandleAccessSystemCall(const char* Path, int64_t Mode)
         LookupPath                             = EffectivePath;
     }
 
+    if (TraceXorgPathOps && Terminal != nullptr)
+    {
+        Terminal->Serialprintf("xorg_path_dbg: pid=%u op=access path='%s' mode=%lld\n", CurrentProcess->Id, LookupPath, static_cast<long long>(Mode));
+    }
+
     Dentry* Existing = VFS->Lookup(LookupPath);
     if (Existing == nullptr || Existing->inode == nullptr)
     {
+        if (TraceXorgPathOps && Terminal != nullptr)
+        {
+            Terminal->Serialprintf("xorg_path_dbg: pid=%u op=access ret=%lld path='%s'\n", CurrentProcess->Id, static_cast<long long>(LINUX_ERR_ENOENT), LookupPath);
+        }
         return LINUX_ERR_ENOENT;
     }
 
     if (Mode == LINUX_ACCESS_F_OK)
     {
+        if (TraceXorgPathOps && Terminal != nullptr)
+        {
+            Terminal->Serialprintf("xorg_path_dbg: pid=%u op=access ret=0 path='%s'\n", CurrentProcess->Id, LookupPath);
+        }
         return 0;
     }
 
     if ((Mode & (LINUX_ACCESS_R_OK | LINUX_ACCESS_W_OK | LINUX_ACCESS_X_OK)) != 0)
     {
+        if (TraceXorgPathOps && Terminal != nullptr)
+        {
+            Terminal->Serialprintf("xorg_path_dbg: pid=%u op=access ret=0 path='%s'\n", CurrentProcess->Id, LookupPath);
+        }
         return 0;
+    }
+
+    if (TraceXorgPathOps && Terminal != nullptr)
+    {
+        Terminal->Serialprintf("xorg_path_dbg: pid=%u op=access ret=%lld path='%s'\n", CurrentProcess->Id, static_cast<long long>(LINUX_ERR_EACCES), LookupPath);
     }
 
     return LINUX_ERR_EACCES;
@@ -6950,6 +7025,7 @@ int64_t TranslationLayer::HandleExecveSystemCall(const char* Path, const char* c
     }
 
     uint8_t ChangedProcessId = Logic->ChangeProcessExecution(CurrentProcess->Id, KernelPathBuffer, KernelArgv, KernelArgc, KernelEnvp, KernelEnvc);
+    bool    IsXorgExec       = KernelStringEquals(KernelPathBuffer, "/usr/libexec/Xorg");
 
     if (KernelArgv != nullptr)
     {
@@ -6967,6 +7043,24 @@ int64_t TranslationLayer::HandleExecveSystemCall(const char* Path, const char* c
     {
         return LINUX_ERR_ENOENT;
     }
+
+    CurrentProcess->DebugIsXorgProcess        = IsXorgExec;
+    CurrentProcess->DebugSyscallTraceRemaining = IsXorgExec ? XORG_DEBUG_SYSCALL_TRACE_COUNT : 0;
+
+#ifdef DEBUG_BUILD
+    if (IsXorgExec)
+    {
+        Dispatcher* ActiveDispatcher = Dispatcher::GetActive();
+        if (ActiveDispatcher != nullptr)
+        {
+            TTY* Terminal = ActiveDispatcher->GetResourceLayer()->GetTTY();
+            if (Terminal != nullptr)
+            {
+                Terminal->Serialprintf("xorg_dbg: armed syscall trace pid=%u count=%u\n", CurrentProcess->Id, static_cast<uint32_t>(CurrentProcess->DebugSyscallTraceRemaining));
+            }
+        }
+    }
+#endif
 
     for (size_t FileIndex = 0; FileIndex < MAX_OPEN_FILES_PER_PROCESS; ++FileIndex)
     {
@@ -7234,12 +7328,6 @@ int64_t TranslationLayer::HandleMmapSystemCall(void* Address, uint64_t Length, i
             return LINUX_ERR_ENOMEM;
         }
 
-        uint64_t ActivePageTable = ActiveDispatcher->GetResourceLayer()->ReadCurrentPageTable();
-        if (ActivePageTable == PageMapL4TableAddr)
-        {
-            ActiveDispatcher->GetResourceLayer()->LoadPageTable(ActivePageTable);
-        }
-
         return static_cast<int64_t>(MappingStart);
     }
 
@@ -7281,33 +7369,75 @@ int64_t TranslationLayer::HandleMmapSystemCall(void* Address, uint64_t Length, i
             return LINUX_ERR_ENOMEM;
         }
 
-        kmemset(PhysicalAllocation, 0, static_cast<size_t>(PageCount * PAGE_SIZE));
-
-        uint64_t OriginalOffset = OpenFile->CurrentOffset;
-        OpenFile->CurrentOffset = static_cast<uint64_t>(Offset);
-
-        uint8_t* DestinationBuffer = reinterpret_cast<uint8_t*>(PhysicalAllocation);
-        uint64_t RemainingBytes    = Length;
-        while (RemainingBytes > 0)
+        uint64_t RequestedOffset = static_cast<uint64_t>(Offset);
+        uint64_t BytesToPopulate = 0;
+        if (RequestedOffset < OpenFile->Node->NodeSize)
         {
-            int64_t ReadResult = OpenFile->Node->FileOps->Read(OpenFile, DestinationBuffer, RemainingBytes);
-            if (ReadResult < 0)
-            {
-                OpenFile->CurrentOffset = OriginalOffset;
-                PMM->FreePagesFromDescriptor(PhysicalAllocation, PageCount);
-                return ReadResult;
-            }
-
-            if (ReadResult == 0)
-            {
-                break;
-            }
-
-            DestinationBuffer += static_cast<uint64_t>(ReadResult);
-            RemainingBytes -= static_cast<uint64_t>(ReadResult);
+            uint64_t AvailableBytes = OpenFile->Node->NodeSize - RequestedOffset;
+            BytesToPopulate         = (Length < AvailableBytes) ? Length : AvailableBytes;
         }
 
-        OpenFile->CurrentOffset = OriginalOffset;
+        if (BytesToPopulate > 0)
+        {
+            bool FastPathSuccess = false;
+
+            if (OpenFile->Node->NodeData != nullptr)
+            {
+                const uint8_t* Source = reinterpret_cast<const uint8_t*>(OpenFile->Node->NodeData) + RequestedOffset;
+                memcpy(PhysicalAllocation, Source, static_cast<size_t>(BytesToPopulate));
+                FastPathSuccess = true;
+            }
+            else if (OpenFile->Node->IsLazyLoad && OpenFile->Node->BackingInodeNumber != 0 && OpenFile->Node->LazyLoadContext != nullptr)
+            {
+                ExtendedFileSystemManager* FileSystemManager = reinterpret_cast<ExtendedFileSystemManager*>(OpenFile->Node->LazyLoadContext);
+                if (FileSystemManager != nullptr)
+                {
+                    FastPathSuccess = FileSystemManager->LoadInodeDataRange(OpenFile->Node->BackingInodeNumber, RequestedOffset, PhysicalAllocation, BytesToPopulate);
+                }
+            }
+
+            if (!FastPathSuccess)
+            {
+                uint64_t OriginalOffset = OpenFile->CurrentOffset;
+                OpenFile->CurrentOffset = RequestedOffset;
+
+                uint8_t* DestinationBuffer = reinterpret_cast<uint8_t*>(PhysicalAllocation);
+                uint64_t RemainingBytes    = BytesToPopulate;
+                while (RemainingBytes > 0)
+                {
+                    int64_t ReadResult = OpenFile->Node->FileOps->Read(OpenFile, DestinationBuffer, RemainingBytes);
+                    if (ReadResult < 0)
+                    {
+                        OpenFile->CurrentOffset = OriginalOffset;
+                        PMM->FreePagesFromDescriptor(PhysicalAllocation, PageCount);
+                        return ReadResult;
+                    }
+
+                    if (ReadResult == 0)
+                    {
+                        break;
+                    }
+
+                    DestinationBuffer += static_cast<uint64_t>(ReadResult);
+                    RemainingBytes -= static_cast<uint64_t>(ReadResult);
+                }
+
+                OpenFile->CurrentOffset = OriginalOffset;
+
+                uint64_t BytesCopied = BytesToPopulate - RemainingBytes;
+                if (BytesCopied < BytesToPopulate)
+                {
+                    uint8_t* TailStart = reinterpret_cast<uint8_t*>(PhysicalAllocation) + BytesCopied;
+                    kmemset(TailStart, 0, static_cast<size_t>(BytesToPopulate - BytesCopied));
+                }
+            }
+        }
+
+        if (BytesToPopulate < MappingLength)
+        {
+            uint8_t* TailStart = reinterpret_cast<uint8_t*>(PhysicalAllocation) + BytesToPopulate;
+            kmemset(TailStart, 0, static_cast<size_t>(MappingLength - BytesToPopulate));
+        }
 
         uint64_t PageMapL4TableAddr = CurrentProcess->AddressSpace->GetPageMapL4TableAddr();
         if (PageMapL4TableAddr == 0)
@@ -7336,12 +7466,6 @@ int64_t TranslationLayer::HandleMmapSystemCall(void* Address, uint64_t Length, i
             return LINUX_ERR_ENOMEM;
         }
 
-        uint64_t ActivePageTable = ActiveDispatcher->GetResourceLayer()->ReadCurrentPageTable();
-        if (ActivePageTable == PageMapL4TableAddr)
-        {
-            ActiveDispatcher->GetResourceLayer()->LoadPageTable(ActivePageTable);
-        }
-
         return static_cast<int64_t>(MappingStart);
     }
 
@@ -7365,16 +7489,6 @@ int64_t TranslationLayer::HandleMmapSystemCall(void* Address, uint64_t Length, i
     if (!RegisterProcessMapping(CurrentProcess, RegisteredStart, RegisteredLength, 0, false))
     {
         return LINUX_ERR_ENOMEM;
-    }
-
-    if (ActiveDispatcher != nullptr && ActiveDispatcher->GetResourceLayer() != nullptr)
-    {
-        uint64_t UserPageTable   = CurrentProcess->AddressSpace->GetPageMapL4TableAddr();
-        uint64_t ActivePageTable = ActiveDispatcher->GetResourceLayer()->ReadCurrentPageTable();
-        if (UserPageTable != 0 && ActivePageTable == UserPageTable)
-        {
-            ActiveDispatcher->GetResourceLayer()->LoadPageTable(ActivePageTable);
-        }
     }
 
     return static_cast<int64_t>(FileMappedAddress);
@@ -7807,13 +7921,55 @@ int64_t TranslationLayer::HandleRtSigsuspendSystemCall(const void* Set, uint64_t
     uint64_t PreviousMask             = CurrentProcess->BlockedSignalMask;
     CurrentProcess->BlockedSignalMask = TemporaryMask;
 
+#ifdef DEBUG_BUILD
+    {
+        Dispatcher* ActiveDispatcher = Dispatcher::GetActive();
+        if (ActiveDispatcher != nullptr)
+        {
+            TTY* Terminal = ActiveDispatcher->GetResourceLayer()->GetTTY();
+            if (Terminal != nullptr)
+            {
+                Terminal->Serialprintf("sigsuspend_dbg: pid=%u prev=%p temp=%p pending=%p\n", CurrentProcess->Id, (void*) PreviousMask, (void*) TemporaryMask,
+                                       (void*) CurrentProcess->PendingSignalMask);
+            }
+        }
+    }
+#endif
+
     if (DispatchOnePendingUnblockedSignal(Logic, CurrentProcess))
     {
+#ifdef DEBUG_BUILD
+        {
+            Dispatcher* ActiveDispatcher = Dispatcher::GetActive();
+            if (ActiveDispatcher != nullptr)
+            {
+                TTY* Terminal = ActiveDispatcher->GetResourceLayer()->GetTTY();
+                if (Terminal != nullptr)
+                {
+                    Terminal->Serialprintf("sigsuspend_dbg: immediate-eintr pid=%u pending_now=%p\n", CurrentProcess->Id, (void*) CurrentProcess->PendingSignalMask);
+                }
+            }
+        }
+#endif
         CurrentProcess->BlockedSignalMask = PreviousMask;
         return LINUX_ERR_EINTR;
     }
 
     Logic->BlockProcess(CurrentProcess->Id);
+
+#ifdef DEBUG_BUILD
+    {
+        Dispatcher* ActiveDispatcher = Dispatcher::GetActive();
+        if (ActiveDispatcher != nullptr)
+        {
+            TTY* Terminal = ActiveDispatcher->GetResourceLayer()->GetTTY();
+            if (Terminal != nullptr)
+            {
+                Terminal->Serialprintf("sigsuspend_dbg: blocked pid=%u pending=%p\n", CurrentProcess->Id, (void*) CurrentProcess->PendingSignalMask);
+            }
+        }
+    }
+#endif
 
     CurrentProcess->BlockedSignalMask = PreviousMask;
     return LINUX_ERR_EINTR;

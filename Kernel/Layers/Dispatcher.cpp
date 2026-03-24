@@ -467,6 +467,14 @@ int64_t Dispatcher::HandleSystemCall(uint64_t SystemCallNumber, uint64_t Arg1, u
     if (Terminal != nullptr && SystemCallNumber != 20)
     {
         Terminal->Serialprintf("syscall: n=%lu a1=%p a2=%p a3=%p a4=%p a5=%p a6=%p\n", SystemCallNumber, (void*) Arg1, (void*) Arg2, (void*) Arg3, (void*) Arg4, (void*) Arg5, (void*) Arg6);
+
+        ProcessManager* ProcessMgr = Logic.GetProcessManager();
+        Process*        Running    = (ProcessMgr == nullptr) ? nullptr : ProcessMgr->GetRunningProcess();
+        if (Running != nullptr && Running->DebugSyscallTraceRemaining > 0)
+        {
+            Terminal->Serialprintf("xorg_syscall_dbg: pid=%u left=%u n=%lu a1=%p a2=%p a3=%p\n", Running->Id, static_cast<uint32_t>(Running->DebugSyscallTraceRemaining),
+                                   SystemCallNumber, (void*) Arg1, (void*) Arg2, (void*) Arg3);
+        }
     }
 #endif
 
@@ -476,6 +484,15 @@ int64_t Dispatcher::HandleSystemCall(uint64_t SystemCallNumber, uint64_t Arg1, u
     if (Terminal != nullptr && SystemCallNumber != 20)
     {
         Terminal->Serialprintf("syscall_ret: n=%lu r=%lld\n", SystemCallNumber, static_cast<long long>(Result));
+
+        ProcessManager* ProcessMgr = Logic.GetProcessManager();
+        Process*        Running    = (ProcessMgr == nullptr) ? nullptr : ProcessMgr->GetRunningProcess();
+        if (Running != nullptr && Running->DebugSyscallTraceRemaining > 0)
+        {
+            Terminal->Serialprintf("xorg_syscall_dbg_ret: pid=%u left=%u n=%lu r=%lld\n", Running->Id, static_cast<uint32_t>(Running->DebugSyscallTraceRemaining),
+                                   SystemCallNumber, static_cast<long long>(Result));
+            --Running->DebugSyscallTraceRemaining;
+        }
     }
 #endif
 
