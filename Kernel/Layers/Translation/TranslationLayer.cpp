@@ -2184,6 +2184,189 @@ int64_t TranslationLayer::HandleSocketSystemCall(int64_t Domain, int64_t Type, i
     return FileDescriptor;
 }
 
+int64_t TranslationLayer::HandleConnectSystemCall(uint64_t FileDescriptor, const void* SocketAddress, uint64_t SocketAddressLength)
+{
+    if (Logic == nullptr || SocketAddress == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    if (SocketAddressLength == 0 || SocketAddressLength > SYSCALL_MAX_SOCKET_ADDRESS)
+    {
+        return LINUX_ERR_EINVAL;
+    }
+
+    ProcessManager* PM = Logic->GetProcessManager();
+    if (PM == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    InterProcessComunicationManager* IPC = Logic->GetInterProcessComunicationManager();
+    if (IPC == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    Process* CurrentProcess = PM->GetRunningProcess();
+    if (CurrentProcess == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    if (FileDescriptor >= MAX_OPEN_FILES_PER_PROCESS)
+    {
+        return LINUX_ERR_EBADF;
+    }
+
+    File* OpenFile = CurrentProcess->FileTable[FileDescriptor];
+    if (OpenFile == nullptr)
+    {
+        return LINUX_ERR_EBADF;
+    }
+
+    uint8_t KernelSocketAddress[SYSCALL_MAX_SOCKET_ADDRESS] = {};
+    if (!Logic->CopyFromUserToKernel(SocketAddress, KernelSocketAddress, SocketAddressLength))
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    int64_t ConnectResult = IPC->ConnectSocket(CurrentProcess, static_cast<int64_t>(FileDescriptor), KernelSocketAddress, SocketAddressLength);
+    if (ConnectResult == LINUX_SOCKET_ERR_ENOTSOCK)
+    {
+        return LINUX_ERR_ENOTSOCK;
+    }
+
+    return ConnectResult;
+}
+
+int64_t TranslationLayer::HandleAcceptSystemCall(uint64_t FileDescriptor, void* SocketAddress, void* SocketAddressLength)
+{
+    if (Logic == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    ProcessManager* PM = Logic->GetProcessManager();
+    if (PM == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    InterProcessComunicationManager* IPC = Logic->GetInterProcessComunicationManager();
+    if (IPC == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    Process* CurrentProcess = PM->GetRunningProcess();
+    if (CurrentProcess == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    if (FileDescriptor >= MAX_OPEN_FILES_PER_PROCESS)
+    {
+        return LINUX_ERR_EBADF;
+    }
+
+    File* ListeningFile = CurrentProcess->FileTable[FileDescriptor];
+    if (ListeningFile == nullptr)
+    {
+        return LINUX_ERR_EBADF;
+    }
+
+    if ((SocketAddress == nullptr) != (SocketAddressLength == nullptr))
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    if (SocketAddressLength != nullptr)
+    {
+        uint32_t UserLength = 0;
+        if (!Logic->CopyFromUserToKernel(SocketAddressLength, &UserLength, sizeof(UserLength)))
+        {
+            return LINUX_ERR_EFAULT;
+        }
+
+        UserLength = 0;
+        if (!Logic->CopyFromKernelToUser(&UserLength, SocketAddressLength, sizeof(UserLength)))
+        {
+            return LINUX_ERR_EFAULT;
+        }
+    }
+
+    int64_t NewFileDescriptor = -1;
+    for (size_t Index = 0; Index < MAX_OPEN_FILES_PER_PROCESS; ++Index)
+    {
+        if (CurrentProcess->FileTable[Index] == nullptr)
+        {
+            NewFileDescriptor = static_cast<int64_t>(Index);
+            break;
+        }
+    }
+
+    if (NewFileDescriptor < 0)
+    {
+        return LINUX_ERR_EMFILE;
+    }
+
+    int64_t AcceptError = 0;
+    Socket* AcceptedSocket = IPC->AcceptSocket(CurrentProcess, static_cast<int64_t>(FileDescriptor), CurrentProcess, NewFileDescriptor, &AcceptError);
+    if (AcceptedSocket == nullptr)
+    {
+        if (AcceptError == LINUX_SOCKET_ERR_ENOTSOCK)
+        {
+            return LINUX_ERR_ENOTSOCK;
+        }
+
+        if (AcceptError == LINUX_SOCKET_ERR_EAGAIN && (ListeningFile->OpenFlags & LINUX_O_NONBLOCK) == 0)
+        {
+            return LINUX_ERR_EAGAIN;
+        }
+
+        if (AcceptError != 0)
+        {
+            return AcceptError;
+        }
+
+        return LINUX_ERR_EAGAIN;
+    }
+
+    INode* SocketNode = new INode;
+    if (SocketNode == nullptr)
+    {
+        IPC->CloseSocket(CurrentProcess, NewFileDescriptor);
+        return LINUX_ERR_ENOMEM;
+    }
+
+    *SocketNode                 = {};
+    SocketNode->NodeType        = INODE_DEV;
+    SocketNode->NodeSize        = 0;
+    SocketNode->NodeData        = AcceptedSocket;
+    SocketNode->INodeOps        = nullptr;
+    SocketNode->FileOps         = &AcceptedSocket->FileOps;
+
+    File* AcceptedFile = new File;
+    if (AcceptedFile == nullptr)
+    {
+        delete SocketNode;
+        IPC->CloseSocket(CurrentProcess, NewFileDescriptor);
+        return LINUX_ERR_ENOMEM;
+    }
+
+    AcceptedFile->FileDescriptor  = static_cast<uint64_t>(NewFileDescriptor);
+    AcceptedFile->Node            = SocketNode;
+    AcceptedFile->CurrentOffset   = 0;
+    AcceptedFile->AccessFlags     = READ_WRITE;
+    AcceptedFile->OpenFlags       = LINUX_O_ACCMODE;
+    AcceptedFile->DescriptorFlags = 0;
+    AcceptedFile->DirectoryEntry  = nullptr;
+
+    CurrentProcess->FileTable[NewFileDescriptor] = AcceptedFile;
+    return NewFileDescriptor;
+}
+
 int64_t TranslationLayer::HandleBindSystemCall(uint64_t FileDescriptor, const void* SocketAddress, uint64_t SocketAddressLength)
 {
     if (Logic == nullptr || SocketAddress == nullptr)
@@ -2238,6 +2421,51 @@ int64_t TranslationLayer::HandleBindSystemCall(uint64_t FileDescriptor, const vo
     }
 
     return BindResult;
+}
+
+int64_t TranslationLayer::HandleListenSystemCall(uint64_t FileDescriptor, int64_t Backlog)
+{
+    if (Logic == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    ProcessManager* PM = Logic->GetProcessManager();
+    if (PM == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    InterProcessComunicationManager* IPC = Logic->GetInterProcessComunicationManager();
+    if (IPC == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    Process* CurrentProcess = PM->GetRunningProcess();
+    if (CurrentProcess == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    if (FileDescriptor >= MAX_OPEN_FILES_PER_PROCESS)
+    {
+        return LINUX_ERR_EBADF;
+    }
+
+    File* OpenFile = CurrentProcess->FileTable[FileDescriptor];
+    if (OpenFile == nullptr)
+    {
+        return LINUX_ERR_EBADF;
+    }
+
+    int64_t ListenResult = IPC->ListenSocket(CurrentProcess, static_cast<int64_t>(FileDescriptor), Backlog);
+    if (ListenResult == LINUX_SOCKET_ERR_ENOTSOCK)
+    {
+        return LINUX_ERR_ENOTSOCK;
+    }
+
+    return ListenResult;
 }
 
 int64_t TranslationLayer::HandleOpenSystemCall(const char* Path, uint64_t Flags)

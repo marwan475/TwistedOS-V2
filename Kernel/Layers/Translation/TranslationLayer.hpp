@@ -29,7 +29,10 @@ public:
     int64_t HandleLseekSystemCall(uint64_t FileDescriptor, int64_t Offset, int64_t Whence);
     int64_t HandleIoctlSystemCall(uint64_t FileDescriptor, uint64_t Request, uint64_t Argument);
     int64_t HandleSocketSystemCall(int64_t Domain, int64_t Type, int64_t Protocol);
+    int64_t HandleConnectSystemCall(uint64_t FileDescriptor, const void* SocketAddress, uint64_t SocketAddressLength);
+    int64_t HandleAcceptSystemCall(uint64_t FileDescriptor, void* SocketAddress, void* SocketAddressLength);
     int64_t HandleBindSystemCall(uint64_t FileDescriptor, const void* SocketAddress, uint64_t SocketAddressLength);
+    int64_t HandleListenSystemCall(uint64_t FileDescriptor, int64_t Backlog);
     int64_t HandleOpenSystemCall(const char* Path, uint64_t Flags);
     int64_t HandleOpenAtSystemCall(int64_t DirectoryFileDescriptor, const char* Path, uint64_t Flags, uint64_t Mode);
     int64_t HandleStatSystemCall(const char* Path, void* Buffer);

@@ -105,8 +105,17 @@ int64_t TranslationLayer::HandlePosixSystemCallNumber(uint64_t SystemCallNumber,
         case 41: // socket
             return HandleSocketSystemCall(static_cast<int64_t>(Arg1), static_cast<int64_t>(Arg2), static_cast<int64_t>(Arg3));
             break;
+        case 42: // connect
+            return HandleConnectSystemCall(Arg1, reinterpret_cast<const void*>(Arg2), Arg3);
+            break;
+        case 43: // accept
+            return HandleAcceptSystemCall(Arg1, reinterpret_cast<void*>(Arg2), reinterpret_cast<void*>(Arg3));
+            break;
         case 49: // bind
             return HandleBindSystemCall(Arg1, reinterpret_cast<const void*>(Arg2), Arg3);
+            break;
+        case 50: // listen
+            return HandleListenSystemCall(Arg1, static_cast<int64_t>(Arg2));
             break;
         case 57: // fork
             return HandleForkSystemCall();

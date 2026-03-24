@@ -9,6 +9,9 @@
 namespace
 {
 constexpr uint64_t LINUX_SOCKADDR_FAMILY_SIZE = sizeof(uint16_t);
+constexpr int64_t  LINUX_LISTEN_SOMAXCONN     = 4096;
+constexpr uint16_t LINUX_INET_EPHEMERAL_START = 49152;
+constexpr uint16_t LINUX_INET_EPHEMERAL_END   = 65535;
 
 uint16_t ReadLinuxAddressFamily(const void* SocketAddress)
 {
@@ -58,6 +61,46 @@ bool AreUnixPathsEqual(const char* LeftPath, uint64_t LeftPathLength, const char
 	}
 
 	return true;
+}
+
+bool IsSocketTracked(Socket* const* SocketList, uint64_t SocketCount, const Socket* Candidate)
+{
+	if (Candidate == nullptr)
+	{
+		return false;
+	}
+
+	for (uint64_t SocketIndex = 0; SocketIndex < SocketCount; ++SocketIndex)
+	{
+		if (SocketList[SocketIndex] == Candidate)
+		{
+			return true;
+		}
+	}
+
+	return false;
+}
+
+void RemovePendingConnectionFromUnixQueue(UnixSocket* QueueOwner, const Socket* Target)
+{
+	if (QueueOwner == nullptr || QueueOwner->PendingConnections == nullptr || QueueOwner->PendingConnectionCount == 0 || Target == nullptr)
+	{
+		return;
+	}
+
+	uint64_t WriteIndex = 0;
+	for (uint64_t ReadIndex = 0; ReadIndex < QueueOwner->PendingConnectionCount; ++ReadIndex)
+	{
+		Socket* Entry = QueueOwner->PendingConnections[ReadIndex];
+		if (Entry == Target)
+		{
+			continue;
+		}
+
+		QueueOwner->PendingConnections[WriteIndex++] = Entry;
+	}
+
+	QueueOwner->PendingConnectionCount = WriteIndex;
 }
 
 int64_t SocketRead(File* OpenFile, void* Buffer, uint64_t Count)
@@ -186,6 +229,14 @@ void InterProcessComunicationManager::DestroySocket(Socket* SocketEntry)
 			SocketImplementation->Path = nullptr;
 		}
 
+		if (SocketImplementation != nullptr && SocketImplementation->PendingConnections != nullptr)
+		{
+			delete[] SocketImplementation->PendingConnections;
+			SocketImplementation->PendingConnections = nullptr;
+			SocketImplementation->PendingConnectionCount = 0;
+			SocketImplementation->PendingConnectionCapacity = 0;
+		}
+
 		delete SocketImplementation;
 	}
 	else if (SocketEntry->Domain == LINUX_AF_INET)
@@ -274,6 +325,12 @@ Socket* InterProcessComunicationManager::CreateSocket(int64_t Domain, int64_t Ty
 		SocketImplementation->Path = nullptr;
 		SocketImplementation->PathLength = 0;
 		SocketImplementation->IsBound = false;
+		SocketImplementation->IsListening = false;
+		SocketImplementation->ListenBacklog = 0;
+		SocketImplementation->PendingConnections = nullptr;
+		SocketImplementation->PendingConnectionCount = 0;
+		SocketImplementation->PendingConnectionCapacity = 0;
+		SocketImplementation->ConnectedPeer = nullptr;
 		NewSocket->Implementation  = SocketImplementation;
 	}
 	else
@@ -294,6 +351,8 @@ Socket* InterProcessComunicationManager::CreateSocket(int64_t Domain, int64_t Ty
 		SocketImplementation->RemoteIp   = 0;
 		SocketImplementation->RemotePort = 0;
 		SocketImplementation->IsBound    = false;
+		SocketImplementation->IsListening = false;
+		SocketImplementation->ListenBacklog = 0;
 		NewSocket->Implementation        = SocketImplementation;
 	}
 
@@ -460,6 +519,392 @@ int64_t InterProcessComunicationManager::BindSocket(Process* Owner, int64_t File
 	return LINUX_SOCKET_ERR_EAFNOSUPPORT;
 }
 
+int64_t InterProcessComunicationManager::ListenSocket(Process* Owner, int64_t FileDescriptor, int64_t Backlog)
+{
+	if (Owner == nullptr || FileDescriptor < 0)
+	{
+		return LINUX_SOCKET_ERR_EINVAL;
+	}
+
+	Socket* SocketEntry = nullptr;
+	for (uint64_t SocketIndex = 0; SocketIndex < SocketCount; ++SocketIndex)
+	{
+		Socket* Candidate = SocketList[SocketIndex];
+		if (Candidate == nullptr)
+		{
+			continue;
+		}
+
+		if (Candidate->Owner == Owner && Candidate->FileDescriptor == FileDescriptor)
+		{
+			SocketEntry = Candidate;
+			break;
+		}
+	}
+
+	if (SocketEntry == nullptr)
+	{
+		return LINUX_SOCKET_ERR_ENOTSOCK;
+	}
+
+	if (SocketEntry->Type != LINUX_SOCK_STREAM && SocketEntry->Type != LINUX_SOCK_SEQPACKET)
+	{
+		return LINUX_SOCKET_ERR_EOPNOTSUPP;
+	}
+
+	if (Backlog < 0)
+	{
+		Backlog = 0;
+	}
+
+	if (Backlog > LINUX_LISTEN_SOMAXCONN)
+	{
+		Backlog = LINUX_LISTEN_SOMAXCONN;
+	}
+
+	if (SocketEntry->Domain == LINUX_AF_INET)
+	{
+		NetworkSocket* SocketImplementation = reinterpret_cast<NetworkSocket*>(SocketEntry->Implementation);
+		if (SocketImplementation == nullptr)
+		{
+			return LINUX_SOCKET_ERR_EINVAL;
+		}
+
+		if (!SocketImplementation->IsBound)
+		{
+			bool PortFound = false;
+			for (uint32_t CandidatePort = LINUX_INET_EPHEMERAL_START; CandidatePort <= LINUX_INET_EPHEMERAL_END; ++CandidatePort)
+			{
+				bool PortInUse = false;
+				for (uint64_t SocketIndex = 0; SocketIndex < SocketCount; ++SocketIndex)
+				{
+					Socket* CandidateEntry = SocketList[SocketIndex];
+					if (CandidateEntry == nullptr || CandidateEntry == SocketEntry || CandidateEntry->Domain != LINUX_AF_INET)
+					{
+						continue;
+					}
+
+					NetworkSocket* CandidateNetwork = reinterpret_cast<NetworkSocket*>(CandidateEntry->Implementation);
+					if (CandidateNetwork == nullptr || !CandidateNetwork->IsBound)
+					{
+						continue;
+					}
+
+					if (CandidateNetwork->LocalPort == static_cast<uint16_t>(CandidatePort))
+					{
+						PortInUse = true;
+						break;
+					}
+				}
+
+				if (PortInUse)
+				{
+					continue;
+				}
+
+				SocketImplementation->LocalIp = 0;
+				SocketImplementation->LocalPort = static_cast<uint16_t>(CandidatePort);
+				SocketImplementation->IsBound = true;
+				PortFound = true;
+				break;
+			}
+
+			if (!PortFound)
+			{
+				return LINUX_SOCKET_ERR_EADDRINUSE;
+			}
+		}
+
+		SocketImplementation->IsListening = true;
+		SocketImplementation->ListenBacklog = static_cast<int32_t>(Backlog);
+		return 0;
+	}
+
+	if (SocketEntry->Domain == LINUX_AF_UNIX)
+	{
+		UnixSocket* SocketImplementation = reinterpret_cast<UnixSocket*>(SocketEntry->Implementation);
+		if (SocketImplementation == nullptr)
+		{
+			return LINUX_SOCKET_ERR_EINVAL;
+		}
+
+		if (!SocketImplementation->IsBound)
+		{
+			return LINUX_SOCKET_ERR_EINVAL;
+		}
+
+		uint64_t RequestedCapacity = static_cast<uint64_t>(Backlog);
+		if (RequestedCapacity != SocketImplementation->PendingConnectionCapacity)
+		{
+			Socket** NewPendingConnections = nullptr;
+			if (RequestedCapacity > 0)
+			{
+				NewPendingConnections = new Socket*[RequestedCapacity];
+				if (NewPendingConnections == nullptr)
+				{
+					return LINUX_SOCKET_ERR_ENOMEM;
+				}
+			}
+
+			uint64_t ElementsToCopy = SocketImplementation->PendingConnectionCount;
+			if (ElementsToCopy > RequestedCapacity)
+			{
+				ElementsToCopy = RequestedCapacity;
+			}
+
+			for (uint64_t Index = 0; Index < ElementsToCopy; ++Index)
+			{
+				NewPendingConnections[Index] = SocketImplementation->PendingConnections[Index];
+			}
+
+			delete[] SocketImplementation->PendingConnections;
+			SocketImplementation->PendingConnections = NewPendingConnections;
+			SocketImplementation->PendingConnectionCapacity = RequestedCapacity;
+			SocketImplementation->PendingConnectionCount = ElementsToCopy;
+		}
+
+		SocketImplementation->IsListening = true;
+		SocketImplementation->ListenBacklog = static_cast<int32_t>(Backlog);
+		return 0;
+	}
+
+	return LINUX_SOCKET_ERR_EAFNOSUPPORT;
+}
+
+int64_t InterProcessComunicationManager::ConnectSocket(Process* Owner, int64_t FileDescriptor, const void* SocketAddress, uint64_t SocketAddressLength)
+{
+	if (Owner == nullptr || FileDescriptor < 0 || SocketAddress == nullptr)
+	{
+		return LINUX_SOCKET_ERR_EINVAL;
+	}
+
+	if (SocketAddressLength < LINUX_SOCKADDR_FAMILY_SIZE)
+	{
+		return LINUX_SOCKET_ERR_EINVAL;
+	}
+
+	Socket* ClientSocket = nullptr;
+	for (uint64_t SocketIndex = 0; SocketIndex < SocketCount; ++SocketIndex)
+	{
+		Socket* Candidate = SocketList[SocketIndex];
+		if (Candidate == nullptr)
+		{
+			continue;
+		}
+
+		if (Candidate->Owner == Owner && Candidate->FileDescriptor == FileDescriptor)
+		{
+			ClientSocket = Candidate;
+			break;
+		}
+	}
+
+	if (ClientSocket == nullptr)
+	{
+		return LINUX_SOCKET_ERR_ENOTSOCK;
+	}
+
+	if (ClientSocket->Type != LINUX_SOCK_STREAM && ClientSocket->Type != LINUX_SOCK_SEQPACKET)
+	{
+		return LINUX_SOCKET_ERR_EOPNOTSUPP;
+	}
+
+	uint16_t AddressFamily = ReadLinuxAddressFamily(SocketAddress);
+	if (AddressFamily != static_cast<uint16_t>(ClientSocket->Domain))
+	{
+		return LINUX_SOCKET_ERR_EAFNOSUPPORT;
+	}
+
+	if (ClientSocket->Domain != LINUX_AF_UNIX)
+	{
+		return LINUX_SOCKET_ERR_EAFNOSUPPORT;
+	}
+
+	if (SocketAddressLength <= LINUX_SOCKADDR_FAMILY_SIZE)
+	{
+		return LINUX_SOCKET_ERR_EINVAL;
+	}
+
+	if (SocketAddressLength > sizeof(LinuxSockAddrUn))
+	{
+		return LINUX_SOCKET_ERR_ENAMETOOLONG;
+	}
+
+	UnixSocket* ClientUnix = reinterpret_cast<UnixSocket*>(ClientSocket->Implementation);
+	if (ClientUnix == nullptr)
+	{
+		return LINUX_SOCKET_ERR_EINVAL;
+	}
+
+	if (ClientUnix->ConnectedPeer != nullptr)
+	{
+		return LINUX_SOCKET_ERR_EISCONN;
+	}
+
+	const LinuxSockAddrUn* UnixAddress = reinterpret_cast<const LinuxSockAddrUn*>(SocketAddress);
+	uint64_t               AvailablePathLen = SocketAddressLength - LINUX_SOCKADDR_FAMILY_SIZE;
+	uint64_t               PathLength = ComputeBoundUnixPathLength(UnixAddress->Path, AvailablePathLen);
+	if (PathLength == 0)
+	{
+		return LINUX_SOCKET_ERR_EINVAL;
+	}
+
+	Socket* ListeningSocket = nullptr;
+	UnixSocket* ListeningUnix = nullptr;
+	for (uint64_t SocketIndex = 0; SocketIndex < SocketCount; ++SocketIndex)
+	{
+		Socket* Candidate = SocketList[SocketIndex];
+		if (Candidate == nullptr || Candidate->Domain != LINUX_AF_UNIX)
+		{
+			continue;
+		}
+
+		UnixSocket* CandidateUnix = reinterpret_cast<UnixSocket*>(Candidate->Implementation);
+		if (CandidateUnix == nullptr || !CandidateUnix->IsBound || !CandidateUnix->IsListening || CandidateUnix->Path == nullptr)
+		{
+			continue;
+		}
+
+		if (AreUnixPathsEqual(CandidateUnix->Path, CandidateUnix->PathLength, UnixAddress->Path, PathLength))
+		{
+			ListeningSocket = Candidate;
+			ListeningUnix = CandidateUnix;
+			break;
+		}
+	}
+
+	if (ListeningSocket == nullptr || ListeningUnix == nullptr)
+	{
+		return LINUX_SOCKET_ERR_ECONNREFUSED;
+	}
+
+	if (ListeningUnix->PendingConnectionCount >= ListeningUnix->PendingConnectionCapacity)
+	{
+		return LINUX_SOCKET_ERR_EAGAIN;
+	}
+
+	ListeningUnix->PendingConnections[ListeningUnix->PendingConnectionCount++] = ClientSocket;
+	ClientUnix->ConnectedPeer = ListeningSocket;
+	return 0;
+}
+
+Socket* InterProcessComunicationManager::AcceptSocket(Process* Owner, int64_t FileDescriptor, Process* AcceptedOwner, int64_t AcceptedFileDescriptor, int64_t* ErrorCode)
+{
+	if (ErrorCode != nullptr)
+	{
+		*ErrorCode = 0;
+	}
+
+	if (Owner == nullptr || AcceptedOwner == nullptr || FileDescriptor < 0 || AcceptedFileDescriptor < 0)
+	{
+		if (ErrorCode != nullptr)
+		{
+			*ErrorCode = LINUX_SOCKET_ERR_EINVAL;
+		}
+		return nullptr;
+	}
+
+	Socket* ListeningSocket = nullptr;
+	for (uint64_t SocketIndex = 0; SocketIndex < SocketCount; ++SocketIndex)
+	{
+		Socket* Candidate = SocketList[SocketIndex];
+		if (Candidate == nullptr)
+		{
+			continue;
+		}
+
+		if (Candidate->Owner == Owner && Candidate->FileDescriptor == FileDescriptor)
+		{
+			ListeningSocket = Candidate;
+			break;
+		}
+	}
+
+	if (ListeningSocket == nullptr)
+	{
+		if (ErrorCode != nullptr)
+		{
+			*ErrorCode = LINUX_SOCKET_ERR_ENOTSOCK;
+		}
+		return nullptr;
+	}
+
+	if (ListeningSocket->Domain != LINUX_AF_UNIX)
+	{
+		if (ErrorCode != nullptr)
+		{
+			*ErrorCode = LINUX_SOCKET_ERR_EAFNOSUPPORT;
+		}
+		return nullptr;
+	}
+
+	UnixSocket* ListeningUnix = reinterpret_cast<UnixSocket*>(ListeningSocket->Implementation);
+	if (ListeningUnix == nullptr || !ListeningUnix->IsListening)
+	{
+		if (ErrorCode != nullptr)
+		{
+			*ErrorCode = LINUX_SOCKET_ERR_EINVAL;
+		}
+		return nullptr;
+	}
+
+	Socket* PendingClient = nullptr;
+	while (ListeningUnix->PendingConnectionCount > 0)
+	{
+		PendingClient = ListeningUnix->PendingConnections[0];
+
+		for (uint64_t ShiftIndex = 1; ShiftIndex < ListeningUnix->PendingConnectionCount; ++ShiftIndex)
+		{
+			ListeningUnix->PendingConnections[ShiftIndex - 1] = ListeningUnix->PendingConnections[ShiftIndex];
+		}
+
+		--ListeningUnix->PendingConnectionCount;
+
+		if (IsSocketTracked(SocketList, SocketCount, PendingClient))
+		{
+			break;
+		}
+
+		PendingClient = nullptr;
+	}
+
+	if (PendingClient == nullptr)
+	{
+		if (ErrorCode != nullptr)
+		{
+			*ErrorCode = LINUX_SOCKET_ERR_EAGAIN;
+		}
+		return nullptr;
+	}
+
+	int64_t CreateError = 0;
+	Socket* AcceptedSocket = CreateSocket(ListeningSocket->Domain, ListeningSocket->Type, ListeningSocket->Protocol, AcceptedOwner, AcceptedFileDescriptor, &CreateError);
+	if (AcceptedSocket == nullptr)
+	{
+		if (ErrorCode != nullptr)
+		{
+			*ErrorCode = (CreateError != 0) ? CreateError : LINUX_SOCKET_ERR_ENOMEM;
+		}
+		return nullptr;
+	}
+
+	UnixSocket* AcceptedUnix = reinterpret_cast<UnixSocket*>(AcceptedSocket->Implementation);
+	UnixSocket* ClientUnix = reinterpret_cast<UnixSocket*>(PendingClient->Implementation);
+	if (AcceptedUnix == nullptr || ClientUnix == nullptr)
+	{
+		CloseSocket(AcceptedOwner, AcceptedFileDescriptor);
+		if (ErrorCode != nullptr)
+		{
+			*ErrorCode = LINUX_SOCKET_ERR_EINVAL;
+		}
+		return nullptr;
+	}
+
+	AcceptedUnix->ConnectedPeer = PendingClient;
+	ClientUnix->ConnectedPeer = AcceptedSocket;
+	return AcceptedSocket;
+}
+
 bool InterProcessComunicationManager::CloseSocket(Process* Owner, int64_t FileDescriptor)
 {
 	if (Owner == nullptr || FileDescriptor < 0)
@@ -478,6 +923,50 @@ bool InterProcessComunicationManager::CloseSocket(Process* Owner, int64_t FileDe
 		if (SocketEntry->Owner != Owner || SocketEntry->FileDescriptor != FileDescriptor)
 		{
 			continue;
+		}
+
+		for (uint64_t OtherIndex = 0; OtherIndex < SocketCount; ++OtherIndex)
+		{
+			Socket* OtherSocket = SocketList[OtherIndex];
+			if (OtherSocket == nullptr || OtherSocket == SocketEntry || OtherSocket->Domain != LINUX_AF_UNIX)
+			{
+				continue;
+			}
+
+			UnixSocket* OtherUnix = reinterpret_cast<UnixSocket*>(OtherSocket->Implementation);
+			if (OtherUnix == nullptr)
+			{
+				continue;
+			}
+
+			if (OtherUnix->ConnectedPeer == SocketEntry)
+			{
+				OtherUnix->ConnectedPeer = nullptr;
+			}
+
+			RemovePendingConnectionFromUnixQueue(OtherUnix, SocketEntry);
+		}
+
+		if (SocketEntry->Domain == LINUX_AF_UNIX)
+		{
+			UnixSocket* ClosingUnix = reinterpret_cast<UnixSocket*>(SocketEntry->Implementation);
+			if (ClosingUnix != nullptr)
+			{
+				for (uint64_t QueueIndex = 0; QueueIndex < ClosingUnix->PendingConnectionCount; ++QueueIndex)
+				{
+					Socket* PendingSocket = ClosingUnix->PendingConnections[QueueIndex];
+					if (PendingSocket == nullptr || PendingSocket->Domain != LINUX_AF_UNIX)
+					{
+						continue;
+					}
+
+					UnixSocket* PendingUnix = reinterpret_cast<UnixSocket*>(PendingSocket->Implementation);
+					if (PendingUnix != nullptr && PendingUnix->ConnectedPeer == SocketEntry)
+					{
+						PendingUnix->ConnectedPeer = nullptr;
+					}
+				}
+			}
 		}
 
 		DestroySocket(SocketEntry);
