@@ -156,8 +156,14 @@ int64_t TranslationLayer::HandlePosixSystemCallNumber(uint64_t SystemCallNumber,
         case 91: // fchmod
             return HandleFchmodSystemCall(Arg1, Arg2);
             break;
+        case 95: // umask
+            return HandleUmaskSystemCall(Arg1);
+            break;
         case 96: // gettimeofday
             return HandleGettimeofdaySystemCall(reinterpret_cast<void*>(Arg1), reinterpret_cast<void*>(Arg2));
+            break;
+        case 97: // getrlimit
+            return HandleGetrlimitSystemCall(static_cast<int64_t>(Arg1), reinterpret_cast<void*>(Arg2));
             break;
         case 102: // getuid
             return HandleGetuidSystemCall();
@@ -219,6 +225,9 @@ int64_t TranslationLayer::HandlePosixSystemCallNumber(uint64_t SystemCallNumber,
         case 228: // clock_gettime
             return HandleClockGettimeSystemCall(static_cast<int64_t>(Arg1), reinterpret_cast<void*>(Arg2));
             break;
+        case 229: // clock_getres
+            return HandleClockGetresSystemCall(static_cast<int64_t>(Arg1), reinterpret_cast<void*>(Arg2));
+            break;
         case 231: // exit_group
             return HandleExitGroupSystemCall(static_cast<int64_t>(Arg1));
             break;
@@ -239,6 +248,9 @@ int64_t TranslationLayer::HandlePosixSystemCallNumber(uint64_t SystemCallNumber,
             break;
         case 291: // epoll_create1
             return HandleEpollCreate1SystemCall(static_cast<int64_t>(Arg1));
+            break;
+        case 302: // prlimit64
+            return HandlePrlimit64SystemCall(static_cast<int64_t>(Arg1), static_cast<int64_t>(Arg2), reinterpret_cast<const void*>(Arg3), reinterpret_cast<void*>(Arg4));
             break;
             /*
                     case 4: // stat

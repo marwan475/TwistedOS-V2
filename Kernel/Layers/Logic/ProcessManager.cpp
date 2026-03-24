@@ -128,6 +128,13 @@ bool InitializeProcessEntry(Process& ProcessEntry, ProcessState Status, ProcessL
     ProcessEntry.ProgramBreak              = ProgramBreak;
     ProcessEntry.RealIntervalTimerRemainingTicks = 0;
     ProcessEntry.RealIntervalTimerIntervalTicks  = 0;
+    ProcessEntry.FileCreationMask          = 0022;
+    ProcessEntry.ResourceLimitsInitialized = false;
+    for (size_t ResourceLimitIndex = 0; ResourceLimitIndex < MAX_PROCESS_RESOURCE_LIMITS; ++ResourceLimitIndex)
+    {
+        ProcessEntry.ResourceLimitCurrent[ResourceLimitIndex] = 0;
+        ProcessEntry.ResourceLimitMaximum[ResourceLimitIndex] = 0;
+    }
     ProcessEntry.AddressSpace              = AddressSpace;
     ProcessEntry.CurrentFileSystemLocation = nullptr;
     ProcessEntry.RunningExecutableDentry   = nullptr;

@@ -2172,6 +2172,13 @@ uint8_t LogicLayer::CopyProcess(uint8_t Id)
     ChildProcess->ProgramBreak              = SourceProcess->ProgramBreak;
     ChildProcess->RealIntervalTimerRemainingTicks = 0;
     ChildProcess->RealIntervalTimerIntervalTicks  = 0;
+    ChildProcess->FileCreationMask          = SourceProcess->FileCreationMask;
+    ChildProcess->ResourceLimitsInitialized = SourceProcess->ResourceLimitsInitialized;
+    for (size_t ResourceLimitIndex = 0; ResourceLimitIndex < MAX_PROCESS_RESOURCE_LIMITS; ++ResourceLimitIndex)
+    {
+        ChildProcess->ResourceLimitCurrent[ResourceLimitIndex] = SourceProcess->ResourceLimitCurrent[ResourceLimitIndex];
+        ChildProcess->ResourceLimitMaximum[ResourceLimitIndex] = SourceProcess->ResourceLimitMaximum[ResourceLimitIndex];
+    }
     ChildProcess->CurrentFileSystemLocation = SourceProcess->CurrentFileSystemLocation;
     RetainRunningExecutable(ChildProcess, SourceProcess->RunningExecutableDentry);
 

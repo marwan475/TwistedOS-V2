@@ -20,6 +20,7 @@ static constexpr size_t  MAX_OPEN_FILES_PER_PROCESS        = 16;
 static constexpr size_t  MAX_MEMORY_MAPPINGS_PER_PROCESS   = 1024;
 static constexpr size_t  MAX_POSIX_SIGNALS_PER_PROCESS     = 64;
 static constexpr size_t  PROCESS_KERNEL_SYSCALL_STACK_SIZE = 65536;
+static constexpr size_t  MAX_PROCESS_RESOURCE_LIMITS        = 16;
 
 enum ProcessState
 {
@@ -116,6 +117,10 @@ struct Process
     uint64_t                    ProgramBreak              = 0;
     uint64_t                    RealIntervalTimerRemainingTicks = 0;
     uint64_t                    RealIntervalTimerIntervalTicks  = 0;
+    uint32_t                    FileCreationMask          = 0022;
+    bool                        ResourceLimitsInitialized  = false;
+    uint64_t                    ResourceLimitCurrent[MAX_PROCESS_RESOURCE_LIMITS] = {};
+    uint64_t                    ResourceLimitMaximum[MAX_PROCESS_RESOURCE_LIMITS] = {};
     VirtualAddressSpace*        AddressSpace              = nullptr;
     Dentry*                     CurrentFileSystemLocation = nullptr;
     Dentry*                     RunningExecutableDentry   = nullptr;

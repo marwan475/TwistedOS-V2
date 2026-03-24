@@ -102,6 +102,12 @@ struct LinuxTimeSpec
     int64_t Nanoseconds;
 };
 
+struct LinuxRLimit64
+{
+    uint64_t Current;
+    uint64_t Maximum;
+};
+
 struct LinuxPollFd
 {
     int32_t FileDescriptor;
@@ -223,9 +229,158 @@ constexpr int64_t LINUX_ITIMER_REAL    = 0;
 constexpr int64_t LINUX_ITIMER_VIRTUAL = 1;
 constexpr int64_t LINUX_ITIMER_PROF    = 2;
 
+constexpr uint32_t LINUX_UMASK_PERMISSION_BITS = 0777;
+
+constexpr int64_t LINUX_CLOCK_REALTIME         = 0;
+constexpr int64_t LINUX_CLOCK_MONOTONIC        = 1;
+constexpr int64_t LINUX_CLOCK_PROCESS_CPUTIME  = 2;
+constexpr int64_t LINUX_CLOCK_THREAD_CPUTIME   = 3;
+constexpr int64_t LINUX_CLOCK_MONOTONIC_RAW    = 4;
+constexpr int64_t LINUX_CLOCK_REALTIME_COARSE  = 5;
+constexpr int64_t LINUX_CLOCK_MONOTONIC_COARSE = 6;
+constexpr int64_t LINUX_CLOCK_BOOTTIME         = 7;
+constexpr int64_t LINUX_CLOCK_REALTIME_ALARM   = 8;
+constexpr int64_t LINUX_CLOCK_BOOTTIME_ALARM   = 9;
+
+constexpr int64_t LINUX_RLIMIT_CPU        = 0;
+constexpr int64_t LINUX_RLIMIT_FSIZE      = 1;
+constexpr int64_t LINUX_RLIMIT_DATA       = 2;
+constexpr int64_t LINUX_RLIMIT_STACK      = 3;
+constexpr int64_t LINUX_RLIMIT_CORE       = 4;
+constexpr int64_t LINUX_RLIMIT_RSS        = 5;
+constexpr int64_t LINUX_RLIMIT_NPROC      = 6;
+constexpr int64_t LINUX_RLIMIT_NOFILE     = 7;
+constexpr int64_t LINUX_RLIMIT_MEMLOCK    = 8;
+constexpr int64_t LINUX_RLIMIT_AS         = 9;
+constexpr int64_t LINUX_RLIMIT_LOCKS      = 10;
+constexpr int64_t LINUX_RLIMIT_SIGPENDING = 11;
+constexpr int64_t LINUX_RLIMIT_MSGQUEUE   = 12;
+constexpr int64_t LINUX_RLIMIT_NICE       = 13;
+constexpr int64_t LINUX_RLIMIT_RTPRIO     = 14;
+constexpr int64_t LINUX_RLIMIT_RTTIME     = 15;
+
+constexpr uint64_t LINUX_RLIM_INFINITY            = ~0ULL;
+constexpr uint64_t LINUX_RLIMIT_STACK_DEFAULT     = (8ULL * 1024ULL * 1024ULL);
+constexpr uint64_t LINUX_RLIMIT_MEMLOCK_DEFAULT   = (64ULL * 1024ULL);
+constexpr uint64_t LINUX_RLIMIT_MSGQUEUE_DEFAULT  = 819200ULL;
+constexpr uint64_t LINUX_RLIMIT_NICE_DEFAULT      = 0;
+constexpr uint64_t LINUX_RLIMIT_RTPRIO_DEFAULT    = 0;
+constexpr uint64_t LINUX_RLIMIT_RTTIME_DEFAULT    = LINUX_RLIM_INFINITY;
+
 constexpr uint64_t LINUX_TIMER_NANOSECONDS_PER_TICK = 10000000;
 constexpr uint64_t LINUX_TIMER_MICROSECONDS_PER_TICK = (LINUX_TIMER_NANOSECONDS_PER_TICK / 1000);
 constexpr uint64_t LINUX_TIMER_TICKS_PER_SECOND = (1000000000ULL / LINUX_TIMER_NANOSECONDS_PER_TICK);
+
+bool IsSupportedLinuxClockId(int64_t ClockId)
+{
+    switch (ClockId)
+    {
+        case LINUX_CLOCK_REALTIME:
+        case LINUX_CLOCK_MONOTONIC:
+        case LINUX_CLOCK_PROCESS_CPUTIME:
+        case LINUX_CLOCK_THREAD_CPUTIME:
+        case LINUX_CLOCK_MONOTONIC_RAW:
+        case LINUX_CLOCK_REALTIME_COARSE:
+        case LINUX_CLOCK_MONOTONIC_COARSE:
+        case LINUX_CLOCK_BOOTTIME:
+        case LINUX_CLOCK_REALTIME_ALARM:
+        case LINUX_CLOCK_BOOTTIME_ALARM:
+            return true;
+        default:
+            break;
+    }
+
+    return false;
+}
+
+bool IsSupportedLinuxRlimitResource(int64_t Resource)
+{
+    return (Resource >= LINUX_RLIMIT_CPU) && (Resource <= LINUX_RLIMIT_RTTIME);
+}
+
+uint64_t GetDefaultLinuxRlimitCurrent(const Process* CurrentProcess, int64_t Resource)
+{
+    switch (Resource)
+    {
+        case LINUX_RLIMIT_STACK:
+            if (CurrentProcess != nullptr && CurrentProcess->AddressSpace != nullptr && CurrentProcess->AddressSpace->GetStackSize() != 0)
+            {
+                return CurrentProcess->AddressSpace->GetStackSize();
+            }
+            return LINUX_RLIMIT_STACK_DEFAULT;
+        case LINUX_RLIMIT_NOFILE:
+            return MAX_OPEN_FILES_PER_PROCESS;
+        case LINUX_RLIMIT_NPROC:
+            return MAX_PROCESSES;
+        case LINUX_RLIMIT_MEMLOCK:
+            return LINUX_RLIMIT_MEMLOCK_DEFAULT;
+        case LINUX_RLIMIT_SIGPENDING:
+            return MAX_POSIX_SIGNALS_PER_PROCESS;
+        case LINUX_RLIMIT_MSGQUEUE:
+            return LINUX_RLIMIT_MSGQUEUE_DEFAULT;
+        case LINUX_RLIMIT_NICE:
+            return LINUX_RLIMIT_NICE_DEFAULT;
+        case LINUX_RLIMIT_RTPRIO:
+            return LINUX_RLIMIT_RTPRIO_DEFAULT;
+        case LINUX_RLIMIT_RTTIME:
+            return LINUX_RLIMIT_RTTIME_DEFAULT;
+        default:
+            return LINUX_RLIM_INFINITY;
+    }
+}
+
+uint64_t GetDefaultLinuxRlimitMaximum(const Process* CurrentProcess, int64_t Resource)
+{
+    switch (Resource)
+    {
+        case LINUX_RLIMIT_STACK:
+            return LINUX_RLIM_INFINITY;
+        case LINUX_RLIMIT_NOFILE:
+            return MAX_OPEN_FILES_PER_PROCESS;
+        case LINUX_RLIMIT_NPROC:
+            return MAX_PROCESSES;
+        case LINUX_RLIMIT_MEMLOCK:
+            return LINUX_RLIMIT_MEMLOCK_DEFAULT;
+        case LINUX_RLIMIT_SIGPENDING:
+            return MAX_POSIX_SIGNALS_PER_PROCESS;
+        case LINUX_RLIMIT_MSGQUEUE:
+            return LINUX_RLIMIT_MSGQUEUE_DEFAULT;
+        case LINUX_RLIMIT_NICE:
+            return LINUX_RLIMIT_NICE_DEFAULT;
+        case LINUX_RLIMIT_RTPRIO:
+            return LINUX_RLIMIT_RTPRIO_DEFAULT;
+        case LINUX_RLIMIT_RTTIME:
+            return LINUX_RLIMIT_RTTIME_DEFAULT;
+        default:
+            break;
+    }
+
+    return GetDefaultLinuxRlimitCurrent(CurrentProcess, Resource);
+}
+
+void EnsureProcessLinuxResourceLimitsInitialized(Process* CurrentProcess)
+{
+    if (CurrentProcess == nullptr || CurrentProcess->ResourceLimitsInitialized)
+    {
+        return;
+    }
+
+    for (int64_t Resource = LINUX_RLIMIT_CPU; Resource <= LINUX_RLIMIT_RTTIME; ++Resource)
+    {
+        uint64_t DefaultCurrent = GetDefaultLinuxRlimitCurrent(CurrentProcess, Resource);
+        uint64_t DefaultMaximum = GetDefaultLinuxRlimitMaximum(CurrentProcess, Resource);
+
+        if (DefaultCurrent > DefaultMaximum)
+        {
+            DefaultCurrent = DefaultMaximum;
+        }
+
+        CurrentProcess->ResourceLimitCurrent[Resource] = DefaultCurrent;
+        CurrentProcess->ResourceLimitMaximum[Resource] = DefaultMaximum;
+    }
+
+    CurrentProcess->ResourceLimitsInitialized = true;
+}
 
 bool IsCanonicalX86_64Address(uint64_t Address)
 {
@@ -4986,6 +5141,147 @@ int64_t TranslationLayer::HandleSetprioritySystemCall(int64_t Which, int64_t Who
     return 0;
 }
 
+int64_t TranslationLayer::HandleUmaskSystemCall(uint64_t Mask)
+{
+    if (Logic == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    ProcessManager* PM = Logic->GetProcessManager();
+    if (PM == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    Process* CurrentProcess = PM->GetRunningProcess();
+    if (CurrentProcess == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    uint32_t OldMask = (CurrentProcess->FileCreationMask & LINUX_UMASK_PERMISSION_BITS);
+    CurrentProcess->FileCreationMask = static_cast<uint32_t>(Mask & LINUX_UMASK_PERMISSION_BITS);
+    return static_cast<int64_t>(OldMask);
+}
+
+int64_t TranslationLayer::HandleGetrlimitSystemCall(int64_t Resource, void* Limit)
+{
+    if (Logic == nullptr || Limit == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    if (!IsSupportedLinuxRlimitResource(Resource))
+    {
+        return LINUX_ERR_EINVAL;
+    }
+
+    ProcessManager* PM = Logic->GetProcessManager();
+    if (PM == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    Process* CurrentProcess = PM->GetRunningProcess();
+    if (CurrentProcess == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    EnsureProcessLinuxResourceLimitsInitialized(CurrentProcess);
+
+    LinuxRLimit64 KernelLimit = {
+        CurrentProcess->ResourceLimitCurrent[Resource],
+        CurrentProcess->ResourceLimitMaximum[Resource],
+    };
+
+    return Logic->CopyFromKernelToUser(&KernelLimit, Limit, sizeof(KernelLimit)) ? 0 : LINUX_ERR_EFAULT;
+}
+
+int64_t TranslationLayer::HandlePrlimit64SystemCall(int64_t Pid, int64_t Resource, const void* NewLimit, void* OldLimit)
+{
+    if (Logic == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    if (!IsSupportedLinuxRlimitResource(Resource))
+    {
+        return LINUX_ERR_EINVAL;
+    }
+
+    ProcessManager* PM = Logic->GetProcessManager();
+    if (PM == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    Process* CurrentProcess = PM->GetRunningProcess();
+    if (CurrentProcess == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    Process* TargetProcess = nullptr;
+    if (Pid == 0)
+    {
+        TargetProcess = CurrentProcess;
+    }
+    else
+    {
+        if (Pid < 0 || Pid > 0xFF)
+        {
+            return LINUX_ERR_EINVAL;
+        }
+
+        TargetProcess = PM->GetProcessById(static_cast<uint8_t>(Pid));
+        if (TargetProcess == nullptr || TargetProcess->Status == PROCESS_TERMINATED)
+        {
+            return LINUX_ERR_ESRCH;
+        }
+
+        if (TargetProcess->Id != CurrentProcess->Id)
+        {
+            return LINUX_ERR_EPERM;
+        }
+    }
+
+    EnsureProcessLinuxResourceLimitsInitialized(TargetProcess);
+
+    if (OldLimit != nullptr)
+    {
+        LinuxRLimit64 KernelOldLimit = {
+            TargetProcess->ResourceLimitCurrent[Resource],
+            TargetProcess->ResourceLimitMaximum[Resource],
+        };
+
+        if (!Logic->CopyFromKernelToUser(&KernelOldLimit, OldLimit, sizeof(KernelOldLimit)))
+        {
+            return LINUX_ERR_EFAULT;
+        }
+    }
+
+    if (NewLimit != nullptr)
+    {
+        LinuxRLimit64 KernelNewLimit = {};
+        if (!Logic->CopyFromUserToKernel(NewLimit, &KernelNewLimit, sizeof(KernelNewLimit)))
+        {
+            return LINUX_ERR_EFAULT;
+        }
+
+        if (KernelNewLimit.Current > KernelNewLimit.Maximum)
+        {
+            return LINUX_ERR_EINVAL;
+        }
+
+        TargetProcess->ResourceLimitCurrent[Resource] = KernelNewLimit.Current;
+        TargetProcess->ResourceLimitMaximum[Resource] = KernelNewLimit.Maximum;
+    }
+
+    return 0;
+}
+
 int64_t TranslationLayer::HandleGetpgrpSystemCall()
 {
     if (Logic == nullptr)
@@ -5448,14 +5744,42 @@ int64_t TranslationLayer::HandleGettimeofdaySystemCall(void* TimeValue, void* Ti
 
 int64_t TranslationLayer::HandleClockGettimeSystemCall(int64_t ClockId, void* TimeSpec)
 {
-    (void) ClockId;
-
     if (Logic == nullptr || TimeSpec == nullptr)
     {
         return LINUX_ERR_EFAULT;
     }
 
+    if (!IsSupportedLinuxClockId(ClockId))
+    {
+        return LINUX_ERR_EINVAL;
+    }
+
     LinuxTimeSpec KernelTimeSpec = {};
+    return Logic->CopyFromKernelToUser(&KernelTimeSpec, TimeSpec, sizeof(KernelTimeSpec)) ? 0 : LINUX_ERR_EFAULT;
+}
+
+int64_t TranslationLayer::HandleClockGetresSystemCall(int64_t ClockId, void* TimeSpec)
+{
+    if (!IsSupportedLinuxClockId(ClockId))
+    {
+        return LINUX_ERR_EINVAL;
+    }
+
+    if (TimeSpec == nullptr)
+    {
+        return 0;
+    }
+
+    if (Logic == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    LinuxTimeSpec KernelTimeSpec = {
+        0,
+        static_cast<int64_t>(LINUX_TIMER_NANOSECONDS_PER_TICK),
+    };
+
     return Logic->CopyFromKernelToUser(&KernelTimeSpec, TimeSpec, sizeof(KernelTimeSpec)) ? 0 : LINUX_ERR_EFAULT;
 }
 

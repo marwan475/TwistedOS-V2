@@ -65,6 +65,9 @@ public:
     int64_t HandleSetpgidSystemCall(int64_t Pid, int64_t ProcessGroupId);
     int64_t HandleGetprioritySystemCall(int64_t Which, int64_t Who);
     int64_t HandleSetprioritySystemCall(int64_t Which, int64_t Who, int64_t NiceValue);
+    int64_t HandleUmaskSystemCall(uint64_t Mask);
+    int64_t HandleGetrlimitSystemCall(int64_t Resource, void* Limit);
+    int64_t HandlePrlimit64SystemCall(int64_t Pid, int64_t Resource, const void* NewLimit, void* OldLimit);
     int64_t HandleGetpgrpSystemCall();
     int64_t HandleSetsidSystemCall();
     int64_t HandleGetpgidSystemCall(int64_t Pid);
@@ -77,6 +80,7 @@ public:
     int64_t HandleSetitimerSystemCall(int64_t Which, const void* NewValue, void* OldValue);
     int64_t HandleGettimeofdaySystemCall(void* TimeValue, void* TimeZone);
     int64_t HandleClockGettimeSystemCall(int64_t ClockId, void* TimeSpec);
+    int64_t HandleClockGetresSystemCall(int64_t ClockId, void* TimeSpec);
     int64_t HandleForkSystemCall();
     int64_t HandleVforkSystemCall();
     int64_t HandleExitGroupSystemCall(int64_t Status);
