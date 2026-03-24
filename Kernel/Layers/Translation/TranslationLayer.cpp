@@ -4889,31 +4889,6 @@ int64_t TranslationLayer::HandleReadlinkSystemCall(const char* Path, char* Buffe
         }
     }
 
-    if (CStrEquals(LookupPath, "/sys/class/graphics/fb0/device/subsystem"))
-    {
-        const char* CompatibilityTarget = "/sys/bus/platform";
-        uint64_t    TargetLength         = CStrLength(CompatibilityTarget);
-        uint64_t    BytesToCopy          = (TargetLength < BufferSize) ? TargetLength : BufferSize;
-
-        if (BytesToCopy == 0)
-        {
-            return 0;
-        }
-
-        if (!Logic->CopyFromKernelToUser(CompatibilityTarget, Buffer, BytesToCopy))
-        {
-            return LINUX_ERR_EFAULT;
-        }
-
-        if (TraceXorgPathOps && Terminal != nullptr)
-        {
-            Terminal->Serialprintf("xorg_path_dbg: pid=%u op=readlink path='%s' ret=%lld target='%s' reason='sysfs-compat'\n", CurrentProcess->Id,
-                                   LookupPath, static_cast<long long>(BytesToCopy), CompatibilityTarget);
-        }
-
-        return static_cast<int64_t>(BytesToCopy);
-    }
-
     Dentry* NodeDentry = VFS->LookupNoFollowFinal(LookupPath);
     if (NodeDentry == nullptr || NodeDentry->inode == nullptr)
     {

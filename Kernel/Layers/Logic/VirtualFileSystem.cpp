@@ -1434,14 +1434,23 @@ bool VirtualFileSystem::CreateFile(const char* path, FileType type)
 
     bool IsDirectory = (type == INODE_DIR);
     bool IsFile      = (type == INODE_FILE);
-    if (!IsDirectory && !IsFile)
+    bool IsSymlink   = (type == INODE_SYMLINK);
+    if (!IsDirectory && !IsFile && !IsSymlink)
     {
         return false;
     }
 
     if (isEXT && ActiveExtendedFileSystem != nullptr)
     {
-        ExtendedFileSystemEntryType EntryType = IsDirectory ? ExtendedFileSystemEntryTypeDirectory : ExtendedFileSystemEntryTypeRegularFile;
+        ExtendedFileSystemEntryType EntryType = ExtendedFileSystemEntryTypeRegularFile;
+        if (IsDirectory)
+        {
+            EntryType = ExtendedFileSystemEntryTypeDirectory;
+        }
+        else if (IsSymlink)
+        {
+            EntryType = ExtendedFileSystemEntryTypeSymbolicLink;
+        }
         if (!ActiveExtendedFileSystem->CreateFile(path, EntryType))
         {
             return false;

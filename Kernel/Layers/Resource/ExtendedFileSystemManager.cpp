@@ -24,6 +24,7 @@ constexpr uint32_t EXT2_SUPERBLOCK_FREE_BLOCKS_OFFSET = 12;
 constexpr uint32_t EXT2_SUPERBLOCK_FREE_INODES_OFFSET = 16;
 constexpr uint16_t EXT2_INODE_MODE_DIRECTORY_0755     = 0x41ED;
 constexpr uint16_t EXT2_INODE_MODE_REGULAR_0644       = 0x81A4;
+constexpr uint16_t EXT2_INODE_MODE_SYMLINK_0777       = 0xA1FF;
 
 ExtendedFileSystemEntryType DecodeEntryType(uint8_t Type)
 {
@@ -1015,8 +1016,9 @@ bool ExtendedFileSystemManager::CreateFile(const char* Path, ExtendedFileSystemE
 {
     bool CreatingDirectory   = (Type == ExtendedFileSystemEntryTypeDirectory);
     bool CreatingRegularFile = (Type == ExtendedFileSystemEntryTypeRegularFile);
+    bool CreatingSymbolicLink = (Type == ExtendedFileSystemEntryTypeSymbolicLink);
 
-    if (!CreatingDirectory && !CreatingRegularFile)
+    if (!CreatingDirectory && !CreatingRegularFile && !CreatingSymbolicLink)
     {
         return false;
     }
@@ -1639,7 +1641,17 @@ bool ExtendedFileSystemManager::CreateFile(const char* Path, ExtendedFileSystemE
     }
 
     kmemset(NewInodeData, 0, InodeSizeBytes);
-    WriteLE16(&NewInodeData[0], CreatingDirectory ? EXT2_INODE_MODE_DIRECTORY_0755 : EXT2_INODE_MODE_REGULAR_0644);
+    uint16_t NewInodeMode = EXT2_INODE_MODE_REGULAR_0644;
+    if (CreatingDirectory)
+    {
+        NewInodeMode = EXT2_INODE_MODE_DIRECTORY_0755;
+    }
+    else if (CreatingSymbolicLink)
+    {
+        NewInodeMode = EXT2_INODE_MODE_SYMLINK_0777;
+    }
+
+    WriteLE16(&NewInodeData[0], NewInodeMode);
     WriteLE32(&NewInodeData[4], 0);
     WriteLE16(&NewInodeData[26], CreatingDirectory ? 2 : 1);
     WriteLE32(&NewInodeData[28], CreatingDirectory ? (BlockSizeBytes / 512u) : 0);
@@ -1711,7 +1723,7 @@ bool ExtendedFileSystemManager::CreateFile(const char* Path, ExtendedFileSystemE
                 WriteLE32(&ParentBlockData[NewEntryOffset], NewInodeNumber);
                 WriteLE16(&ParentBlockData[NewEntryOffset + 4], RemainingLength);
                 ParentBlockData[NewEntryOffset + 6] = static_cast<uint8_t>(NewEntryNameBytes);
-                ParentBlockData[NewEntryOffset + 7] = CreatingDirectory ? 2 : 1;
+                ParentBlockData[NewEntryOffset + 7] = CreatingDirectory ? 2 : (CreatingSymbolicLink ? 7 : 1);
 
                 for (uint32_t NameIndex = 0; NameIndex < NewEntryNameBytes; ++NameIndex)
                 {
@@ -1771,7 +1783,7 @@ bool ExtendedFileSystemManager::CreateFile(const char* Path, ExtendedFileSystemE
         WriteLE32(&NewParentBlockData[0], NewInodeNumber);
         WriteLE16(&NewParentBlockData[4], static_cast<uint16_t>(BlockSizeBytes));
         NewParentBlockData[6] = static_cast<uint8_t>(NewEntryNameBytes);
-        NewParentBlockData[7] = CreatingDirectory ? 2 : 1;
+        NewParentBlockData[7] = CreatingDirectory ? 2 : (CreatingSymbolicLink ? 7 : 1);
         for (uint32_t NameIndex = 0; NameIndex < NewEntryNameBytes; ++NameIndex)
         {
             NewParentBlockData[8 + NameIndex] = static_cast<uint8_t>(NewEntryName[NameIndex]);
