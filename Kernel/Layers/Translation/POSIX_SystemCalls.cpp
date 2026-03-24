@@ -96,8 +96,14 @@ int64_t TranslationLayer::HandlePosixSystemCallNumber(uint64_t SystemCallNumber,
         case 35: // nanosleep
             return HandleNanosleepSystemCall(reinterpret_cast<const void*>(Arg1), reinterpret_cast<void*>(Arg2));
             break;
+        case 38: // setitimer
+            return HandleSetitimerSystemCall(static_cast<int64_t>(Arg1), reinterpret_cast<const void*>(Arg2), reinterpret_cast<void*>(Arg3));
+            break;
         case 39: // getpid
             return HandleGetpidSystemCall();
+            break;
+        case 41: // socket
+            return HandleSocketSystemCall(static_cast<int64_t>(Arg1), static_cast<int64_t>(Arg2), static_cast<int64_t>(Arg3));
             break;
         case 57: // fork
             return HandleForkSystemCall();

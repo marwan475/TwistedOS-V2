@@ -114,6 +114,8 @@ struct Process
     uint64_t                    BlockedSignalMask         = 0;
     int*                        ClearChildTidAddress      = nullptr;
     uint64_t                    ProgramBreak              = 0;
+    uint64_t                    RealIntervalTimerRemainingTicks = 0;
+    uint64_t                    RealIntervalTimerIntervalTicks  = 0;
     VirtualAddressSpace*        AddressSpace              = nullptr;
     Dentry*                     CurrentFileSystemLocation = nullptr;
     Dentry*                     RunningExecutableDentry   = nullptr;

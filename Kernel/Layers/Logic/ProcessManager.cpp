@@ -126,6 +126,8 @@ bool InitializeProcessEntry(Process& ProcessEntry, ProcessState Status, ProcessL
     ProcessEntry.BlockedSignalMask         = 0;
     ProcessEntry.ClearChildTidAddress      = nullptr;
     ProcessEntry.ProgramBreak              = ProgramBreak;
+    ProcessEntry.RealIntervalTimerRemainingTicks = 0;
+    ProcessEntry.RealIntervalTimerIntervalTicks  = 0;
     ProcessEntry.AddressSpace              = AddressSpace;
     ProcessEntry.CurrentFileSystemLocation = nullptr;
     ProcessEntry.RunningExecutableDentry   = nullptr;

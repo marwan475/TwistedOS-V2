@@ -39,6 +39,7 @@ constexpr int64_t LINUX_ERR_ERANGE    = -34;
 constexpr int64_t LINUX_ERR_EEXIST    = -17;
 constexpr int64_t LINUX_ERR_ENOTEMPTY = -39;
 constexpr int64_t LINUX_ERR_ESPIPE    = -29;
+constexpr int64_t LINUX_ERR_EAFNOSUPPORT = -97;
 
 constexpr uint64_t SYSCALL_COPY_CHUNK_SIZE   = 4096;
 constexpr uint64_t SYSCALL_PATH_MAX          = 4096;
@@ -78,6 +79,12 @@ struct LinuxTimeVal
 {
     int64_t Seconds;
     int64_t Microseconds;
+};
+
+struct LinuxITimerVal
+{
+    LinuxTimeVal Interval;
+    LinuxTimeVal Value;
 };
 
 struct LinuxUTimeBuf
@@ -201,6 +208,14 @@ constexpr uint64_t LINUX_UNBLOCKABLE_SIGNAL_MASK = (LINUX_SIGKILL_MASK | LINUX_S
 
 constexpr int64_t LINUX_SIGNAL_SIGKILL = 9;
 constexpr int64_t LINUX_SIGNAL_SIGSTOP = 19;
+
+constexpr int64_t LINUX_ITIMER_REAL    = 0;
+constexpr int64_t LINUX_ITIMER_VIRTUAL = 1;
+constexpr int64_t LINUX_ITIMER_PROF    = 2;
+
+constexpr uint64_t LINUX_TIMER_NANOSECONDS_PER_TICK = 10000000;
+constexpr uint64_t LINUX_TIMER_MICROSECONDS_PER_TICK = (LINUX_TIMER_NANOSECONDS_PER_TICK / 1000);
+constexpr uint64_t LINUX_TIMER_TICKS_PER_SECOND = (1000000000ULL / LINUX_TIMER_NANOSECONDS_PER_TICK);
 
 bool IsCanonicalX86_64Address(uint64_t Address)
 {
@@ -1720,6 +1735,15 @@ int64_t TranslationLayer::HandleIoctlSystemCall(uint64_t FileDescriptor, uint64_
     }
 
     return OpenFile->Node->FileOps->Ioctl(OpenFile, Request, Argument, Logic, CurrentProcess);
+}
+
+int64_t TranslationLayer::HandleSocketSystemCall(int64_t Domain, int64_t Type, int64_t Protocol)
+{
+    (void) Domain;
+    (void) Type;
+    (void) Protocol;
+
+    return LINUX_ERR_EAFNOSUPPORT;
 }
 
 int64_t TranslationLayer::HandleOpenSystemCall(const char* Path, uint64_t Flags)
@@ -4699,6 +4723,116 @@ int64_t TranslationLayer::HandleNanosleepSystemCall(const void* RequestedTime, v
             return LINUX_ERR_EFAULT;
         }
     }
+
+    return 0;
+}
+
+int64_t TranslationLayer::HandleSetitimerSystemCall(int64_t Which, const void* NewValue, void* OldValue)
+{
+    if (Logic == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    ProcessManager* PM = Logic->GetProcessManager();
+    if (PM == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    Process* CurrentProcess = PM->GetRunningProcess();
+    if (CurrentProcess == nullptr || CurrentProcess->Level != PROCESS_LEVEL_USER)
+    {
+        return LINUX_ERR_EINVAL;
+    }
+
+    if (Which != LINUX_ITIMER_REAL && Which != LINUX_ITIMER_VIRTUAL && Which != LINUX_ITIMER_PROF)
+    {
+        return LINUX_ERR_EINVAL;
+    }
+
+    if (Which != LINUX_ITIMER_REAL)
+    {
+        return LINUX_ERR_ENOSYS;
+    }
+
+    auto ConvertTicksToTimeVal = [](uint64_t Ticks) -> LinuxTimeVal
+    {
+        LinuxTimeVal Result = {};
+
+        uint64_t TotalMicroseconds = Ticks * LINUX_TIMER_MICROSECONDS_PER_TICK;
+        Result.Seconds      = static_cast<int64_t>(TotalMicroseconds / 1000000ULL);
+        Result.Microseconds = static_cast<int64_t>(TotalMicroseconds % 1000000ULL);
+
+        return Result;
+    };
+
+    if (OldValue != nullptr)
+    {
+        LinuxITimerVal OldKernelValue = {};
+        OldKernelValue.Interval = ConvertTicksToTimeVal(CurrentProcess->RealIntervalTimerIntervalTicks);
+        OldKernelValue.Value    = ConvertTicksToTimeVal(CurrentProcess->RealIntervalTimerRemainingTicks);
+
+        if (!Logic->CopyFromKernelToUser(&OldKernelValue, OldValue, sizeof(OldKernelValue)))
+        {
+            return LINUX_ERR_EFAULT;
+        }
+    }
+
+    if (NewValue == nullptr)
+    {
+        return 0;
+    }
+
+    LinuxITimerVal NewKernelValue = {};
+    if (!Logic->CopyFromUserToKernel(NewValue, &NewKernelValue, sizeof(NewKernelValue)))
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    auto IsValidTimeVal = [](const LinuxTimeVal& Value) -> bool
+    {
+        if (Value.Seconds < 0)
+        {
+            return false;
+        }
+
+        if (Value.Microseconds < 0 || Value.Microseconds >= 1000000)
+        {
+            return false;
+        }
+
+        return true;
+    };
+
+    if (!IsValidTimeVal(NewKernelValue.Interval) || !IsValidTimeVal(NewKernelValue.Value))
+    {
+        return LINUX_ERR_EINVAL;
+    }
+
+    auto ConvertTimeValToTicks = [](const LinuxTimeVal& Value, bool RoundUpSubTick) -> uint64_t
+    {
+        uint64_t SecondsPart = static_cast<uint64_t>(Value.Seconds);
+        uint64_t MicroPart   = static_cast<uint64_t>(Value.Microseconds);
+
+        uint64_t TicksFromSeconds = SecondsPart * LINUX_TIMER_TICKS_PER_SECOND;
+        uint64_t TicksFromMicroseconds = MicroPart / LINUX_TIMER_MICROSECONDS_PER_TICK;
+        uint64_t RemainderMicroseconds = MicroPart % LINUX_TIMER_MICROSECONDS_PER_TICK;
+
+        uint64_t ResultTicks = TicksFromSeconds + TicksFromMicroseconds;
+        if (RoundUpSubTick && ResultTicks == 0 && (SecondsPart != 0 || MicroPart != 0 || RemainderMicroseconds != 0))
+        {
+            ResultTicks = 1;
+        }
+
+        return ResultTicks;
+    };
+
+    uint64_t NewIntervalTicks = ConvertTimeValToTicks(NewKernelValue.Interval, false);
+    uint64_t NewValueTicks    = ConvertTimeValToTicks(NewKernelValue.Value, true);
+
+    CurrentProcess->RealIntervalTimerIntervalTicks  = NewIntervalTicks;
+    CurrentProcess->RealIntervalTimerRemainingTicks = NewValueTicks;
 
     return 0;
 }

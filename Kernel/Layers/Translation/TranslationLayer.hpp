@@ -27,6 +27,7 @@ public:
     int64_t HandlePollSystemCall(void* PollFdArray, uint64_t PollFdCount, int64_t TimeoutMilliseconds);
     int64_t HandleLseekSystemCall(uint64_t FileDescriptor, int64_t Offset, int64_t Whence);
     int64_t HandleIoctlSystemCall(uint64_t FileDescriptor, uint64_t Request, uint64_t Argument);
+    int64_t HandleSocketSystemCall(int64_t Domain, int64_t Type, int64_t Protocol);
     int64_t HandleOpenSystemCall(const char* Path, uint64_t Flags);
     int64_t HandleOpenAtSystemCall(int64_t DirectoryFileDescriptor, const char* Path, uint64_t Flags, uint64_t Mode);
     int64_t HandleStatSystemCall(const char* Path, void* Buffer);
@@ -67,6 +68,7 @@ public:
     int64_t HandleDup2SystemCall(uint64_t OldFileDescriptor, uint64_t NewFileDescriptor);
     int64_t HandlePauseSystemCall();
     int64_t HandleNanosleepSystemCall(const void* RequestedTime, void* RemainingTime);
+    int64_t HandleSetitimerSystemCall(int64_t Which, const void* NewValue, void* OldValue);
     int64_t HandleGettimeofdaySystemCall(void* TimeValue, void* TimeZone);
     int64_t HandleClockGettimeSystemCall(int64_t ClockId, void* TimeSpec);
     int64_t HandleForkSystemCall();

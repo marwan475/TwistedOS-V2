@@ -39,6 +39,7 @@ constexpr uint8_t  MAX_SCRIPT_INTERPRETER_DEPTH = 4;
 constexpr int64_t LINUX_SIGNAL_MIN     = 1;
 constexpr int64_t LINUX_SIGNAL_MAX     = static_cast<int64_t>(MAX_POSIX_SIGNALS_PER_PROCESS);
 constexpr int64_t LINUX_SIGNAL_SIGKILL = 9;
+constexpr int64_t LINUX_SIGNAL_SIGALRM = 14;
 constexpr int64_t LINUX_SIGNAL_SIGUSR1 = 10;
 constexpr int64_t LINUX_SIGNAL_SIGSTOP = 19;
 constexpr int64_t LINUX_SIGNAL_SIGCONT = 18;
@@ -1174,6 +1175,8 @@ bool IsUserAddressRangeAccessible(const Process* CurrentProcess, uint64_t Addres
 
 bool SetProcessSignalState(ResourceLayer* Resource, Process* TargetProcess, int64_t Signal, uint64_t HandlerAddress, uint64_t Restorer)
 {
+    (void) Restorer;
+
     if (Resource == nullptr || TargetProcess == nullptr || TargetProcess->AddressSpace == nullptr)
     {
         return false;
@@ -1193,6 +1196,16 @@ bool SetProcessSignalState(ResourceLayer* Resource, Process* TargetProcess, int6
         OriginalRSP = TargetProcess->State.rsp;
     }
 
+    if (!IsLowerCanonicalUserAddress(HandlerAddress) || !IsUserAddressRangeAccessible(TargetProcess, HandlerAddress, sizeof(uint8_t)))
+    {
+        return false;
+    }
+
+    if (!IsLowerCanonicalUserAddress(OriginalRIP) || !IsUserAddressRangeAccessible(TargetProcess, OriginalRIP, sizeof(uint8_t)))
+    {
+        return false;
+    }
+
     if (!IsLowerCanonicalUserAddress(OriginalRSP) || OriginalRSP < sizeof(uint64_t))
     {
         return false;
@@ -1204,7 +1217,7 @@ bool SetProcessSignalState(ResourceLayer* Resource, Process* TargetProcess, int6
         return false;
     }
 
-    uint64_t ReturnAddress     = (Restorer != 0) ? Restorer : OriginalRIP;
+    uint64_t ReturnAddress     = OriginalRIP;
     uint64_t PreviousPageTable = Resource->ReadCurrentPageTable();
     uint64_t TargetPageTable   = TargetProcess->AddressSpace->GetPageMapL4TableAddr();
     if (PreviousPageTable == 0 || TargetPageTable == 0)
@@ -2131,6 +2144,8 @@ uint8_t LogicLayer::CopyProcess(uint8_t Id)
     ChildProcess->BlockedSignalMask         = SourceProcess->BlockedSignalMask;
     ChildProcess->ClearChildTidAddress      = SourceProcess->ClearChildTidAddress;
     ChildProcess->ProgramBreak              = SourceProcess->ProgramBreak;
+    ChildProcess->RealIntervalTimerRemainingTicks = 0;
+    ChildProcess->RealIntervalTimerIntervalTicks  = 0;
     ChildProcess->CurrentFileSystemLocation = SourceProcess->CurrentFileSystemLocation;
     RetainRunningExecutable(ChildProcess, SourceProcess->RunningExecutableDentry);
 
@@ -3472,6 +3487,12 @@ void LogicLayer::SleepProcess(uint8_t Id, uint64_t WaitTicks)
         return;
     }
 
+    if (TargetProcess->WaitingForSystemCallReturn && TargetProcess->HasSavedSystemCallFrame)
+    {
+        TargetProcess->State.cs = KERNEL_CS;
+        TargetProcess->State.ss = KERNEL_SS;
+    }
+
     TargetProcess->Status = PROCESS_BLOCKED;
     Sync->AddToSleepQueue(Id, WaitTicks);
     Sched->RemoveFromReadyQueue(Id);
@@ -3647,6 +3668,36 @@ void LogicLayer::CaptureCurrentInterruptState(const Registers* Regs)
  */
 void LogicLayer::Tick()
 {
+    if (PM != nullptr)
+    {
+        size_t MaxProcesses = PM->GetMaxProcesses();
+        for (size_t ProcessIndex = 0; ProcessIndex < MaxProcesses; ++ProcessIndex)
+        {
+            Process* TargetProcess = PM->GetProcessById(static_cast<uint8_t>(ProcessIndex));
+            if (TargetProcess == nullptr || TargetProcess->Status == PROCESS_TERMINATED)
+            {
+                continue;
+            }
+
+            if (TargetProcess->RealIntervalTimerRemainingTicks == 0)
+            {
+                continue;
+            }
+
+            --TargetProcess->RealIntervalTimerRemainingTicks;
+
+            if (TargetProcess->RealIntervalTimerRemainingTicks == 0)
+            {
+                SignalProcess(TargetProcess->Id, LINUX_SIGNAL_SIGALRM);
+
+                if (TargetProcess->RealIntervalTimerIntervalTicks != 0)
+                {
+                    TargetProcess->RealIntervalTimerRemainingTicks = TargetProcess->RealIntervalTimerIntervalTicks;
+                }
+            }
+        }
+    }
+
     if (Sync != nullptr)
     {
         Sync->Tick();

@@ -463,7 +463,7 @@ int64_t Dispatcher::HandleSystemCall(uint64_t SystemCallNumber, uint64_t Arg1, u
 
 #ifdef DEBUG_BUILD
     TTY* Terminal = Resource.GetTTY();
-    if (Terminal != nullptr)
+    if (Terminal != nullptr && SystemCallNumber != 20)
     {
         Terminal->Serialprintf("syscall: n=%lu a1=%p a2=%p a3=%p a4=%p a5=%p a6=%p\n", SystemCallNumber, (void*) Arg1, (void*) Arg2, (void*) Arg3, (void*) Arg4, (void*) Arg5, (void*) Arg6);
     }
@@ -472,7 +472,7 @@ int64_t Dispatcher::HandleSystemCall(uint64_t SystemCallNumber, uint64_t Arg1, u
     int64_t Result = Translation.HandlePosixSystemCallNumber(SystemCallNumber, Arg1, Arg2, Arg3, Arg4, Arg5, Arg6);
 
 #ifdef DEBUG_BUILD
-    if (Terminal != nullptr)
+    if (Terminal != nullptr && SystemCallNumber != 20)
     {
         Terminal->Serialprintf("syscall_ret: n=%lu r=%lld\n", SystemCallNumber, static_cast<long long>(Result));
     }
