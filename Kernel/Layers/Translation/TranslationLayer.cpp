@@ -426,6 +426,35 @@ void EnsureProcessLinuxResourceLimitsInitialized(Process* CurrentProcess)
     CurrentProcess->ResourceLimitsInitialized = true;
 }
 
+bool DispatchOnePendingUnblockedSignal(LogicLayer* Logic, Process* CurrentProcess)
+{
+    if (Logic == nullptr || CurrentProcess == nullptr)
+    {
+        return false;
+    }
+
+    uint64_t DeliverableMask = (CurrentProcess->PendingSignalMask & ~CurrentProcess->BlockedSignalMask);
+    if (DeliverableMask == 0)
+    {
+        return false;
+    }
+
+    for (int64_t Signal = LINUX_SIGNAL_MIN; Signal <= LINUX_SIGNAL_MAX; ++Signal)
+    {
+        uint64_t SignalMaskBit = (1ULL << static_cast<uint64_t>(Signal - 1));
+        if ((DeliverableMask & SignalMaskBit) == 0)
+        {
+            continue;
+        }
+
+        CurrentProcess->PendingSignalMask &= ~SignalMaskBit;
+        Logic->SignalProcess(CurrentProcess->Id, Signal);
+        return true;
+    }
+
+    return false;
+}
+
 bool IsCanonicalX86_64Address(uint64_t Address)
 {
     constexpr uint64_t LOWER_CANONICAL_MAX = 0x00007FFFFFFFFFFFULL;
@@ -7736,6 +7765,10 @@ int64_t TranslationLayer::HandleRtSigprocmaskSystemCall(int64_t How, const void*
         return LINUX_ERR_EFAULT;
     }
 
+    while (DispatchOnePendingUnblockedSignal(Logic, CurrentProcess))
+    {
+    }
+
     return 0;
 }
 
@@ -7773,6 +7806,12 @@ int64_t TranslationLayer::HandleRtSigsuspendSystemCall(const void* Set, uint64_t
 
     uint64_t PreviousMask             = CurrentProcess->BlockedSignalMask;
     CurrentProcess->BlockedSignalMask = TemporaryMask;
+
+    if (DispatchOnePendingUnblockedSignal(Logic, CurrentProcess))
+    {
+        CurrentProcess->BlockedSignalMask = PreviousMask;
+        return LINUX_ERR_EINTR;
+    }
 
     Logic->BlockProcess(CurrentProcess->Id);
 

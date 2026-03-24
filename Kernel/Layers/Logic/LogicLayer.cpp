@@ -3106,6 +3106,8 @@ bool LogicLayer::SignalProcess(uint8_t Id, int64_t Signal)
         return false;
     }
 
+    uint64_t SignalMaskBit = (1ULL << static_cast<uint64_t>(Signal - 1));
+
     auto StopProcess = [&]()
     {
         if (TargetProcess->Status == PROCESS_RUNNING || TargetProcess->Status == PROCESS_READY)
@@ -3148,27 +3150,32 @@ bool LogicLayer::SignalProcess(uint8_t Id, int64_t Signal)
 
     if (Signal == LINUX_SIGNAL_SIGKILL)
     {
+        TargetProcess->PendingSignalMask &= ~SignalMaskBit;
         TerminateProcess(false);
         return true;
     }
 
     if (Signal == LINUX_SIGNAL_SIGSTOP)
     {
+        TargetProcess->PendingSignalMask &= ~SignalMaskBit;
         StopProcess();
         return true;
     }
 
     if (Signal == LINUX_SIGNAL_SIGCONT)
     {
+        TargetProcess->PendingSignalMask &= ~SignalMaskBit;
         ContinueProcess();
         return true;
     }
 
-    uint64_t SignalMaskBit = (1ULL << static_cast<uint64_t>(Signal - 1));
     if ((TargetProcess->BlockedSignalMask & SignalMaskBit) != 0)
     {
+        TargetProcess->PendingSignalMask |= SignalMaskBit;
         return true;
     }
+
+    TargetProcess->PendingSignalMask &= ~SignalMaskBit;
 
     LinuxDefaultSignalAction DefaultAction = GetLinuxDefaultSignalAction(Signal);
 

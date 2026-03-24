@@ -124,6 +124,7 @@ bool InitializeProcessEntry(Process& ProcessEntry, ProcessState Status, ProcessL
         ProcessEntry.SessionId      = static_cast<int32_t>(ProcessEntry.Id);
     }
     ProcessEntry.BlockedSignalMask         = 0;
+    ProcessEntry.PendingSignalMask         = 0;
     ProcessEntry.ClearChildTidAddress      = nullptr;
     ProcessEntry.ProgramBreak              = ProgramBreak;
     ProcessEntry.RealIntervalTimerRemainingTicks = 0;
