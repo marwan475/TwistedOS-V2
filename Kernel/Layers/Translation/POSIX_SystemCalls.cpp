@@ -120,6 +120,9 @@ int64_t TranslationLayer::HandlePosixSystemCallNumber(uint64_t SystemCallNumber,
         case 50: // listen
             return HandleListenSystemCall(Arg1, static_cast<int64_t>(Arg2));
             break;
+        case 55: // getsockopt
+            return HandleGetsockoptSystemCall(Arg1, static_cast<int64_t>(Arg2), static_cast<int64_t>(Arg3), reinterpret_cast<void*>(Arg4), reinterpret_cast<void*>(Arg5));
+            break;
         case 57: // fork
             return HandleForkSystemCall();
             break;
@@ -164,6 +167,9 @@ int64_t TranslationLayer::HandlePosixSystemCallNumber(uint64_t SystemCallNumber,
             break;
         case 87: // unlink
             return HandleUnlinkSystemCall(reinterpret_cast<const char*>(Arg1));
+            break;
+        case 90: // chmod
+            return HandleChmodSystemCall(reinterpret_cast<const char*>(Arg1), Arg2);
             break;
         case 91: // fchmod
             return HandleFchmodSystemCall(Arg1, Arg2);

@@ -43,6 +43,7 @@ constexpr int64_t LINUX_ERR_ENOTSOCK  = -88;
 constexpr int64_t LINUX_ERR_ENOTCONN  = -107;
 constexpr int64_t LINUX_ERR_EAFNOSUPPORT = -97;
 constexpr int64_t LINUX_ERR_ESOCKTNOSUPPORT = -94;
+constexpr int64_t LINUX_ERR_ENOPROTOOPT = -92;
 
 constexpr uint64_t SYSCALL_COPY_CHUNK_SIZE   = 4096;
 constexpr uint64_t SYSCALL_PATH_MAX          = 4096;
@@ -165,6 +166,13 @@ constexpr uint64_t LINUX_O_CLOEXEC  = 0x80000;
 constexpr int64_t LINUX_SOCKET_CALL_TYPE_MASK = 0xF;
 constexpr int64_t LINUX_SOCKET_CALL_NONBLOCK  = static_cast<int64_t>(LINUX_O_NONBLOCK);
 constexpr int64_t LINUX_SOCKET_CALL_CLOEXEC   = static_cast<int64_t>(LINUX_O_CLOEXEC);
+
+constexpr int64_t LINUX_SOL_SOCKET    = 1;
+constexpr int64_t LINUX_SO_TYPE       = 3;
+constexpr int64_t LINUX_SO_ERROR      = 4;
+constexpr int64_t LINUX_SO_ACCEPTCONN = 30;
+constexpr int64_t LINUX_SO_PROTOCOL   = 38;
+constexpr int64_t LINUX_SO_DOMAIN     = 39;
 
 constexpr int64_t LINUX_ACCESS_F_OK = 0;
 constexpr int64_t LINUX_ACCESS_X_OK = 1;
@@ -2519,6 +2527,105 @@ int64_t TranslationLayer::HandleListenSystemCall(uint64_t FileDescriptor, int64_
     return ListenResult;
 }
 
+int64_t TranslationLayer::HandleGetsockoptSystemCall(uint64_t FileDescriptor, int64_t Level, int64_t OptionName, void* OptionValue, void* OptionLength)
+{
+    if (Logic == nullptr || OptionValue == nullptr || OptionLength == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    ProcessManager* PM = Logic->GetProcessManager();
+    if (PM == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    Process* CurrentProcess = PM->GetRunningProcess();
+    if (CurrentProcess == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    if (FileDescriptor >= MAX_OPEN_FILES_PER_PROCESS)
+    {
+        return LINUX_ERR_EBADF;
+    }
+
+    File* OpenFile = CurrentProcess->FileTable[FileDescriptor];
+    if (OpenFile == nullptr || OpenFile->Node == nullptr || OpenFile->Node->NodeData == nullptr)
+    {
+        return LINUX_ERR_EBADF;
+    }
+
+    Socket* SocketEntry = reinterpret_cast<Socket*>(OpenFile->Node->NodeData);
+    if (SocketEntry == nullptr)
+    {
+        return LINUX_ERR_ENOTSOCK;
+    }
+
+    if (Level != LINUX_SOL_SOCKET)
+    {
+        return LINUX_ERR_ENOPROTOOPT;
+    }
+
+    int32_t  OptionValueResult = 0;
+    uint32_t RequiredLength    = static_cast<uint32_t>(sizeof(OptionValueResult));
+
+    switch (OptionName)
+    {
+        case LINUX_SO_TYPE:
+            OptionValueResult = SocketEntry->Type;
+            break;
+        case LINUX_SO_ERROR:
+            OptionValueResult = 0;
+            break;
+        case LINUX_SO_DOMAIN:
+            OptionValueResult = SocketEntry->Domain;
+            break;
+        case LINUX_SO_PROTOCOL:
+            OptionValueResult = SocketEntry->Protocol;
+            break;
+        case LINUX_SO_ACCEPTCONN:
+        {
+            bool IsListening = false;
+            if (SocketEntry->Domain == LINUX_AF_UNIX)
+            {
+                UnixSocket* UnixImplementation = reinterpret_cast<UnixSocket*>(SocketEntry->Implementation);
+                IsListening                    = (UnixImplementation != nullptr && UnixImplementation->IsListening);
+            }
+            else if (SocketEntry->Domain == LINUX_AF_INET)
+            {
+                NetworkSocket* NetworkImplementation = reinterpret_cast<NetworkSocket*>(SocketEntry->Implementation);
+                IsListening                          = (NetworkImplementation != nullptr && NetworkImplementation->IsListening);
+            }
+
+            OptionValueResult = IsListening ? 1 : 0;
+            break;
+        }
+        default:
+            return LINUX_ERR_ENOPROTOOPT;
+    }
+
+    uint32_t UserLength = 0;
+    if (!Logic->CopyFromUserToKernel(OptionLength, &UserLength, sizeof(UserLength)))
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    uint32_t CopyLength = (UserLength < RequiredLength) ? UserLength : RequiredLength;
+    if (CopyLength > 0 && !Logic->CopyFromKernelToUser(&OptionValueResult, OptionValue, CopyLength))
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    if (!Logic->CopyFromKernelToUser(&RequiredLength, OptionLength, sizeof(RequiredLength)))
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    return 0;
+}
+
 int64_t TranslationLayer::HandleOpenSystemCall(const char* Path, uint64_t Flags)
 {
     if (Logic == nullptr || Path == nullptr)
@@ -3467,6 +3574,24 @@ int64_t TranslationLayer::HandleFchmodSystemCall(uint64_t FileDescriptor, uint64
     }
 
     return 0;
+}
+
+int64_t TranslationLayer::HandleChmodSystemCall(const char* Path, uint64_t Mode)
+{
+    if (Path == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    int64_t FileDescriptor = HandleOpenAtSystemCall(LINUX_AT_FDCWD, Path, 0, 0);
+    if (FileDescriptor < 0)
+    {
+        return FileDescriptor;
+    }
+
+    int64_t ChmodResult = HandleFchmodSystemCall(static_cast<uint64_t>(FileDescriptor), Mode);
+    HandleCloseSystemCall(static_cast<uint64_t>(FileDescriptor));
+    return ChmodResult;
 }
 
 int64_t TranslationLayer::HandleCloseSystemCall(uint64_t FileDescriptor)

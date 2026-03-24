@@ -34,6 +34,7 @@ public:
     int64_t HandleShutdownSystemCall(uint64_t FileDescriptor, int64_t How);
     int64_t HandleBindSystemCall(uint64_t FileDescriptor, const void* SocketAddress, uint64_t SocketAddressLength);
     int64_t HandleListenSystemCall(uint64_t FileDescriptor, int64_t Backlog);
+    int64_t HandleGetsockoptSystemCall(uint64_t FileDescriptor, int64_t Level, int64_t OptionName, void* OptionValue, void* OptionLength);
     int64_t HandleOpenSystemCall(const char* Path, uint64_t Flags);
     int64_t HandleOpenAtSystemCall(int64_t DirectoryFileDescriptor, const char* Path, uint64_t Flags, uint64_t Mode);
     int64_t HandleStatSystemCall(const char* Path, void* Buffer);
@@ -50,6 +51,7 @@ public:
     int64_t HandleRmdirSystemCall(const char* Path);
     int64_t HandleLinkSystemCall(const char* OldPath, const char* NewPath);
     int64_t HandleUnlinkSystemCall(const char* Path);
+    int64_t HandleChmodSystemCall(const char* Path, uint64_t Mode);
     int64_t HandleFchmodSystemCall(uint64_t FileDescriptor, uint64_t Mode);
     int64_t HandleRenameSystemCall(const char* OldPath, const char* NewPath);
     int64_t HandleUtimeSystemCall(const char* Path, const void* Times);
