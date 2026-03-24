@@ -4,7 +4,7 @@ The goal is to build a semi-POSIX-compliant x86_64 operating system.
 
 ## Summary
 
-X86_64 OS that boots via UEFI into a higher-half kernel with PMM, VMM, scheduling, sleep, isolated user address spaces, ELF loading from initramfs-backed VFS, and a layered kernel architecture of a dispatcher thats called on all entrypoints to the kernel and routes reqeust to translation layer → logic layer → resource layer.
+X86_64 OS that boots via UEFI into a higher-half kernel with PMM, VMM, scheduling, sleep, process signaling, event queues, isolated user address spaces, dynamic ELF loading from VFS, and a layered kernel architecture of a dispatcher thats called on all entrypoints to the kernel and routes reqeust to translation layer → logic layer → resource layer.
 
 ## Developed
 
@@ -64,6 +64,7 @@ X86_64 OS that boots via UEFI into a higher-half kernel with PMM, VMM, schedulin
     - Logic layer
         - Creates the process manager
             - Stores an array of `Process` structs using ID as the index
+            - Supports process signaling
         - Exposes APIs to create and run processes
             - Supports kernel and user-level processes
             - User processes support isolation via virtual address space
@@ -71,6 +72,7 @@ X86_64 OS that boots via UEFI into a higher-half kernel with PMM, VMM, schedulin
             - Schedules processes using the timer interrupt
         - Creates the synchronization manager
             - Sleeps processes for a certain amount of timer ticks
+            - Manages event queues
         - Creates `ELFManager`
             - Used to parse and map ELFs to user virtual address space
             - Supports dynamic ELF loading flow for user binaries
@@ -92,24 +94,27 @@ X86_64 OS that boots via UEFI into a higher-half kernel with PMM, VMM, schedulin
                 - write
                 - writev
                 - poll
+                - epoll_create1
                 - lseek
                 - ioctl
                 - access
                 - stat / lstat / newfstatat
+                - fstat
                 - getdents64
                 - getcwd / chdir
                 - mkdir / rename / rmdir / unlink
                 - fcntl / dup2
                 - mmap / munmap / mprotect / brk
                 - getpid / getppid / getuid / getgid / geteuid / getegid
+                - kill
                 - setpgid / getpgid / getpgrp / setsid / getsid
-                - pause / nanosleep
+                - pause / nanosleep / setitimer
                 - uname / gettimeofday / clock_gettime
                 - fork / vfork / wait / exit_group
                 - execve
                 - utime / utimes / futimesat / utimensat
                 - chroot / mount
-                - rt_sigaction / rt_sigprocmask
+                - rt_sigaction / rt_sigprocmask / rt_sigsuspend
                 - arch_prctl / set_tid_address
 - Debug support
     - Debug print to QEMU serial (`make DEBUG=1`)
