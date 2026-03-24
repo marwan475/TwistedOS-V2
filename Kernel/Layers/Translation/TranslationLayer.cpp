@@ -202,14 +202,6 @@ constexpr uint64_t LINUX_UNBLOCKABLE_SIGNAL_MASK = (LINUX_SIGKILL_MASK | LINUX_S
 constexpr int64_t LINUX_SIGNAL_SIGKILL = 9;
 constexpr int64_t LINUX_SIGNAL_SIGSTOP = 19;
 
-struct LinuxKernelSigAction
-{
-    uint64_t Handler;
-    uint64_t Flags;
-    uint64_t Restorer;
-    uint64_t Mask;
-};
-
 bool IsCanonicalX86_64Address(uint64_t Address)
 {
     constexpr uint64_t LOWER_CANONICAL_MAX = 0x00007FFFFFFFFFFFULL;

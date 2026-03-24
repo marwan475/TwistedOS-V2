@@ -78,6 +78,14 @@ struct ProcessSignalAction
     uint64_t Mask     = 0;
 };
 
+struct LinuxKernelSigAction
+{
+    uint64_t Handler;
+    uint64_t Flags;
+    uint64_t Restorer;
+    uint64_t Mask;
+};
+
 struct Process
 {
     uint8_t                     Id;

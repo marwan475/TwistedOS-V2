@@ -36,6 +36,83 @@ constexpr uint64_t ELF_ET_DYN_MAIN_LOAD_BIAS = USER_PROCESS_VIRTUAL_BASE;
 constexpr uint64_t ELF_INTERPRETER_LOAD_BIAS = 0x0000000100000000ULL;
 constexpr uint8_t  MAX_SCRIPT_INTERPRETER_DEPTH = 4;
 
+constexpr int64_t LINUX_SIGNAL_MIN     = 1;
+constexpr int64_t LINUX_SIGNAL_MAX     = static_cast<int64_t>(MAX_POSIX_SIGNALS_PER_PROCESS);
+constexpr int64_t LINUX_SIGNAL_SIGKILL = 9;
+constexpr int64_t LINUX_SIGNAL_SIGUSR1 = 10;
+constexpr int64_t LINUX_SIGNAL_SIGSTOP = 19;
+constexpr int64_t LINUX_SIGNAL_SIGCONT = 18;
+constexpr int64_t LINUX_SIGNAL_SIGCHLD = 17;
+constexpr int64_t LINUX_SIGNAL_SIGTSTP = 20;
+constexpr int64_t LINUX_SIGNAL_SIGTTIN = 21;
+constexpr int64_t LINUX_SIGNAL_SIGTTOU = 22;
+constexpr int64_t LINUX_SIGNAL_SIGURG  = 23;
+constexpr int64_t LINUX_SIGNAL_SIGWINCH = 28;
+constexpr int64_t LINUX_SIGNAL_SIGPWR  = 30;
+constexpr int64_t LINUX_SIGNAL_SIGSYS  = 31;
+
+constexpr int64_t LINUX_SIGNAL_SIGQUIT = 3;
+constexpr int64_t LINUX_SIGNAL_SIGILL  = 4;
+constexpr int64_t LINUX_SIGNAL_SIGTRAP = 5;
+constexpr int64_t LINUX_SIGNAL_SIGABRT = 6;
+constexpr int64_t LINUX_SIGNAL_SIGBUS  = 7;
+constexpr int64_t LINUX_SIGNAL_SIGFPE  = 8;
+constexpr int64_t LINUX_SIGNAL_SIGSEGV = 11;
+constexpr int64_t LINUX_SIGNAL_SIGXCPU = 24;
+constexpr int64_t LINUX_SIGNAL_SIGXFSZ = 25;
+
+
+constexpr uint64_t LINUX_SIG_DFL = 0;
+constexpr uint64_t LINUX_SIG_IGN = 1;
+
+constexpr uint64_t LINUX_SIGKILL_MASK            = (1ULL << (LINUX_SIGNAL_SIGKILL - 1));
+constexpr uint64_t LINUX_SIGSTOP_MASK            = (1ULL << (LINUX_SIGNAL_SIGSTOP - 1));
+constexpr uint64_t LINUX_UNBLOCKABLE_SIGNAL_MASK = (LINUX_SIGKILL_MASK | LINUX_SIGSTOP_MASK);
+
+enum LinuxDefaultSignalAction
+{
+    LINUX_DEFAULT_SIGNAL_IGNORE,
+    LINUX_DEFAULT_SIGNAL_TERMINATE,
+    LINUX_DEFAULT_SIGNAL_TERMINATE_CORE,
+    LINUX_DEFAULT_SIGNAL_STOP,
+    LINUX_DEFAULT_SIGNAL_CONTINUE
+};
+
+LinuxDefaultSignalAction GetLinuxDefaultSignalAction(int64_t Signal)
+{
+    switch (Signal)
+    {
+        case LINUX_SIGNAL_SIGCHLD:
+        case LINUX_SIGNAL_SIGURG:
+        case LINUX_SIGNAL_SIGWINCH:
+            return LINUX_DEFAULT_SIGNAL_IGNORE;
+
+        case LINUX_SIGNAL_SIGSTOP:
+        case LINUX_SIGNAL_SIGTSTP:
+        case LINUX_SIGNAL_SIGTTIN:
+        case LINUX_SIGNAL_SIGTTOU:
+            return LINUX_DEFAULT_SIGNAL_STOP;
+
+        case LINUX_SIGNAL_SIGCONT:
+            return LINUX_DEFAULT_SIGNAL_CONTINUE;
+
+        case LINUX_SIGNAL_SIGQUIT:
+        case LINUX_SIGNAL_SIGILL:
+        case LINUX_SIGNAL_SIGTRAP:
+        case LINUX_SIGNAL_SIGABRT:
+        case LINUX_SIGNAL_SIGFPE:
+        case LINUX_SIGNAL_SIGSEGV:
+        case LINUX_SIGNAL_SIGBUS:
+        case LINUX_SIGNAL_SIGXCPU:
+        case LINUX_SIGNAL_SIGXFSZ:
+        case LINUX_SIGNAL_SIGSYS:
+            return LINUX_DEFAULT_SIGNAL_TERMINATE_CORE;
+
+        default:
+            return LINUX_DEFAULT_SIGNAL_TERMINATE;
+    }
+}
+
 bool TranslateELFFileOffsetToVirtualAddress(const ELFProgramHeader64* ProgramHeaders, uint16_t ProgramHeaderCount, uint64_t FileOffset, uint64_t* VirtualAddressOut)
 {
     if (ProgramHeaders == nullptr || VirtualAddressOut == nullptr)
@@ -1093,6 +1170,79 @@ bool IsUserAddressRangeAccessible(const Process* CurrentProcess, uint64_t Addres
     }
 
     return IsUserAddressRangeMappedByPageTables(CurrentProcess, Address, Count);
+}
+
+bool SetProcessSignalState(ResourceLayer* Resource, Process* TargetProcess, int64_t Signal, uint64_t HandlerAddress, uint64_t Restorer)
+{
+    if (Resource == nullptr || TargetProcess == nullptr || TargetProcess->AddressSpace == nullptr)
+    {
+        return false;
+    }
+
+    uint64_t OriginalRIP = 0;
+    uint64_t OriginalRSP = 0;
+
+    if (TargetProcess->WaitingForSystemCallReturn && TargetProcess->HasSavedSystemCallFrame)
+    {
+        OriginalRIP = TargetProcess->SavedSystemCallFrame.UserRIP;
+        OriginalRSP = TargetProcess->SavedSystemCallFrame.UserRSP;
+    }
+    else
+    {
+        OriginalRIP = TargetProcess->State.rip;
+        OriginalRSP = TargetProcess->State.rsp;
+    }
+
+    if (!IsLowerCanonicalUserAddress(OriginalRSP) || OriginalRSP < sizeof(uint64_t))
+    {
+        return false;
+    }
+
+    uint64_t NewUserRSP = OriginalRSP - sizeof(uint64_t);
+    if (!IsUserAddressRangeAccessible(TargetProcess, NewUserRSP, sizeof(uint64_t)))
+    {
+        return false;
+    }
+
+    uint64_t ReturnAddress     = (Restorer != 0) ? Restorer : OriginalRIP;
+    uint64_t PreviousPageTable = Resource->ReadCurrentPageTable();
+    uint64_t TargetPageTable   = TargetProcess->AddressSpace->GetPageMapL4TableAddr();
+    if (PreviousPageTable == 0 || TargetPageTable == 0)
+    {
+        return false;
+    }
+
+    bool SwitchedPageTable = (PreviousPageTable != TargetPageTable);
+    if (SwitchedPageTable)
+    {
+        Resource->LoadPageTable(TargetPageTable);
+    }
+
+    memcpy(reinterpret_cast<void*>(NewUserRSP), &ReturnAddress, sizeof(ReturnAddress));
+
+    if (SwitchedPageTable)
+    {
+        Resource->LoadPageTable(PreviousPageTable);
+    }
+
+    if (TargetProcess->WaitingForSystemCallReturn && TargetProcess->HasSavedSystemCallFrame)
+    {
+        TargetProcess->SavedSystemCallFrame.UserRIP = HandlerAddress;
+        TargetProcess->SavedSystemCallFrame.UserRSP = NewUserRSP;
+        TargetProcess->SavedSystemCallFrame.UserRDI = static_cast<uint64_t>(Signal);
+        TargetProcess->SavedSystemCallFrame.UserRSI = 0;
+        TargetProcess->SavedSystemCallFrame.UserRDX = 0;
+    }
+    else
+    {
+        TargetProcess->State.rip = HandlerAddress;
+        TargetProcess->State.rsp = NewUserRSP;
+        TargetProcess->State.rdi = static_cast<uint64_t>(Signal);
+        TargetProcess->State.rsi = 0;
+        TargetProcess->State.rdx = 0;
+    }
+
+    return true;
 }
 
 void FreePageTableHierarchy(PhysicalMemoryManager* PMM, uint64_t PageMapL4TableAddr)
@@ -2888,6 +3038,173 @@ void LogicLayer::KillProcess(uint8_t Id, int32_t ExitStatus)
             UnblockProcess(ParentProcess->Id);
         }
     }
+}
+
+bool LogicLayer::SignalProcess(uint8_t Id, int64_t Signal)
+{
+    if (PM == nullptr || Sched == nullptr || Resource == nullptr)
+    {
+        return false;
+    }
+
+    if (Signal < LINUX_SIGNAL_MIN || Signal > LINUX_SIGNAL_MAX)
+    {
+        return false;
+    }
+
+    Process* TargetProcess = PM->GetProcessById(static_cast<uint8_t>(Id));
+    if (TargetProcess == nullptr || TargetProcess->Status == PROCESS_TERMINATED)
+    {
+        return false;
+    }
+
+    auto StopProcess = [&]()
+    {
+        if (TargetProcess->Status == PROCESS_RUNNING || TargetProcess->Status == PROCESS_READY)
+        {
+            TargetProcess->Status = PROCESS_BLOCKED;
+            Sched->RemoveFromReadyQueue(Id);
+            if (Sync != nullptr)
+            {
+                Sync->RemoveFromSleepQueue(Id);
+                Sync->RemoveFromTTYInputWaitQueue(Id);
+            }
+        }
+    };
+
+    auto ContinueProcess = [&]()
+    {
+        if (TargetProcess->Status == PROCESS_BLOCKED)
+        {
+            if (Sync != nullptr)
+            {
+                Sync->RemoveFromSleepQueue(Id);
+                Sync->RemoveFromTTYInputWaitQueue(Id);
+            }
+
+            TargetProcess->Status = PROCESS_READY;
+            Sched->AddToReadyQueue(Id);
+        }
+    };
+
+    auto TerminateProcess = [&](bool CoreDump)
+    {
+        int32_t WaitStatus = static_cast<int32_t>(Signal & 0x7F);
+        if (CoreDump)
+        {
+            WaitStatus |= 0x80;
+        }
+
+        KillProcess(Id, WaitStatus);
+    };
+
+    if (Signal == LINUX_SIGNAL_SIGKILL)
+    {
+        TerminateProcess(false);
+        return true;
+    }
+
+    if (Signal == LINUX_SIGNAL_SIGSTOP)
+    {
+        StopProcess();
+        return true;
+    }
+
+    if (Signal == LINUX_SIGNAL_SIGCONT)
+    {
+        ContinueProcess();
+        return true;
+    }
+
+    uint64_t SignalMaskBit = (1ULL << static_cast<uint64_t>(Signal - 1));
+    if ((TargetProcess->BlockedSignalMask & SignalMaskBit) != 0)
+    {
+        return true;
+    }
+
+    LinuxDefaultSignalAction DefaultAction = GetLinuxDefaultSignalAction(Signal);
+
+    bool CanRunUserHandler = (TargetProcess->SignalActions != nullptr && TargetProcess->Level == PROCESS_LEVEL_USER && TargetProcess->AddressSpace != nullptr);
+    if (!CanRunUserHandler)
+    {
+        switch (DefaultAction)
+        {
+            case LINUX_DEFAULT_SIGNAL_IGNORE:
+                return true;
+            case LINUX_DEFAULT_SIGNAL_STOP:
+                StopProcess();
+                return true;
+            case LINUX_DEFAULT_SIGNAL_CONTINUE:
+                ContinueProcess();
+                return true;
+            case LINUX_DEFAULT_SIGNAL_TERMINATE_CORE:
+                TerminateProcess(true);
+                return true;
+            case LINUX_DEFAULT_SIGNAL_TERMINATE:
+            default:
+                TerminateProcess(false);
+                return true;
+        }
+    }
+
+    size_t SignalIndex = static_cast<size_t>(Signal - 1);
+
+    uint64_t HandlerAddress = TargetProcess->SignalActions[SignalIndex].Handler;
+    uint64_t Restorer       = TargetProcess->SignalActions[SignalIndex].Restorer;
+    uint64_t ActionMask     = TargetProcess->SignalActions[SignalIndex].Mask;
+
+    if (HandlerAddress == LINUX_SIG_IGN)
+    {
+        return true;
+    }
+
+    bool HasCustomHandler = (HandlerAddress != LINUX_SIG_DFL);
+
+    if (!HasCustomHandler)
+    {
+        switch (DefaultAction)
+        {
+            case LINUX_DEFAULT_SIGNAL_IGNORE:
+                return true;
+            case LINUX_DEFAULT_SIGNAL_STOP:
+                StopProcess();
+                return true;
+            case LINUX_DEFAULT_SIGNAL_CONTINUE:
+                ContinueProcess();
+                return true;
+            case LINUX_DEFAULT_SIGNAL_TERMINATE_CORE:
+                TerminateProcess(true);
+                return true;
+            case LINUX_DEFAULT_SIGNAL_TERMINATE:
+            default:
+                TerminateProcess(false);
+                return true;
+        }
+    }
+
+    if (!SetProcessSignalState(Resource, TargetProcess, Signal, HandlerAddress, Restorer))
+    {
+        TerminateProcess(false);
+        return true;
+    }
+
+    uint64_t UpdatedMask = (TargetProcess->BlockedSignalMask | SignalMaskBit | ActionMask);
+    UpdatedMask &= ~LINUX_UNBLOCKABLE_SIGNAL_MASK;
+    TargetProcess->BlockedSignalMask = UpdatedMask;
+
+    if (TargetProcess->Status == PROCESS_BLOCKED)
+    {
+        if (Sync != nullptr)
+        {
+            Sync->RemoveFromSleepQueue(Id);
+            Sync->RemoveFromTTYInputWaitQueue(Id);
+        }
+
+        TargetProcess->Status = PROCESS_READY;
+        Sched->AddToReadyQueue(Id);
+    }
+
+    return true;
 }
 
 void LogicLayer::AddProcessToReadyQueue(uint8_t Id)
