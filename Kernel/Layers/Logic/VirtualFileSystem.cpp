@@ -117,6 +117,81 @@ bool EnsureLazyLoadedINodeData(INode* Node)
     return true;
 }
 
+bool EnsureWritableINodeCapacity(INode* Node, uint64_t RequiredSize)
+{
+    if (Node == nullptr)
+    {
+        return false;
+    }
+
+    if (RequiredSize == 0)
+    {
+        return true;
+    }
+
+    if (Node->NodeData != nullptr && Node->NodeSize >= RequiredSize)
+    {
+        return true;
+    }
+
+    if (Node->NodeData == nullptr && Node->IsLazyLoad && Node->NodeSize > 0)
+    {
+        if (!EnsureLazyLoadedINodeData(Node))
+        {
+            return false;
+        }
+
+        if (Node->NodeData != nullptr && Node->NodeSize >= RequiredSize)
+        {
+            return true;
+        }
+    }
+
+    Dispatcher* ActiveDispatcher = Dispatcher::GetActive();
+    if (ActiveDispatcher == nullptr)
+    {
+        return false;
+    }
+
+    ResourceLayer* Resource = ActiveDispatcher->GetResourceLayer();
+    if (Resource == nullptr || Resource->GetPMM() == nullptr)
+    {
+        return false;
+    }
+
+    uint64_t ExistingSize = Node->NodeSize;
+    uint64_t TargetSize   = (RequiredSize > ExistingSize) ? RequiredSize : ExistingSize;
+    uint64_t PageCount    = (TargetSize + PAGE_SIZE - 1) / PAGE_SIZE;
+    void*    NewData      = Resource->GetPMM()->AllocatePagesFromDescriptor(PageCount);
+    if (NewData == nullptr)
+    {
+        return false;
+    }
+
+    kmemset(NewData, 0, static_cast<size_t>(PageCount * PAGE_SIZE));
+
+    if (Node->NodeData != nullptr && ExistingSize > 0)
+    {
+        memcpy(NewData, Node->NodeData, static_cast<size_t>(ExistingSize));
+    }
+
+    if (Node->LazyDataBackedByPMM && Node->NodeData != nullptr && Node->LazyDataPageCount != 0)
+    {
+        Resource->GetPMM()->FreePagesFromDescriptor(Node->NodeData, Node->LazyDataPageCount);
+    }
+
+    Node->NodeData            = NewData;
+    Node->NodeSize            = TargetSize;
+    Node->IsLazyLoad          = false;
+    Node->LazyDataBackedByPMM = true;
+    Node->LazyDataPageCount   = PageCount;
+    Node->BackingInodeNumber  = 0;
+    Node->LazyLoadRefCount    = 0;
+    Node->LazyLoadContext     = nullptr;
+
+    return true;
+}
+
 int64_t DefaultReadFileOperation(File* OpenFile, void* Buffer, uint64_t Count)
 {
     if (OpenFile == nullptr || OpenFile->Node == nullptr || (Buffer == nullptr && Count != 0))
@@ -195,38 +270,22 @@ int64_t DefaultWriteFileOperation(File* OpenFile, const void* Buffer, uint64_t C
         return 0;
     }
 
-    if (OpenFile->Node->NodeData == nullptr)
-    {
-        if (OpenFile->Node->NodeSize == 0)
-        {
-            return LINUX_ERR_ENOSPC;
-        }
-
-        if (!EnsureLazyLoadedINodeData(OpenFile->Node))
-        {
-            return LINUX_ERR_ENOSPC;
-        }
-
-        if (OpenFile->Node->NodeData == nullptr)
-        {
-            return LINUX_ERR_ENOSPC;
-        }
-    }
-
-    uint64_t FileSize = OpenFile->Node->NodeSize;
-    if (OpenFile->CurrentOffset >= FileSize)
+    if (OpenFile->CurrentOffset > (UINT64_MAX - Count))
     {
         return LINUX_ERR_ENOSPC;
     }
 
-    uint64_t RemainingBytes = FileSize - OpenFile->CurrentOffset;
-    uint64_t BytesToWrite   = (Count < RemainingBytes) ? Count : RemainingBytes;
+    uint64_t RequiredSize = OpenFile->CurrentOffset + Count;
+    if (!EnsureWritableINodeCapacity(OpenFile->Node, RequiredSize))
+    {
+        return LINUX_ERR_ENOSPC;
+    }
 
     uint8_t* Destination = reinterpret_cast<uint8_t*>(OpenFile->Node->NodeData) + OpenFile->CurrentOffset;
-    memcpy(Destination, Buffer, static_cast<size_t>(BytesToWrite));
-    OpenFile->CurrentOffset += BytesToWrite;
+    memcpy(Destination, Buffer, static_cast<size_t>(Count));
+    OpenFile->CurrentOffset += Count;
 
-    return static_cast<int64_t>(BytesToWrite);
+    return static_cast<int64_t>(Count);
 }
 
 int64_t DefaultSeekFileOperation(File* OpenFile, int64_t Offset, int32_t Whence)

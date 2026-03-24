@@ -39,6 +39,7 @@ constexpr int64_t LINUX_ERR_ERANGE    = -34;
 constexpr int64_t LINUX_ERR_EEXIST    = -17;
 constexpr int64_t LINUX_ERR_ENOTEMPTY = -39;
 constexpr int64_t LINUX_ERR_ESPIPE    = -29;
+constexpr int64_t LINUX_ERR_ENOTSOCK  = -88;
 constexpr int64_t LINUX_ERR_EAFNOSUPPORT = -97;
 constexpr int64_t LINUX_ERR_ESOCKTNOSUPPORT = -94;
 
@@ -47,6 +48,7 @@ constexpr uint64_t SYSCALL_PATH_MAX          = 4096;
 constexpr uint64_t SYSCALL_EXEC_MAX_VECTOR   = 128;
 constexpr uint64_t SYSCALL_MAX_PATH_SEGMENTS = 256;
 constexpr uint64_t SYSCALL_IOV_MAX           = 1024;
+constexpr uint64_t SYSCALL_MAX_SOCKET_ADDRESS = 256;
 
 struct LinuxIOVec
 {
@@ -2025,6 +2027,62 @@ int64_t TranslationLayer::HandleSocketSystemCall(int64_t Domain, int64_t Type, i
 
     CurrentProcess->FileTable[FileDescriptor] = OpenFile;
     return FileDescriptor;
+}
+
+int64_t TranslationLayer::HandleBindSystemCall(uint64_t FileDescriptor, const void* SocketAddress, uint64_t SocketAddressLength)
+{
+    if (Logic == nullptr || SocketAddress == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    if (SocketAddressLength == 0 || SocketAddressLength > SYSCALL_MAX_SOCKET_ADDRESS)
+    {
+        return LINUX_ERR_EINVAL;
+    }
+
+    ProcessManager* PM = Logic->GetProcessManager();
+    if (PM == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    InterProcessComunicationManager* IPC = Logic->GetInterProcessComunicationManager();
+    if (IPC == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    Process* CurrentProcess = PM->GetRunningProcess();
+    if (CurrentProcess == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    if (FileDescriptor >= MAX_OPEN_FILES_PER_PROCESS)
+    {
+        return LINUX_ERR_EBADF;
+    }
+
+    File* OpenFile = CurrentProcess->FileTable[FileDescriptor];
+    if (OpenFile == nullptr)
+    {
+        return LINUX_ERR_EBADF;
+    }
+
+    uint8_t KernelSocketAddress[SYSCALL_MAX_SOCKET_ADDRESS] = {};
+    if (!Logic->CopyFromUserToKernel(SocketAddress, KernelSocketAddress, SocketAddressLength))
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    int64_t BindResult = IPC->BindSocket(CurrentProcess, static_cast<int64_t>(FileDescriptor), KernelSocketAddress, SocketAddressLength);
+    if (BindResult == LINUX_SOCKET_ERR_ENOTSOCK)
+    {
+        return LINUX_ERR_ENOTSOCK;
+    }
+
+    return BindResult;
 }
 
 int64_t TranslationLayer::HandleOpenSystemCall(const char* Path, uint64_t Flags)

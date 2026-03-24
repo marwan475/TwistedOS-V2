@@ -38,7 +38,30 @@ enum LinuxSocketErrors
     LINUX_SOCKET_ERR_ESOCKTNOSUPPORT = -94,
     LINUX_SOCKET_ERR_ENOMEM      = -12,
     LINUX_SOCKET_ERR_EMFILE      = -24,
-    LINUX_SOCKET_ERR_EBADF       = -9
+    LINUX_SOCKET_ERR_EBADF       = -9,
+    LINUX_SOCKET_ERR_ENOTSOCK    = -88,
+    LINUX_SOCKET_ERR_EADDRINUSE  = -98,
+    LINUX_SOCKET_ERR_ENAMETOOLONG = -36
+};
+
+struct LinuxSockAddr
+{
+    uint16_t Family;
+    char     Data[14];
+};
+
+struct LinuxSockAddrIn
+{
+    uint16_t Family;
+    uint16_t Port;
+    uint32_t Address;
+    uint8_t  Zero[8];
+};
+
+struct LinuxSockAddrUn
+{
+    uint16_t Family;
+    char     Path[108];
 };
 
 struct NetworkSocket{
@@ -46,10 +69,16 @@ struct NetworkSocket{
     uint16_t LocalPort;
     uint32_t RemoteIp;
     uint16_t RemotePort;
+    bool     IsBound;
 };
 
+struct Socket;
+
 struct UnixSocket{
-    char* Path;
+    char*    Path;
+    uint64_t PathLength;
+    bool     IsBound;
+    Socket*  ConnectedPeer;
 };
 
 struct Socket{
@@ -78,6 +107,7 @@ public:
     ~InterProcessComunicationManager();
 
     Socket* CreateSocket(int64_t Domain, int64_t Type, int64_t Protocol, Process* Owner, int64_t FileDescriptor, int64_t* ErrorCode = nullptr);
+    int64_t BindSocket(Process* Owner, int64_t FileDescriptor, const void* SocketAddress, uint64_t SocketAddressLength);
     bool    CloseSocket(Process* Owner, int64_t FileDescriptor);
     uint64_t GetSocketCount() const;
 };

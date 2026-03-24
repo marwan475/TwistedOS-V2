@@ -8,6 +8,58 @@
 
 namespace
 {
+constexpr uint64_t LINUX_SOCKADDR_FAMILY_SIZE = sizeof(uint16_t);
+
+uint16_t ReadLinuxAddressFamily(const void* SocketAddress)
+{
+	if (SocketAddress == nullptr)
+	{
+		return 0;
+	}
+
+	const uint8_t* AddressBytes = reinterpret_cast<const uint8_t*>(SocketAddress);
+	return static_cast<uint16_t>(static_cast<uint16_t>(AddressBytes[0]) | (static_cast<uint16_t>(AddressBytes[1]) << 8));
+}
+
+uint64_t ComputeBoundUnixPathLength(const char* Path, uint64_t MaxLength)
+{
+	if (Path == nullptr)
+	{
+		return 0;
+	}
+
+	uint64_t Length = 0;
+	while (Length < MaxLength && Path[Length] != '\0')
+	{
+		++Length;
+	}
+
+	return Length;
+}
+
+bool AreUnixPathsEqual(const char* LeftPath, uint64_t LeftPathLength, const char* RightPath, uint64_t RightPathLength)
+{
+	if (LeftPath == nullptr || RightPath == nullptr)
+	{
+		return false;
+	}
+
+	if (LeftPathLength != RightPathLength)
+	{
+		return false;
+	}
+
+	for (uint64_t Index = 0; Index < LeftPathLength; ++Index)
+	{
+		if (LeftPath[Index] != RightPath[Index])
+		{
+			return false;
+		}
+	}
+
+	return true;
+}
+
 int64_t SocketRead(File* OpenFile, void* Buffer, uint64_t Count)
 {
 	(void) OpenFile;
@@ -127,7 +179,14 @@ void InterProcessComunicationManager::DestroySocket(Socket* SocketEntry)
 
 	if (SocketEntry->Domain == LINUX_AF_UNIX)
 	{
-		delete reinterpret_cast<UnixSocket*>(SocketEntry->Implementation);
+		UnixSocket* SocketImplementation = reinterpret_cast<UnixSocket*>(SocketEntry->Implementation);
+		if (SocketImplementation != nullptr && SocketImplementation->Path != nullptr)
+		{
+			delete[] SocketImplementation->Path;
+			SocketImplementation->Path = nullptr;
+		}
+
+		delete SocketImplementation;
 	}
 	else if (SocketEntry->Domain == LINUX_AF_INET)
 	{
@@ -213,6 +272,8 @@ Socket* InterProcessComunicationManager::CreateSocket(int64_t Domain, int64_t Ty
 		}
 
 		SocketImplementation->Path = nullptr;
+		SocketImplementation->PathLength = 0;
+		SocketImplementation->IsBound = false;
 		NewSocket->Implementation  = SocketImplementation;
 	}
 	else
@@ -232,11 +293,171 @@ Socket* InterProcessComunicationManager::CreateSocket(int64_t Domain, int64_t Ty
 		SocketImplementation->LocalPort  = 0;
 		SocketImplementation->RemoteIp   = 0;
 		SocketImplementation->RemotePort = 0;
+		SocketImplementation->IsBound    = false;
 		NewSocket->Implementation        = SocketImplementation;
 	}
 
 	SocketList[SocketCount++] = NewSocket;
 	return NewSocket;
+}
+
+int64_t InterProcessComunicationManager::BindSocket(Process* Owner, int64_t FileDescriptor, const void* SocketAddress, uint64_t SocketAddressLength)
+{
+	if (Owner == nullptr || FileDescriptor < 0 || SocketAddress == nullptr)
+	{
+		return LINUX_SOCKET_ERR_EINVAL;
+	}
+
+	if (SocketAddressLength < LINUX_SOCKADDR_FAMILY_SIZE)
+	{
+		return LINUX_SOCKET_ERR_EINVAL;
+	}
+
+	Socket* SocketEntry = nullptr;
+	for (uint64_t SocketIndex = 0; SocketIndex < SocketCount; ++SocketIndex)
+	{
+		Socket* Candidate = SocketList[SocketIndex];
+		if (Candidate == nullptr)
+		{
+			continue;
+		}
+
+		if (Candidate->Owner == Owner && Candidate->FileDescriptor == FileDescriptor)
+		{
+			SocketEntry = Candidate;
+			break;
+		}
+	}
+
+	if (SocketEntry == nullptr)
+	{
+		return LINUX_SOCKET_ERR_ENOTSOCK;
+	}
+
+	uint16_t AddressFamily = ReadLinuxAddressFamily(SocketAddress);
+	if (AddressFamily != static_cast<uint16_t>(SocketEntry->Domain))
+	{
+		return LINUX_SOCKET_ERR_EAFNOSUPPORT;
+	}
+
+	if (SocketEntry->Domain == LINUX_AF_INET)
+	{
+		if (SocketAddressLength < sizeof(LinuxSockAddrIn))
+		{
+			return LINUX_SOCKET_ERR_EINVAL;
+		}
+
+		const LinuxSockAddrIn* InternetAddress = reinterpret_cast<const LinuxSockAddrIn*>(SocketAddress);
+
+		for (uint64_t SocketIndex = 0; SocketIndex < SocketCount; ++SocketIndex)
+		{
+			Socket* CandidateEntry = SocketList[SocketIndex];
+			if (CandidateEntry == nullptr || CandidateEntry == SocketEntry || CandidateEntry->Domain != LINUX_AF_INET)
+			{
+				continue;
+			}
+
+			NetworkSocket* CandidateNetwork = reinterpret_cast<NetworkSocket*>(CandidateEntry->Implementation);
+			if (CandidateNetwork == nullptr || !CandidateNetwork->IsBound)
+			{
+				continue;
+			}
+
+			if (CandidateNetwork->LocalPort != InternetAddress->Port)
+			{
+				continue;
+			}
+
+			if (CandidateNetwork->LocalIp == 0 || InternetAddress->Address == 0 || CandidateNetwork->LocalIp == InternetAddress->Address)
+			{
+				return LINUX_SOCKET_ERR_EADDRINUSE;
+			}
+		}
+
+		NetworkSocket* SocketImplementation = reinterpret_cast<NetworkSocket*>(SocketEntry->Implementation);
+		if (SocketImplementation == nullptr)
+		{
+			return LINUX_SOCKET_ERR_EINVAL;
+		}
+
+		SocketImplementation->LocalIp   = InternetAddress->Address;
+		SocketImplementation->LocalPort = InternetAddress->Port;
+		SocketImplementation->IsBound   = true;
+		return 0;
+	}
+
+	if (SocketEntry->Domain == LINUX_AF_UNIX)
+	{
+		if (SocketAddressLength <= LINUX_SOCKADDR_FAMILY_SIZE)
+		{
+			return LINUX_SOCKET_ERR_EINVAL;
+		}
+
+		if (SocketAddressLength > sizeof(LinuxSockAddrUn))
+		{
+			return LINUX_SOCKET_ERR_ENAMETOOLONG;
+		}
+
+		const LinuxSockAddrUn* UnixAddress      = reinterpret_cast<const LinuxSockAddrUn*>(SocketAddress);
+		uint64_t               AvailablePathLen = SocketAddressLength - LINUX_SOCKADDR_FAMILY_SIZE;
+		uint64_t               PathLength       = ComputeBoundUnixPathLength(UnixAddress->Path, AvailablePathLen);
+
+		if (PathLength == 0)
+		{
+			return LINUX_SOCKET_ERR_EINVAL;
+		}
+
+		for (uint64_t SocketIndex = 0; SocketIndex < SocketCount; ++SocketIndex)
+		{
+			Socket* CandidateEntry = SocketList[SocketIndex];
+			if (CandidateEntry == nullptr || CandidateEntry == SocketEntry || CandidateEntry->Domain != LINUX_AF_UNIX)
+			{
+				continue;
+			}
+
+			UnixSocket* CandidateUnix = reinterpret_cast<UnixSocket*>(CandidateEntry->Implementation);
+			if (CandidateUnix == nullptr || !CandidateUnix->IsBound || CandidateUnix->Path == nullptr)
+			{
+				continue;
+			}
+
+			if (AreUnixPathsEqual(CandidateUnix->Path, CandidateUnix->PathLength, UnixAddress->Path, PathLength))
+			{
+				return LINUX_SOCKET_ERR_EADDRINUSE;
+			}
+		}
+
+		UnixSocket* SocketImplementation = reinterpret_cast<UnixSocket*>(SocketEntry->Implementation);
+		if (SocketImplementation == nullptr)
+		{
+			return LINUX_SOCKET_ERR_EINVAL;
+		}
+
+		char* NewPath = new char[PathLength + 1];
+		if (NewPath == nullptr)
+		{
+			return LINUX_SOCKET_ERR_ENOMEM;
+		}
+
+		for (uint64_t PathIndex = 0; PathIndex < PathLength; ++PathIndex)
+		{
+			NewPath[PathIndex] = UnixAddress->Path[PathIndex];
+		}
+
+		NewPath[PathLength] = '\0';
+
+		if (SocketImplementation->Path != nullptr)
+		{
+			delete[] SocketImplementation->Path;
+		}
+
+		SocketImplementation->Path       = NewPath;
+		SocketImplementation->PathLength = PathLength;
+		SocketImplementation->IsBound    = true;
+		return 0;
+	}
+
+	return LINUX_SOCKET_ERR_EAFNOSUPPORT;
 }
 
 bool InterProcessComunicationManager::CloseSocket(Process* Owner, int64_t FileDescriptor)
