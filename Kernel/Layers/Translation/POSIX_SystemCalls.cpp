@@ -147,8 +147,14 @@ int64_t TranslationLayer::HandlePosixSystemCallNumber(uint64_t SystemCallNumber,
         case 84: // rmdir
             return HandleRmdirSystemCall(reinterpret_cast<const char*>(Arg1));
             break;
+        case 86: // link
+            return HandleLinkSystemCall(reinterpret_cast<const char*>(Arg1), reinterpret_cast<const char*>(Arg2));
+            break;
         case 87: // unlink
             return HandleUnlinkSystemCall(reinterpret_cast<const char*>(Arg1));
+            break;
+        case 91: // fchmod
+            return HandleFchmodSystemCall(Arg1, Arg2);
             break;
         case 96: // gettimeofday
             return HandleGettimeofdaySystemCall(reinterpret_cast<void*>(Arg1), reinterpret_cast<void*>(Arg2));

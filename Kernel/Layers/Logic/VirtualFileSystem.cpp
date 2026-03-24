@@ -722,6 +722,8 @@ INode* CreateINode(FileType Type, uint64_t Size, void* Data)
 {
     INode* Node               = new INode;
     Node->NodeType            = Type;
+    Node->LinkReferenceCount  = 1;
+    Node->UsesVirtualHardLinks = false;
     Node->NodeSize            = Size;
     Node->NodeData            = Data;
     Node->IsLazyLoad          = false;
@@ -990,7 +992,21 @@ void FreeDentryTree(Dentry* Node)
     }
 
     delete[] Node->children;
-    delete Node->inode;
+
+    INode* NodeInode = Node->inode;
+    if (NodeInode != nullptr)
+    {
+        if (NodeInode->LinkReferenceCount > 0)
+        {
+            --NodeInode->LinkReferenceCount;
+        }
+
+        if (NodeInode->LinkReferenceCount == 0)
+        {
+            delete NodeInode;
+        }
+    }
+
     delete[] const_cast<char*>(Node->name);
     delete Node;
 }
@@ -1413,6 +1429,140 @@ bool VirtualFileSystem::CreateFile(const char* path, FileType type)
     return EnsurePathDentry(Root, path, type, 0, nullptr);
 }
 
+bool VirtualFileSystem::LinkFile(const char* existingPath, const char* newPath)
+{
+    if (Root == nullptr || existingPath == nullptr || newPath == nullptr)
+    {
+        return false;
+    }
+
+    Dentry* Source = LookupNoFollowFinal(existingPath);
+    if (Source == nullptr || Source == Root || Source->inode == nullptr || Source->parent == nullptr)
+    {
+        return false;
+    }
+
+    if (Source->inode->NodeType != INODE_FILE)
+    {
+        return false;
+    }
+
+    Dentry* ExistingDestination = LookupNoFollowFinal(newPath);
+    if (ExistingDestination != nullptr)
+    {
+        return false;
+    }
+
+    const char* NormalizedNewPath = NormalizePathStart(newPath);
+    if (IsRootAliasPath(NormalizedNewPath))
+    {
+        return false;
+    }
+
+    const char* PathEnd = NormalizedNewPath;
+    while (*PathEnd != STRING_TERMINATOR)
+    {
+        ++PathEnd;
+    }
+
+    while (PathEnd > NormalizedNewPath && *(PathEnd - 1) == PATH_SEPARATOR)
+    {
+        --PathEnd;
+    }
+
+    if (PathEnd == NormalizedNewPath)
+    {
+        return false;
+    }
+
+    const char* LastSegmentStart = PathEnd;
+    while (LastSegmentStart > NormalizedNewPath && *(LastSegmentStart - 1) != PATH_SEPARATOR)
+    {
+        --LastSegmentStart;
+    }
+
+    uint64_t NewNameLength = static_cast<uint64_t>(PathEnd - LastSegmentStart);
+    if (NewNameLength == 0)
+    {
+        return false;
+    }
+
+    if ((NewNameLength == 1 && LastSegmentStart[0] == PATH_DOT) || (NewNameLength == 2 && LastSegmentStart[0] == PATH_DOT && LastSegmentStart[1] == PATH_DOT))
+    {
+        return false;
+    }
+
+    Dentry*     TargetParent = Root;
+    const char* SegmentStart = NormalizedNewPath;
+    while (SegmentStart < LastSegmentStart)
+    {
+        while (SegmentStart < LastSegmentStart && *SegmentStart == PATH_SEPARATOR)
+        {
+            ++SegmentStart;
+        }
+
+        if (SegmentStart >= LastSegmentStart)
+        {
+            break;
+        }
+
+        const char* SegmentEnd = SegmentStart;
+        while (SegmentEnd < LastSegmentStart && *SegmentEnd != PATH_SEPARATOR)
+        {
+            ++SegmentEnd;
+        }
+
+        uint64_t SegmentLength = static_cast<uint64_t>(SegmentEnd - SegmentStart);
+        if ((SegmentLength == 1 && SegmentStart[0] == PATH_DOT) || (SegmentLength == 2 && SegmentStart[0] == PATH_DOT && SegmentStart[1] == PATH_DOT))
+        {
+            return false;
+        }
+
+        Dentry* Next = FindChildBySegment(TargetParent, SegmentStart, SegmentLength);
+        if (Next == nullptr || Next->inode == nullptr || Next->inode->NodeType != INODE_DIR)
+        {
+            return false;
+        }
+
+        TargetParent = Next;
+        SegmentStart = SegmentEnd;
+    }
+
+    if (FindChildBySegment(TargetParent, LastSegmentStart, NewNameLength) != nullptr)
+    {
+        return false;
+    }
+
+    char* NewName = DuplicateSegment(LastSegmentStart, NewNameLength);
+    if (NewName == nullptr)
+    {
+        return false;
+    }
+
+    if (isEXT && ActiveExtendedFileSystem != nullptr)
+    {
+        Source->inode->UsesVirtualHardLinks = true;
+    }
+
+    ++Source->inode->LinkReferenceCount;
+
+    Dentry* LinkedEntry = CreateDentry(NewName, TargetParent, Source->inode);
+    delete[] NewName;
+    if (LinkedEntry == nullptr)
+    {
+        --Source->inode->LinkReferenceCount;
+        return false;
+    }
+
+    if (!AppendChild(TargetParent, LinkedEntry))
+    {
+        FreeDentryTree(LinkedEntry);
+        return false;
+    }
+
+    return true;
+}
+
 bool VirtualFileSystem::DeleteFile(const char* path, FileType type)
 {
     bool IsDirectory = (type == INODE_DIR);
@@ -1440,10 +1590,14 @@ bool VirtualFileSystem::DeleteFile(const char* path, FileType type)
 
     if (isEXT && ActiveExtendedFileSystem != nullptr)
     {
-        ExtendedFileSystemEntryType EntryType = IsDirectory ? ExtendedFileSystemEntryTypeDirectory : ExtendedFileSystemEntryTypeRegularFile;
-        if (!ActiveExtendedFileSystem->DeleteFile(path, EntryType))
+        bool SkipExtendedDelete = (!IsDirectory && Existing->inode->UsesVirtualHardLinks);
+        if (!SkipExtendedDelete)
         {
-            return false;
+            ExtendedFileSystemEntryType EntryType = IsDirectory ? ExtendedFileSystemEntryTypeDirectory : ExtendedFileSystemEntryTypeRegularFile;
+            if (!ActiveExtendedFileSystem->DeleteFile(path, EntryType))
+            {
+                return false;
+            }
         }
     }
 

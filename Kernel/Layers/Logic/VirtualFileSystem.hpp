@@ -50,6 +50,8 @@ struct INodeOperations
 struct INode
 {
     FileType         NodeType;
+    uint64_t         LinkReferenceCount;
+    bool             UsesVirtualHardLinks;
     uint64_t         NodeSize;
     void*            NodeData;
     bool             IsLazyLoad          = false;
@@ -99,6 +101,7 @@ public:
     bool    MountEXTFileSystem(ExtendedFileSystemManager* extendedFileSystemManager, const char* mountPath);
     bool    RegisterDevice(const char* path, void* deviceData, FileOperations* fileOperations);
     bool    CreateFile(const char* path, FileType type);
+    bool    LinkFile(const char* existingPath, const char* newPath);
     bool    DeleteFile(const char* path, FileType type);
     bool    RenameFile(const char* oldPath, const char* newPath, FileType type);
     bool    SetRoot(Dentry* RootDentry);

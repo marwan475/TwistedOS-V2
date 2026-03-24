@@ -3000,6 +3000,41 @@ int64_t TranslationLayer::HandleFcntlSystemCall(uint64_t FileDescriptor, uint64_
     }
 }
 
+int64_t TranslationLayer::HandleFchmodSystemCall(uint64_t FileDescriptor, uint64_t Mode)
+{
+    (void) Mode;
+
+    if (Logic == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    ProcessManager* PM = Logic->GetProcessManager();
+    if (PM == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    Process* CurrentProcess = PM->GetRunningProcess();
+    if (CurrentProcess == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    if (FileDescriptor >= MAX_OPEN_FILES_PER_PROCESS)
+    {
+        return LINUX_ERR_EBADF;
+    }
+
+    File* OpenFile = CurrentProcess->FileTable[FileDescriptor];
+    if (OpenFile == nullptr || OpenFile->Node == nullptr)
+    {
+        return LINUX_ERR_EBADF;
+    }
+
+    return 0;
+}
+
 int64_t TranslationLayer::HandleCloseSystemCall(uint64_t FileDescriptor)
 {
     if (Logic == nullptr)
@@ -3547,6 +3582,174 @@ int64_t TranslationLayer::HandleUnlinkSystemCall(const char* Path)
     if (!VFS->DeleteFile(DeletePath, INODE_FILE))
     {
         return LINUX_ERR_ENOENT;
+    }
+
+    return 0;
+}
+
+int64_t TranslationLayer::HandleLinkSystemCall(const char* OldPath, const char* NewPath)
+{
+    if (Logic == nullptr || OldPath == nullptr || NewPath == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    VirtualFileSystem* VFS = Logic->GetVirtualFileSystem();
+    ProcessManager*    PM  = Logic->GetProcessManager();
+    if (VFS == nullptr || PM == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    Process* CurrentProcess = PM->GetRunningProcess();
+    if (CurrentProcess == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    auto ResolvePathToAbsolute = [&](const char* UserPath, char* KernelPath, uint64_t KernelPathSize, char* EffectivePath, uint64_t EffectivePathSize,
+                                     const char** OutPath) -> int64_t
+    {
+        if (!CopyUserCString(Logic, UserPath, KernelPath, KernelPathSize))
+        {
+            return LINUX_ERR_EFAULT;
+        }
+
+        if (KernelPath[0] == '\0')
+        {
+            return LINUX_ERR_ENOENT;
+        }
+
+        *OutPath = KernelPath;
+        if (KernelPath[0] == '/')
+        {
+            return 0;
+        }
+
+        Dentry* BaseDirectory = CurrentProcess->CurrentFileSystemLocation;
+        if (BaseDirectory == nullptr)
+        {
+            return LINUX_ERR_ENOENT;
+        }
+
+        char BasePath[SYSCALL_PATH_MAX] = {};
+        if (!BuildAbsolutePathFromDentry(BaseDirectory, BasePath, sizeof(BasePath)))
+        {
+            return LINUX_ERR_EFAULT;
+        }
+
+        uint64_t BasePathLength = CStrLength(BasePath);
+        uint64_t RelativeLength = CStrLength(KernelPath);
+        uint64_t NeedsSeparator = (BasePathLength > 1) ? 1 : 0;
+        uint64_t RequiredBytes  = BasePathLength + NeedsSeparator + RelativeLength + 1;
+        if (RequiredBytes > EffectivePathSize)
+        {
+            return LINUX_ERR_EINVAL;
+        }
+
+        memcpy(EffectivePath, BasePath, static_cast<size_t>(BasePathLength));
+        uint64_t Cursor = BasePathLength;
+        if (NeedsSeparator != 0)
+        {
+            EffectivePath[Cursor++] = '/';
+        }
+
+        memcpy(EffectivePath + Cursor, KernelPath, static_cast<size_t>(RelativeLength));
+        EffectivePath[Cursor + RelativeLength] = '\0';
+        *OutPath                               = EffectivePath;
+        return 0;
+    };
+
+    char        KernelOldPath[SYSCALL_PATH_MAX]    = {};
+    char        EffectiveOldPath[SYSCALL_PATH_MAX] = {};
+    const char* LinkOldPath                        = nullptr;
+    int64_t     ResolveOldResult
+            = ResolvePathToAbsolute(OldPath, KernelOldPath, sizeof(KernelOldPath), EffectiveOldPath, sizeof(EffectiveOldPath), &LinkOldPath);
+    if (ResolveOldResult < 0)
+    {
+        return ResolveOldResult;
+    }
+
+    char        KernelNewPath[SYSCALL_PATH_MAX]    = {};
+    char        EffectiveNewPath[SYSCALL_PATH_MAX] = {};
+    const char* LinkNewPath                        = nullptr;
+    int64_t     ResolveNewResult
+            = ResolvePathToAbsolute(NewPath, KernelNewPath, sizeof(KernelNewPath), EffectiveNewPath, sizeof(EffectiveNewPath), &LinkNewPath);
+    if (ResolveNewResult < 0)
+    {
+        return ResolveNewResult;
+    }
+
+    Dentry* Source = VFS->Lookup(LinkOldPath);
+    if (Source == nullptr || Source->inode == nullptr)
+    {
+        return LINUX_ERR_ENOENT;
+    }
+
+    if (Source->inode->NodeType == INODE_DIR)
+    {
+        return LINUX_ERR_EPERM;
+    }
+
+    Dentry* ExistingDestination = VFS->LookupNoFollowFinal(LinkNewPath);
+    if (ExistingDestination != nullptr)
+    {
+        return LINUX_ERR_EEXIST;
+    }
+
+    uint64_t NewPathLength = CStrLength(LinkNewPath);
+    while (NewPathLength > 1 && LinkNewPath[NewPathLength - 1] == '/')
+    {
+        --NewPathLength;
+    }
+
+    if (NewPathLength == 0)
+    {
+        return LINUX_ERR_ENOENT;
+    }
+
+    int64_t LastSlashIndex = static_cast<int64_t>(NewPathLength) - 1;
+    while (LastSlashIndex >= 0 && LinkNewPath[LastSlashIndex] != '/')
+    {
+        --LastSlashIndex;
+    }
+
+    if (LastSlashIndex < 0)
+    {
+        return LINUX_ERR_ENOENT;
+    }
+
+    char ParentPath[SYSCALL_PATH_MAX] = {};
+    if (LastSlashIndex == 0)
+    {
+        ParentPath[0] = '/';
+        ParentPath[1] = '\0';
+    }
+    else
+    {
+        if (static_cast<uint64_t>(LastSlashIndex) >= sizeof(ParentPath))
+        {
+            return LINUX_ERR_EINVAL;
+        }
+
+        memcpy(ParentPath, LinkNewPath, static_cast<size_t>(LastSlashIndex));
+        ParentPath[LastSlashIndex] = '\0';
+    }
+
+    Dentry* ParentDirectory = VFS->Lookup(ParentPath);
+    if (ParentDirectory == nullptr || ParentDirectory->inode == nullptr)
+    {
+        return LINUX_ERR_ENOENT;
+    }
+
+    if (ParentDirectory->inode->NodeType != INODE_DIR)
+    {
+        return LINUX_ERR_ENOTDIR;
+    }
+
+    if (!VFS->LinkFile(LinkOldPath, LinkNewPath))
+    {
+        return LINUX_ERR_EPERM;
     }
 
     return 0;
