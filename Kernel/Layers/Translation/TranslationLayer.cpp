@@ -5182,6 +5182,7 @@ int64_t TranslationLayer::HandleExitGroupSystemCall(int64_t Status)
 
     while (true)
     {
+        asm volatile("sti");
         X86Halt();
     }
 }
