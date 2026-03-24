@@ -637,7 +637,7 @@ bool CStrStartsWith(const char* String, const char* Prefix)
 
 bool IsSupportedMountFileSystemType(const char* FileSystemType)
 {
-    return CStrEquals(FileSystemType, "ext2") || CStrEquals(FileSystemType, "proc");
+    return CStrEquals(FileSystemType, "ext2") || CStrEquals(FileSystemType, "proc") || CStrEquals(FileSystemType, "sysfs");
 }
 
 bool BuildAbsolutePathFromDentry(const Dentry* Node, char* Buffer, uint64_t BufferSize);
@@ -4889,14 +4889,49 @@ int64_t TranslationLayer::HandleReadlinkSystemCall(const char* Path, char* Buffe
         }
     }
 
+    if (CStrEquals(LookupPath, "/sys/class/graphics/fb0/device/subsystem"))
+    {
+        const char* CompatibilityTarget = "/sys/bus/platform";
+        uint64_t    TargetLength         = CStrLength(CompatibilityTarget);
+        uint64_t    BytesToCopy          = (TargetLength < BufferSize) ? TargetLength : BufferSize;
+
+        if (BytesToCopy == 0)
+        {
+            return 0;
+        }
+
+        if (!Logic->CopyFromKernelToUser(CompatibilityTarget, Buffer, BytesToCopy))
+        {
+            return LINUX_ERR_EFAULT;
+        }
+
+        if (TraceXorgPathOps && Terminal != nullptr)
+        {
+            Terminal->Serialprintf("xorg_path_dbg: pid=%u op=readlink path='%s' ret=%lld target='%s' reason='sysfs-compat'\n", CurrentProcess->Id,
+                                   LookupPath, static_cast<long long>(BytesToCopy), CompatibilityTarget);
+        }
+
+        return static_cast<int64_t>(BytesToCopy);
+    }
+
     Dentry* NodeDentry = VFS->LookupNoFollowFinal(LookupPath);
     if (NodeDentry == nullptr || NodeDentry->inode == nullptr)
     {
+        if (TraceXorgPathOps && Terminal != nullptr)
+        {
+            Terminal->Serialprintf("xorg_path_dbg: pid=%u op=readlink path='%s' ret=%lld reason='lookup-miss'\n", CurrentProcess->Id, LookupPath,
+                                   static_cast<long long>(LINUX_ERR_ENOENT));
+        }
         return LINUX_ERR_ENOENT;
     }
 
     if (NodeDentry->inode->NodeType != INODE_SYMLINK)
     {
+        if (TraceXorgPathOps && Terminal != nullptr)
+        {
+            Terminal->Serialprintf("xorg_path_dbg: pid=%u op=readlink path='%s' ret=%lld reason='not-symlink'\n", CurrentProcess->Id, LookupPath,
+                                   static_cast<long long>(LINUX_ERR_EINVAL));
+        }
         return LINUX_ERR_EINVAL;
     }
 
@@ -5858,6 +5893,11 @@ int64_t TranslationLayer::HandleMountSystemCall(const char* Source, const char* 
     if (CStrEquals(KernelFileSystemType, "proc"))
     {
         return Logic->InitializeProcFileSystem(MountLocation) ? 0 : LINUX_ERR_ENODEV;
+    }
+
+    if (CStrEquals(KernelFileSystemType, "sysfs"))
+    {
+        return Logic->InitializeSysFileSystem(MountLocation) ? 0 : LINUX_ERR_ENODEV;
     }
 
     return Logic->InitializeExtendedFileSystem(KernelSourcePath, MountLocation) ? 0 : LINUX_ERR_ENODEV;

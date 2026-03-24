@@ -1833,7 +1833,7 @@ bool LogicLayer::InitializeProcFileSystem(const char* MountLocation)
     }
 
     char ProcMountsPath[256] = {};
-    if (!BuildPath(MountLocation, "mounts", ProcMountsPath, sizeof(ProcMountsPath)) || !EnsureTextFile(ProcMountsPath, "proc /proc proc rw 0 0\n"))
+    if (!BuildPath(MountLocation, "mounts", ProcMountsPath, sizeof(ProcMountsPath)))
     {
         if (Terminal != nullptr)
         {
@@ -1842,9 +1842,262 @@ bool LogicLayer::InitializeProcFileSystem(const char* MountLocation)
         return false;
     }
 
+    if (!EnsureTextFile(ProcMountsPath, "proc /proc proc rw 0 0\n"))
+    {
+        if (Terminal != nullptr)
+        {
+            Terminal->printf_("proc filesystem notice: unable to populate %s/mounts (continuing)\n", MountLocation);
+        }
+    }
+
     if (Terminal != nullptr)
     {
         Terminal->printf_("proc filesystem mounted at %s\n", MountLocation);
+    }
+
+    return true;
+}
+
+bool LogicLayer::InitializeSysFileSystem(const char* MountLocation)
+{
+    if (Resource == nullptr || VFS == nullptr || MountLocation == nullptr)
+    {
+        return false;
+    }
+
+    TTY* Terminal = Resource->GetTTY();
+
+    auto BuildPath = [](const char* Base, const char* Suffix, char* Output, uint64_t OutputSize) -> bool
+    {
+        if (Base == nullptr || Suffix == nullptr || Output == nullptr || OutputSize == 0)
+        {
+            return false;
+        }
+
+        uint64_t BaseLength   = LocalCStringLength(Base);
+        uint64_t SuffixLength = LocalCStringLength(Suffix);
+        bool     BaseIsRoot   = (BaseLength == 1 && Base[0] == '/');
+        bool     NeedSlash    = (!BaseIsRoot && BaseLength > 0 && Base[BaseLength - 1] != '/');
+        uint64_t Required     = BaseLength + (NeedSlash ? 1 : 0) + SuffixLength + 1;
+        if (Required > OutputSize)
+        {
+            return false;
+        }
+
+        uint64_t Cursor = 0;
+        memcpy(Output + Cursor, Base, static_cast<size_t>(BaseLength));
+        Cursor += BaseLength;
+
+        if (NeedSlash)
+        {
+            Output[Cursor++] = '/';
+        }
+
+        memcpy(Output + Cursor, Suffix, static_cast<size_t>(SuffixLength));
+        Cursor += SuffixLength;
+        Output[Cursor] = '\0';
+        return true;
+    };
+
+    auto EnsureDirectory = [&](const char* Path) -> bool
+    {
+        Dentry* Existing = VFS->Lookup(Path);
+        if (Existing != nullptr)
+        {
+            return Existing->inode != nullptr && Existing->inode->NodeType == INODE_DIR;
+        }
+
+        return VFS->CreateFile(Path, INODE_DIR);
+    };
+
+    auto EnsureTextFile = [&](const char* Path, const char* Content) -> bool
+    {
+        Dentry* Existing = VFS->Lookup(Path);
+        if (Existing == nullptr)
+        {
+            if (!VFS->CreateFile(Path, INODE_FILE))
+            {
+                return false;
+            }
+
+            Existing = VFS->Lookup(Path);
+        }
+
+        if (Existing == nullptr || Existing->inode == nullptr || Existing->inode->NodeType != INODE_FILE)
+        {
+            return false;
+        }
+
+        uint64_t ContentLength = LocalCStringLength(Content);
+        char*    ContentBuffer = nullptr;
+        if (ContentLength > 0)
+        {
+            ContentBuffer = reinterpret_cast<char*>(kmalloc(ContentLength));
+            if (ContentBuffer == nullptr)
+            {
+                return false;
+            }
+
+            memcpy(ContentBuffer, Content, static_cast<size_t>(ContentLength));
+        }
+
+        Existing->inode->NodeData            = ContentBuffer;
+        Existing->inode->NodeSize            = ContentLength;
+        Existing->inode->IsLazyLoad          = false;
+        Existing->inode->LazyDataBackedByPMM = false;
+        Existing->inode->LazyDataPageCount   = 0;
+        Existing->inode->BackingInodeNumber  = 0;
+        Existing->inode->LazyLoadRefCount    = 0;
+        Existing->inode->LazyLoadContext     = nullptr;
+        return true;
+    };
+
+    auto EnsureSymlink = [&](const char* Path, const char* Target) -> bool
+    {
+        Dentry* Existing = VFS->LookupNoFollowFinal(Path);
+        if (Existing == nullptr)
+        {
+            if (!VFS->CreateFile(Path, INODE_SYMLINK))
+            {
+                return false;
+            }
+
+            Existing = VFS->LookupNoFollowFinal(Path);
+        }
+
+        if (Existing == nullptr || Existing->inode == nullptr || Existing->inode->NodeType != INODE_SYMLINK)
+        {
+            return false;
+        }
+
+        uint64_t TargetLength = LocalCStringLength(Target);
+        char*    TargetBuffer = nullptr;
+        if (TargetLength > 0)
+        {
+            TargetBuffer = reinterpret_cast<char*>(kmalloc(TargetLength));
+            if (TargetBuffer == nullptr)
+            {
+                return false;
+            }
+
+            memcpy(TargetBuffer, Target, static_cast<size_t>(TargetLength));
+        }
+
+        Existing->inode->NodeData            = TargetBuffer;
+        Existing->inode->NodeSize            = TargetLength;
+        Existing->inode->IsLazyLoad          = false;
+        Existing->inode->LazyDataBackedByPMM = false;
+        Existing->inode->LazyDataPageCount   = 0;
+        Existing->inode->BackingInodeNumber  = 0;
+        Existing->inode->LazyLoadRefCount    = 0;
+        Existing->inode->LazyLoadContext     = nullptr;
+        return true;
+    };
+
+    if (!EnsureDirectory(MountLocation))
+    {
+        if (Terminal != nullptr)
+        {
+            Terminal->printf_("sys filesystem mount failed: mountpoint=%s\n", MountLocation);
+        }
+        return false;
+    }
+
+    bool SysTreeReady = true;
+
+    char SysClassPath[256] = {};
+    if (!BuildPath(MountLocation, "class", SysClassPath, sizeof(SysClassPath)) || !EnsureDirectory(SysClassPath))
+    {
+        SysTreeReady = false;
+        if (Terminal != nullptr)
+        {
+            Terminal->printf_("sys filesystem warning: missing %s/class\n", MountLocation);
+        }
+    }
+
+    char SysClassGraphicsPath[256] = {};
+    if (!BuildPath(MountLocation, "class/graphics", SysClassGraphicsPath, sizeof(SysClassGraphicsPath)) || !EnsureDirectory(SysClassGraphicsPath))
+    {
+        SysTreeReady = false;
+        if (Terminal != nullptr)
+        {
+            Terminal->printf_("sys filesystem warning: missing %s/class/graphics\n", MountLocation);
+        }
+    }
+
+    char SysClassGraphicsFb0Path[256] = {};
+    if (!BuildPath(MountLocation, "class/graphics/fb0", SysClassGraphicsFb0Path, sizeof(SysClassGraphicsFb0Path)) || !EnsureDirectory(SysClassGraphicsFb0Path))
+    {
+        SysTreeReady = false;
+        if (Terminal != nullptr)
+        {
+            Terminal->printf_("sys filesystem warning: missing %s/class/graphics/fb0\n", MountLocation);
+        }
+    }
+
+    char SysClassGraphicsFb0NamePath[256] = {};
+    if (!BuildPath(MountLocation, "class/graphics/fb0/name", SysClassGraphicsFb0NamePath, sizeof(SysClassGraphicsFb0NamePath)) ||
+        !EnsureTextFile(SysClassGraphicsFb0NamePath, "simplefb\n"))
+    {
+        SysTreeReady = false;
+        if (Terminal != nullptr)
+        {
+            Terminal->printf_("sys filesystem warning: missing %s/class/graphics/fb0/name\n", MountLocation);
+        }
+    }
+
+    char SysBusPath[256] = {};
+    if (!BuildPath(MountLocation, "bus", SysBusPath, sizeof(SysBusPath)) || !EnsureDirectory(SysBusPath))
+    {
+        SysTreeReady = false;
+        if (Terminal != nullptr)
+        {
+            Terminal->printf_("sys filesystem warning: missing %s/bus\n", MountLocation);
+        }
+    }
+
+    char SysBusPlatformPath[256] = {};
+    if (!BuildPath(MountLocation, "bus/platform", SysBusPlatformPath, sizeof(SysBusPlatformPath)) || !EnsureDirectory(SysBusPlatformPath))
+    {
+        SysTreeReady = false;
+        if (Terminal != nullptr)
+        {
+            Terminal->printf_("sys filesystem warning: missing %s/bus/platform\n", MountLocation);
+        }
+    }
+
+    char SysClassGraphicsFb0DevicePath[256] = {};
+    if (!BuildPath(MountLocation, "class/graphics/fb0/device", SysClassGraphicsFb0DevicePath, sizeof(SysClassGraphicsFb0DevicePath)) ||
+        !EnsureDirectory(SysClassGraphicsFb0DevicePath))
+    {
+        SysTreeReady = false;
+        if (Terminal != nullptr)
+        {
+            Terminal->printf_("sys filesystem warning: missing %s/class/graphics/fb0/device\n", MountLocation);
+        }
+    }
+
+    char SysClassGraphicsFb0SubsystemPath[256] = {};
+    if (!BuildPath(MountLocation, "class/graphics/fb0/device/subsystem", SysClassGraphicsFb0SubsystemPath, sizeof(SysClassGraphicsFb0SubsystemPath)) ||
+        !EnsureSymlink(SysClassGraphicsFb0SubsystemPath, "/sys/bus/platform"))
+    {
+        SysTreeReady = false;
+        if (Terminal != nullptr)
+        {
+            Terminal->printf_("sys filesystem warning: missing %s/class/graphics/fb0/device/subsystem symlink\n", MountLocation);
+        }
+    }
+
+    if (Terminal != nullptr)
+    {
+        if (SysTreeReady)
+        {
+            Terminal->printf_("sys filesystem mounted at %s\n", MountLocation);
+        }
+        else
+        {
+            Terminal->printf_("sys filesystem mounted at %s (degraded)\n", MountLocation);
+        }
     }
 
     return true;

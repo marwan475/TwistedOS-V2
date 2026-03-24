@@ -60,6 +60,7 @@ public:
     bool               RegisterPartitionDevices();
     bool               InitializeExtendedFileSystem(const char* DevicePath, const char* MountLocation);
     bool               InitializeProcFileSystem(const char* MountLocation);
+    bool               InitializeSysFileSystem(const char* MountLocation);
     uint8_t            CreateNullProcess();
     uint8_t            CreateKernelProcess(void (*EntryPoint)());
     uint8_t            CreateUserProcess(uint64_t CodeAddr, uint64_t CodeSize, const char* InitialArgv0 = nullptr);
