@@ -27,11 +27,36 @@ uint16_t ReadLinuxAddressFamily(const void* SocketAddress)
 	return static_cast<uint16_t>(static_cast<uint16_t>(AddressBytes[0]) | (static_cast<uint16_t>(AddressBytes[1]) << 8));
 }
 
-uint64_t ComputeBoundUnixPathLength(const char* Path, uint64_t MaxLength)
+uint64_t ComputeUnixAddressPathLength(const char* Path, uint64_t MaxLength, bool* IsAbstract)
 {
+	if (IsAbstract != nullptr)
+	{
+		*IsAbstract = false;
+	}
+
 	if (Path == nullptr)
 	{
 		return 0;
+	}
+
+	if (MaxLength == 0)
+	{
+		return 0;
+	}
+
+	if (Path[0] == '\0')
+	{
+		if (IsAbstract != nullptr)
+		{
+			*IsAbstract = true;
+		}
+
+		if (MaxLength <= 1)
+		{
+			return 0;
+		}
+
+		return MaxLength;
 	}
 
 	uint64_t Length = 0;
@@ -383,6 +408,7 @@ Socket* InterProcessComunicationManager::CreateSocket(int64_t Domain, int64_t Ty
 
 		SocketImplementation->Path = nullptr;
 		SocketImplementation->PathLength = 0;
+		SocketImplementation->IsAbstract = false;
 		SocketImplementation->IsBound = false;
 		SocketImplementation->IsListening = false;
 		SocketImplementation->ListenBacklog = 0;
@@ -522,7 +548,8 @@ int64_t InterProcessComunicationManager::BindSocket(Process* Owner, int64_t File
 
 		const LinuxSockAddrUn* UnixAddress      = reinterpret_cast<const LinuxSockAddrUn*>(SocketAddress);
 		uint64_t               AvailablePathLen = SocketAddressLength - LINUX_SOCKADDR_FAMILY_SIZE;
-		uint64_t               PathLength       = ComputeBoundUnixPathLength(UnixAddress->Path, AvailablePathLen);
+		bool                   IsAbstractAddress = false;
+		uint64_t               PathLength = ComputeUnixAddressPathLength(UnixAddress->Path, AvailablePathLen, &IsAbstractAddress);
 
 		if (PathLength == 0)
 		{
@@ -539,6 +566,11 @@ int64_t InterProcessComunicationManager::BindSocket(Process* Owner, int64_t File
 
 			UnixSocket* CandidateUnix = reinterpret_cast<UnixSocket*>(CandidateEntry->Implementation);
 			if (CandidateUnix == nullptr || !CandidateUnix->IsBound || CandidateUnix->Path == nullptr)
+			{
+				continue;
+			}
+
+			if (CandidateUnix->IsAbstract != IsAbstractAddress)
 			{
 				continue;
 			}
@@ -575,6 +607,7 @@ int64_t InterProcessComunicationManager::BindSocket(Process* Owner, int64_t File
 
 		SocketImplementation->Path       = NewPath;
 		SocketImplementation->PathLength = PathLength;
+		SocketImplementation->IsAbstract = IsAbstractAddress;
 		SocketImplementation->IsBound    = true;
 		return 0;
 	}
@@ -806,7 +839,8 @@ int64_t InterProcessComunicationManager::ConnectSocket(Process* Owner, int64_t F
 
 	const LinuxSockAddrUn* UnixAddress = reinterpret_cast<const LinuxSockAddrUn*>(SocketAddress);
 	uint64_t               AvailablePathLen = SocketAddressLength - LINUX_SOCKADDR_FAMILY_SIZE;
-	uint64_t               PathLength = ComputeBoundUnixPathLength(UnixAddress->Path, AvailablePathLen);
+	bool                   IsAbstractAddress = false;
+	uint64_t               PathLength = ComputeUnixAddressPathLength(UnixAddress->Path, AvailablePathLen, &IsAbstractAddress);
 	if (PathLength == 0)
 	{
 		return LINUX_SOCKET_ERR_EINVAL;
@@ -824,6 +858,11 @@ int64_t InterProcessComunicationManager::ConnectSocket(Process* Owner, int64_t F
 
 		UnixSocket* CandidateUnix = reinterpret_cast<UnixSocket*>(Candidate->Implementation);
 		if (CandidateUnix == nullptr || !CandidateUnix->IsBound || !CandidateUnix->IsListening || CandidateUnix->Path == nullptr)
+		{
+			continue;
+		}
+
+		if (CandidateUnix->IsAbstract != IsAbstractAddress)
 		{
 			continue;
 		}

@@ -87,6 +87,7 @@ struct Socket;
 struct UnixSocket{
     char*    Path;
     uint64_t PathLength;
+    bool     IsAbstract;
     bool     IsBound;
     bool     IsListening;
     int32_t  ListenBacklog;
