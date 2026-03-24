@@ -4180,6 +4180,157 @@ int64_t TranslationLayer::HandleGetppidSystemCall()
     return static_cast<int64_t>(CurrentProcess->ParrentId);
 }
 
+int64_t TranslationLayer::HandleKillSystemCall(int64_t Pid, int64_t Signal)
+{
+    if (Logic == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    ProcessManager* PM = Logic->GetProcessManager();
+    if (PM == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    Process* CurrentProcess = PM->GetRunningProcess();
+    if (CurrentProcess == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    if (Signal < 0 || Signal > LINUX_SIGNAL_MAX)
+    {
+        return LINUX_ERR_EINVAL;
+    }
+
+    bool ProbeOnly           = (Signal == 0);
+    bool AnyMatchingTarget   = false;
+    bool AnySignalDelivered  = false;
+    bool AnyPermissionDenied = false;
+
+    auto TrySignalTarget = [&](Process* TargetProcess)
+    {
+        if (TargetProcess == nullptr || TargetProcess->Status == PROCESS_TERMINATED)
+        {
+            return;
+        }
+
+        AnyMatchingTarget = true;
+
+        if (TargetProcess->Level != PROCESS_LEVEL_USER)
+        {
+            AnyPermissionDenied = true;
+            return;
+        }
+
+        if (ProbeOnly)
+        {
+            AnySignalDelivered = true;
+            return;
+        }
+
+        if (Logic->SignalProcess(TargetProcess->Id, Signal))
+        {
+            AnySignalDelivered = true;
+        }
+    };
+
+    auto GetEffectiveProcessGroupId = [](const Process* ProcessEntry) -> int32_t
+    {
+        if (ProcessEntry == nullptr)
+        {
+            return -1;
+        }
+
+        return (ProcessEntry->ProcessGroupId > 0) ? ProcessEntry->ProcessGroupId : static_cast<int32_t>(ProcessEntry->Id);
+    };
+
+    if (Pid > 0)
+    {
+        Process* TargetProcess = nullptr;
+        if (Pid <= 0xFF)
+        {
+            TargetProcess = PM->GetProcessById(static_cast<uint8_t>(Pid));
+        }
+
+        TrySignalTarget(TargetProcess);
+    }
+    else if (Pid == 0)
+    {
+        int32_t CallerProcessGroupId = GetEffectiveProcessGroupId(CurrentProcess);
+        for (size_t Index = 0; Index < PM->GetMaxProcesses(); ++Index)
+        {
+            Process* CandidateProcess = PM->GetProcessById(static_cast<uint8_t>(Index));
+            if (CandidateProcess == nullptr || CandidateProcess->Status == PROCESS_TERMINATED)
+            {
+                continue;
+            }
+
+            if (GetEffectiveProcessGroupId(CandidateProcess) != CallerProcessGroupId)
+            {
+                continue;
+            }
+
+            TrySignalTarget(CandidateProcess);
+        }
+    }
+    else if (Pid == -1)
+    {
+        for (size_t Index = 0; Index < PM->GetMaxProcesses(); ++Index)
+        {
+            Process* CandidateProcess = PM->GetProcessById(static_cast<uint8_t>(Index));
+            if (CandidateProcess == nullptr || CandidateProcess->Status == PROCESS_TERMINATED)
+            {
+                continue;
+            }
+
+            if (CandidateProcess->Id == 1 || CandidateProcess->Id == CurrentProcess->Id)
+            {
+                continue;
+            }
+
+            TrySignalTarget(CandidateProcess);
+        }
+    }
+    else
+    {
+        int64_t TargetProcessGroupId = -Pid;
+        if (TargetProcessGroupId <= 0)
+        {
+            return LINUX_ERR_EINVAL;
+        }
+
+        for (size_t Index = 0; Index < PM->GetMaxProcesses(); ++Index)
+        {
+            Process* CandidateProcess = PM->GetProcessById(static_cast<uint8_t>(Index));
+            if (CandidateProcess == nullptr || CandidateProcess->Status == PROCESS_TERMINATED)
+            {
+                continue;
+            }
+
+            if (GetEffectiveProcessGroupId(CandidateProcess) != static_cast<int32_t>(TargetProcessGroupId))
+            {
+                continue;
+            }
+
+            TrySignalTarget(CandidateProcess);
+        }
+    }
+
+    if (AnySignalDelivered)
+    {
+        return 0;
+    }
+
+    if (AnyPermissionDenied && AnyMatchingTarget)
+    {
+        return LINUX_ERR_EPERM;
+    }
+
+    return LINUX_ERR_ESRCH;
+}
+
 int64_t TranslationLayer::HandleSetpgidSystemCall(int64_t Pid, int64_t ProcessGroupId)
 {
     if (Logic == nullptr)

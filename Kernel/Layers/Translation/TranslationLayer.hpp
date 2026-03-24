@@ -56,6 +56,7 @@ public:
     int64_t HandleUnameSystemCall(void* Buffer);
     int64_t HandleGetpidSystemCall();
     int64_t HandleGetppidSystemCall();
+    int64_t HandleKillSystemCall(int64_t Pid, int64_t Signal);
     int64_t HandleSetpgidSystemCall(int64_t Pid, int64_t ProcessGroupId);
     int64_t HandleGetpgrpSystemCall();
     int64_t HandleSetsidSystemCall();

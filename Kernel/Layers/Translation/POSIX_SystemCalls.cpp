@@ -111,6 +111,9 @@ int64_t TranslationLayer::HandlePosixSystemCallNumber(uint64_t SystemCallNumber,
         case 61: // wait4
             return HandleWaitSystemCall(static_cast<int64_t>(Arg1), reinterpret_cast<int*>(Arg2), static_cast<int64_t>(Arg3), reinterpret_cast<void*>(Arg4));
             break;
+        case 62: // kill
+            return HandleKillSystemCall(static_cast<int64_t>(Arg1), static_cast<int64_t>(Arg2));
+            break;
         case 63: // uname
             return HandleUnameSystemCall(reinterpret_cast<void*>(Arg1));
             break;
