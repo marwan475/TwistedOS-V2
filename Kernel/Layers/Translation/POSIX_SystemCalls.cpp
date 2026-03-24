@@ -111,6 +111,9 @@ int64_t TranslationLayer::HandlePosixSystemCallNumber(uint64_t SystemCallNumber,
         case 43: // accept
             return HandleAcceptSystemCall(Arg1, reinterpret_cast<void*>(Arg2), reinterpret_cast<void*>(Arg3));
             break;
+        case 48: // shutdown
+            return HandleShutdownSystemCall(Arg1, static_cast<int64_t>(Arg2));
+            break;
         case 49: // bind
             return HandleBindSystemCall(Arg1, reinterpret_cast<const void*>(Arg2), Arg3);
             break;

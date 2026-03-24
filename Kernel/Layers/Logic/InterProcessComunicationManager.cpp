@@ -12,6 +12,9 @@ constexpr uint64_t LINUX_SOCKADDR_FAMILY_SIZE = sizeof(uint16_t);
 constexpr int64_t  LINUX_LISTEN_SOMAXCONN     = 4096;
 constexpr uint16_t LINUX_INET_EPHEMERAL_START = 49152;
 constexpr uint16_t LINUX_INET_EPHEMERAL_END   = 65535;
+constexpr int64_t  LINUX_SHUT_RD              = 0;
+constexpr int64_t  LINUX_SHUT_WR              = 1;
+constexpr int64_t  LINUX_SHUT_RDWR            = 2;
 
 uint16_t ReadLinuxAddressFamily(const void* SocketAddress)
 {
@@ -103,19 +106,75 @@ void RemovePendingConnectionFromUnixQueue(UnixSocket* QueueOwner, const Socket* 
 	QueueOwner->PendingConnectionCount = WriteIndex;
 }
 
+Socket* GetSocketFromOpenFile(File* OpenFile)
+{
+	if (OpenFile == nullptr || OpenFile->Node == nullptr)
+	{
+		return nullptr;
+	}
+
+	return reinterpret_cast<Socket*>(OpenFile->Node->NodeData);
+}
+
 int64_t SocketRead(File* OpenFile, void* Buffer, uint64_t Count)
 {
-	(void) OpenFile;
 	(void) Buffer;
 	(void) Count;
+
+	Socket* SocketEntry = GetSocketFromOpenFile(OpenFile);
+	if (SocketEntry == nullptr)
+	{
+		return LINUX_SOCKET_ERR_EBADF;
+	}
+
+	if (SocketEntry->Domain == LINUX_AF_UNIX)
+	{
+		UnixSocket* SocketImplementation = reinterpret_cast<UnixSocket*>(SocketEntry->Implementation);
+		if (SocketImplementation != nullptr && SocketImplementation->IsShutdownRead)
+		{
+			return 0;
+		}
+	}
+	else if (SocketEntry->Domain == LINUX_AF_INET)
+	{
+		NetworkSocket* SocketImplementation = reinterpret_cast<NetworkSocket*>(SocketEntry->Implementation);
+		if (SocketImplementation != nullptr && SocketImplementation->IsShutdownRead)
+		{
+			return 0;
+		}
+	}
+
 	return LINUX_SOCKET_ERR_EBADF;
 }
 
 int64_t SocketWrite(File* OpenFile, const void* Buffer, uint64_t Count)
 {
-	(void) OpenFile;
 	(void) Buffer;
 	(void) Count;
+
+	Socket* SocketEntry = GetSocketFromOpenFile(OpenFile);
+	if (SocketEntry == nullptr)
+	{
+		return LINUX_SOCKET_ERR_EBADF;
+	}
+
+	if (SocketEntry->Domain == LINUX_AF_UNIX)
+	{
+		UnixSocket* SocketImplementation = reinterpret_cast<UnixSocket*>(SocketEntry->Implementation);
+		if (SocketImplementation != nullptr && SocketImplementation->IsShutdownWrite)
+		{
+			return LINUX_SOCKET_ERR_EPIPE;
+		}
+	}
+	else if (SocketEntry->Domain == LINUX_AF_INET)
+	{
+		NetworkSocket* SocketImplementation = reinterpret_cast<NetworkSocket*>(SocketEntry->Implementation);
+		if (SocketImplementation != nullptr && SocketImplementation->IsShutdownWrite)
+		{
+			return LINUX_SOCKET_ERR_EPIPE;
+		}
+	}
+
 	return LINUX_SOCKET_ERR_EBADF;
 }
 
@@ -331,6 +390,8 @@ Socket* InterProcessComunicationManager::CreateSocket(int64_t Domain, int64_t Ty
 		SocketImplementation->PendingConnectionCount = 0;
 		SocketImplementation->PendingConnectionCapacity = 0;
 		SocketImplementation->ConnectedPeer = nullptr;
+		SocketImplementation->IsShutdownRead = false;
+		SocketImplementation->IsShutdownWrite = false;
 		NewSocket->Implementation  = SocketImplementation;
 	}
 	else
@@ -353,6 +414,8 @@ Socket* InterProcessComunicationManager::CreateSocket(int64_t Domain, int64_t Ty
 		SocketImplementation->IsBound    = false;
 		SocketImplementation->IsListening = false;
 		SocketImplementation->ListenBacklog = 0;
+		SocketImplementation->IsShutdownRead = false;
+		SocketImplementation->IsShutdownWrite = false;
 		NewSocket->Implementation        = SocketImplementation;
 	}
 
@@ -903,6 +966,98 @@ Socket* InterProcessComunicationManager::AcceptSocket(Process* Owner, int64_t Fi
 	AcceptedUnix->ConnectedPeer = PendingClient;
 	ClientUnix->ConnectedPeer = AcceptedSocket;
 	return AcceptedSocket;
+}
+
+int64_t InterProcessComunicationManager::ShutdownSocket(Process* Owner, int64_t FileDescriptor, int64_t How)
+{
+	if (Owner == nullptr || FileDescriptor < 0)
+	{
+		return LINUX_SOCKET_ERR_EINVAL;
+	}
+
+	if (How != LINUX_SHUT_RD && How != LINUX_SHUT_WR && How != LINUX_SHUT_RDWR)
+	{
+		return LINUX_SOCKET_ERR_EINVAL;
+	}
+
+	Socket* SocketEntry = nullptr;
+	for (uint64_t SocketIndex = 0; SocketIndex < SocketCount; ++SocketIndex)
+	{
+		Socket* Candidate = SocketList[SocketIndex];
+		if (Candidate == nullptr)
+		{
+			continue;
+		}
+
+		if (Candidate->Owner == Owner && Candidate->FileDescriptor == FileDescriptor)
+		{
+			SocketEntry = Candidate;
+			break;
+		}
+	}
+
+	if (SocketEntry == nullptr)
+	{
+		return LINUX_SOCKET_ERR_ENOTSOCK;
+	}
+
+	bool IsConnected = false;
+
+	if (SocketEntry->Domain == LINUX_AF_UNIX)
+	{
+		UnixSocket* SocketImplementation = reinterpret_cast<UnixSocket*>(SocketEntry->Implementation);
+		if (SocketImplementation == nullptr)
+		{
+			return LINUX_SOCKET_ERR_EINVAL;
+		}
+
+		IsConnected = (SocketImplementation->ConnectedPeer != nullptr);
+		if ((SocketEntry->Type == LINUX_SOCK_STREAM || SocketEntry->Type == LINUX_SOCK_SEQPACKET) && !IsConnected)
+		{
+			return LINUX_SOCKET_ERR_ENOTCONN;
+		}
+
+		if (How == LINUX_SHUT_RD || How == LINUX_SHUT_RDWR)
+		{
+			SocketImplementation->IsShutdownRead = true;
+		}
+
+		if (How == LINUX_SHUT_WR || How == LINUX_SHUT_RDWR)
+		{
+			SocketImplementation->IsShutdownWrite = true;
+		}
+
+		return 0;
+	}
+
+	if (SocketEntry->Domain == LINUX_AF_INET)
+	{
+		NetworkSocket* SocketImplementation = reinterpret_cast<NetworkSocket*>(SocketEntry->Implementation);
+		if (SocketImplementation == nullptr)
+		{
+			return LINUX_SOCKET_ERR_EINVAL;
+		}
+
+		IsConnected = (SocketImplementation->RemoteIp != 0 || SocketImplementation->RemotePort != 0);
+		if ((SocketEntry->Type == LINUX_SOCK_STREAM || SocketEntry->Type == LINUX_SOCK_SEQPACKET) && !IsConnected)
+		{
+			return LINUX_SOCKET_ERR_ENOTCONN;
+		}
+
+		if (How == LINUX_SHUT_RD || How == LINUX_SHUT_RDWR)
+		{
+			SocketImplementation->IsShutdownRead = true;
+		}
+
+		if (How == LINUX_SHUT_WR || How == LINUX_SHUT_RDWR)
+		{
+			SocketImplementation->IsShutdownWrite = true;
+		}
+
+		return 0;
+	}
+
+	return LINUX_SOCKET_ERR_EAFNOSUPPORT;
 }
 
 bool InterProcessComunicationManager::CloseSocket(Process* Owner, int64_t FileDescriptor)

@@ -40,6 +40,7 @@ constexpr int64_t LINUX_ERR_EEXIST    = -17;
 constexpr int64_t LINUX_ERR_ENOTEMPTY = -39;
 constexpr int64_t LINUX_ERR_ESPIPE    = -29;
 constexpr int64_t LINUX_ERR_ENOTSOCK  = -88;
+constexpr int64_t LINUX_ERR_ENOTCONN  = -107;
 constexpr int64_t LINUX_ERR_EAFNOSUPPORT = -97;
 constexpr int64_t LINUX_ERR_ESOCKTNOSUPPORT = -94;
 
@@ -2365,6 +2366,56 @@ int64_t TranslationLayer::HandleAcceptSystemCall(uint64_t FileDescriptor, void* 
 
     CurrentProcess->FileTable[NewFileDescriptor] = AcceptedFile;
     return NewFileDescriptor;
+}
+
+int64_t TranslationLayer::HandleShutdownSystemCall(uint64_t FileDescriptor, int64_t How)
+{
+    if (Logic == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    ProcessManager* PM = Logic->GetProcessManager();
+    if (PM == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    InterProcessComunicationManager* IPC = Logic->GetInterProcessComunicationManager();
+    if (IPC == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    Process* CurrentProcess = PM->GetRunningProcess();
+    if (CurrentProcess == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    if (FileDescriptor >= MAX_OPEN_FILES_PER_PROCESS)
+    {
+        return LINUX_ERR_EBADF;
+    }
+
+    File* OpenFile = CurrentProcess->FileTable[FileDescriptor];
+    if (OpenFile == nullptr)
+    {
+        return LINUX_ERR_EBADF;
+    }
+
+    int64_t ShutdownResult = IPC->ShutdownSocket(CurrentProcess, static_cast<int64_t>(FileDescriptor), How);
+    if (ShutdownResult == LINUX_SOCKET_ERR_ENOTSOCK)
+    {
+        return LINUX_ERR_ENOTSOCK;
+    }
+
+    if (ShutdownResult == LINUX_SOCKET_ERR_ENOTCONN)
+    {
+        return LINUX_ERR_ENOTCONN;
+    }
+
+    return ShutdownResult;
 }
 
 int64_t TranslationLayer::HandleBindSystemCall(uint64_t FileDescriptor, const void* SocketAddress, uint64_t SocketAddressLength)

@@ -31,6 +31,7 @@ public:
     int64_t HandleSocketSystemCall(int64_t Domain, int64_t Type, int64_t Protocol);
     int64_t HandleConnectSystemCall(uint64_t FileDescriptor, const void* SocketAddress, uint64_t SocketAddressLength);
     int64_t HandleAcceptSystemCall(uint64_t FileDescriptor, void* SocketAddress, void* SocketAddressLength);
+    int64_t HandleShutdownSystemCall(uint64_t FileDescriptor, int64_t How);
     int64_t HandleBindSystemCall(uint64_t FileDescriptor, const void* SocketAddress, uint64_t SocketAddressLength);
     int64_t HandleListenSystemCall(uint64_t FileDescriptor, int64_t Backlog);
     int64_t HandleOpenSystemCall(const char* Path, uint64_t Flags);
