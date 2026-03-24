@@ -117,6 +117,12 @@ struct LinuxPollFd
     int16_t Revents;
 };
 
+struct LinuxEpollEvent
+{
+    uint32_t Events;
+    uint64_t Data;
+} __attribute__((packed));
+
 struct LinuxUtsName
 {
     char SysName[65];
@@ -200,6 +206,22 @@ constexpr int16_t LINUX_POLLHUP  = 0x0010;
 constexpr int16_t LINUX_POLLNVAL = 0x0020;
 
 constexpr int64_t LINUX_EPOLL_CLOEXEC = static_cast<int64_t>(LINUX_O_CLOEXEC);
+constexpr int64_t LINUX_EPOLL_CTL_ADD = 1;
+constexpr int64_t LINUX_EPOLL_CTL_DEL = 2;
+constexpr int64_t LINUX_EPOLL_CTL_MOD = 3;
+
+constexpr uint32_t LINUX_EPOLLIN      = 0x00000001u;
+constexpr uint32_t LINUX_EPOLLOUT     = 0x00000004u;
+constexpr uint32_t LINUX_EPOLLERR     = 0x00000008u;
+constexpr uint32_t LINUX_EPOLLHUP     = 0x00000010u;
+constexpr uint32_t LINUX_EPOLLRDHUP   = 0x00002000u;
+constexpr uint32_t LINUX_EPOLLEXCLUSIVE = (1u << 28);
+constexpr uint32_t LINUX_EPOLLWAKEUP  = (1u << 29);
+constexpr uint32_t LINUX_EPOLLONESHOT = (1u << 30);
+constexpr uint32_t LINUX_EPOLLET      = (1u << 31);
+
+constexpr uint32_t LINUX_EPOLL_SUPPORTED_EVENTS = (LINUX_EPOLLIN | LINUX_EPOLLOUT | LINUX_EPOLLERR | LINUX_EPOLLHUP | LINUX_EPOLLRDHUP | LINUX_EPOLLEXCLUSIVE
+                                                   | LINUX_EPOLLWAKEUP | LINUX_EPOLLONESHOT | LINUX_EPOLLET);
 
 constexpr int64_t LINUX_AT_FDCWD            = -100;
 constexpr int64_t LINUX_AT_SYMLINK_NOFOLLOW = 0x100;
@@ -2050,6 +2072,80 @@ int64_t TranslationLayer::HandleEpollCreate1SystemCall(int64_t Flags)
     }
 
     return LINUX_ERR_EMFILE;
+}
+
+int64_t TranslationLayer::HandleEpollCtlSystemCall(uint64_t EpollFileDescriptor, int64_t Operation, uint64_t TargetFileDescriptor, const void* Event)
+{
+    if (Logic == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    ProcessManager* PM = Logic->GetProcessManager();
+    if (PM == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    Process* CurrentProcess = PM->GetRunningProcess();
+    if (CurrentProcess == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    SynchronizationManager* Sync = Logic->GetSynchronizationManager();
+    if (Sync == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    if (EpollFileDescriptor >= MAX_OPEN_FILES_PER_PROCESS || TargetFileDescriptor >= MAX_OPEN_FILES_PER_PROCESS)
+    {
+        return LINUX_ERR_EBADF;
+    }
+
+    File* EpollFile = CurrentProcess->FileTable[EpollFileDescriptor];
+    if (EpollFile == nullptr)
+    {
+        return LINUX_ERR_EBADF;
+    }
+
+    if (!Sync->HasEventQueue(CurrentProcess->Id, EpollFileDescriptor))
+    {
+        return LINUX_ERR_EINVAL;
+    }
+
+    File* TargetFile = CurrentProcess->FileTable[TargetFileDescriptor];
+    if (TargetFile == nullptr)
+    {
+        return LINUX_ERR_EBADF;
+    }
+
+    if (Operation != LINUX_EPOLL_CTL_DEL && Event == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    LinuxEpollEvent KernelEvent = {};
+    if (Operation != LINUX_EPOLL_CTL_DEL)
+    {
+        if (!Logic->CopyFromUserToKernel(Event, &KernelEvent, sizeof(KernelEvent)))
+        {
+            return LINUX_ERR_EFAULT;
+        }
+
+        if ((KernelEvent.Events & ~LINUX_EPOLL_SUPPORTED_EVENTS) != 0)
+        {
+            return LINUX_ERR_EINVAL;
+        }
+    }
+
+    return Sync->ControlEventQueue(CurrentProcess->Id,
+                                   EpollFileDescriptor,
+                                   static_cast<int32_t>(Operation),
+                                   TargetFileDescriptor,
+                                   KernelEvent.Events,
+                                   KernelEvent.Data);
 }
 
 int64_t TranslationLayer::HandleIoctlSystemCall(uint64_t FileDescriptor, uint64_t Request, uint64_t Argument)

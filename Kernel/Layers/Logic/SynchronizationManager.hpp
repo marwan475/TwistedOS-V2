@@ -35,6 +35,7 @@ struct EpollWatchTag
 {
     uint64_t       FileDescriptor;
     uint32_t       Events;
+    uint64_t       UserData;
     EpollWatchTag* Next;
 };
 
@@ -62,6 +63,7 @@ private:
     IntrusiveQueue<EventQueueKernelObject, &EventQueueKernelObject::Next> EventQueueStore;
 
     EventQueueKernelObject* FindEventQueue(uint8_t ProcessId, uint64_t FileDescriptor) const;
+    EpollWatchTag*          FindWatch(EventQueueKernelObject* Queue, uint64_t WatchedFileDescriptor) const;
     void                    ClearEventQueue(EventQueueKernelObject* Queue);
 
 public:
@@ -76,6 +78,7 @@ public:
     bool    RemoveEventQueue(uint8_t ProcessId, uint64_t FileDescriptor);
     bool    HasEventQueue(uint8_t ProcessId, uint64_t FileDescriptor) const;
     EventQueueKernelObject* GetEventQueue(uint8_t ProcessId, uint64_t FileDescriptor);
+    int64_t ControlEventQueue(uint8_t ProcessId, uint64_t EpollFileDescriptor, int32_t Operation, uint64_t TargetFileDescriptor, uint32_t Events, uint64_t UserData);
     void    Tick();
     uint8_t GetNextProcessToWake();
     uint8_t GetNextTTYInputWaiter();

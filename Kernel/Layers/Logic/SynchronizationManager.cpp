@@ -14,9 +14,17 @@ namespace
 {
 constexpr int64_t LINUX_ERR_EFAULT = -14;
 constexpr int64_t LINUX_ERR_ENOSYS = -38;
+constexpr int64_t LINUX_ERR_ENOMEM = -12;
+constexpr int64_t LINUX_ERR_EINVAL = -22;
+constexpr int64_t LINUX_ERR_ENOENT = -2;
+constexpr int64_t LINUX_ERR_EEXIST = -17;
 constexpr int16_t LINUX_POLLIN     = 0x0001;
 constexpr int16_t LINUX_POLLOUT    = 0x0004;
 constexpr uint8_t INVALID_PROCESS_ID = 0xFF;
+
+constexpr int32_t LINUX_EPOLL_CTL_ADD = 1;
+constexpr int32_t LINUX_EPOLL_CTL_DEL = 2;
+constexpr int32_t LINUX_EPOLL_CTL_MOD = 3;
 
 int64_t EventQueueReadFileOperation(File* OpenFile, void* Buffer, uint64_t Count)
 {
@@ -143,6 +151,27 @@ EventQueueKernelObject* SynchronizationManager::FindEventQueue(uint8_t ProcessId
         }
 
         Queue = EventQueueStore.Next(Queue);
+    }
+
+    return nullptr;
+}
+
+EpollWatchTag* SynchronizationManager::FindWatch(EventQueueKernelObject* Queue, uint64_t WatchedFileDescriptor) const
+{
+    if (Queue == nullptr)
+    {
+        return nullptr;
+    }
+
+    EpollWatchTag* Watch = Queue->Watches.Head();
+    while (Watch != nullptr)
+    {
+        if (Watch->FileDescriptor == WatchedFileDescriptor)
+        {
+            return Watch;
+        }
+
+        Watch = Queue->Watches.Next(Watch);
     }
 
     return nullptr;
@@ -310,6 +339,76 @@ bool SynchronizationManager::HasEventQueue(uint8_t ProcessId, uint64_t FileDescr
 EventQueueKernelObject* SynchronizationManager::GetEventQueue(uint8_t ProcessId, uint64_t FileDescriptor)
 {
     return FindEventQueue(ProcessId, FileDescriptor);
+}
+
+int64_t SynchronizationManager::ControlEventQueue(
+        uint8_t ProcessId,
+        uint64_t EpollFileDescriptor,
+        int32_t Operation,
+        uint64_t TargetFileDescriptor,
+        uint32_t Events,
+        uint64_t UserData)
+{
+    if (TargetFileDescriptor == EpollFileDescriptor)
+    {
+        return LINUX_ERR_EINVAL;
+    }
+
+    EventQueueKernelObject* Queue = FindEventQueue(ProcessId, EpollFileDescriptor);
+    if (Queue == nullptr)
+    {
+        return LINUX_ERR_ENOENT;
+    }
+
+    EpollWatchTag* Watch = FindWatch(Queue, TargetFileDescriptor);
+
+    switch (Operation)
+    {
+        case LINUX_EPOLL_CTL_ADD:
+        {
+            if (Watch != nullptr)
+            {
+                return LINUX_ERR_EEXIST;
+            }
+
+            EpollWatchTag* NewWatch = new EpollWatchTag;
+            if (NewWatch == nullptr)
+            {
+                return LINUX_ERR_ENOMEM;
+            }
+
+            NewWatch->FileDescriptor = TargetFileDescriptor;
+            NewWatch->Events         = Events;
+            NewWatch->UserData       = UserData;
+            NewWatch->Next           = nullptr;
+            Queue->Watches.PushBack(NewWatch);
+            return 0;
+        }
+        case LINUX_EPOLL_CTL_DEL:
+        {
+            if (Watch == nullptr)
+            {
+                return LINUX_ERR_ENOENT;
+            }
+
+            Queue->Watches.Remove(Watch);
+            delete Watch;
+            return 0;
+        }
+        case LINUX_EPOLL_CTL_MOD:
+        {
+            if (Watch == nullptr)
+            {
+                return LINUX_ERR_ENOENT;
+            }
+
+            Watch->Events   = Events;
+            Watch->UserData = UserData;
+            return 0;
+        }
+        default:
+            return LINUX_ERR_EINVAL;
+    }
 }
 
 /**

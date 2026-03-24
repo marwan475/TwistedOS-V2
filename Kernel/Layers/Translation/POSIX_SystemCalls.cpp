@@ -249,6 +249,9 @@ int64_t TranslationLayer::HandlePosixSystemCallNumber(uint64_t SystemCallNumber,
         case 231: // exit_group
             return HandleExitGroupSystemCall(static_cast<int64_t>(Arg1));
             break;
+        case 233: // epoll_ctl
+            return HandleEpollCtlSystemCall(Arg1, static_cast<int64_t>(Arg2), Arg3, reinterpret_cast<const void*>(Arg4));
+            break;
         case 235: // utimes
             return HandleUtimesSystemCall(reinterpret_cast<const char*>(Arg1), reinterpret_cast<const void*>(Arg2));
             break;
