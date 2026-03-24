@@ -140,6 +140,7 @@ constexpr int64_t LINUX_PROT_EXEC  = 0x4;
 constexpr int64_t LINUX_PROT_NONE  = 0x0;
 
 constexpr uint64_t MMAP_DEFAULT_BASE = 0x0000000001000000;
+constexpr uint64_t MMAP_HIGH_BASE    = 0x0000000100000000;
 
 constexpr uint64_t LINUX_O_ACCMODE  = 0x3;
 constexpr uint64_t LINUX_O_CREAT    = 0x40;
@@ -1034,6 +1035,7 @@ bool RangeHasAnyMappedPage(const Process* CurrentProcess, uint64_t MappingStart,
 
 uint64_t FindFreeMappingAddress(const Process* CurrentProcess, uint64_t StartHint, uint64_t MappingLength)
 {
+    bool     NoHint    = (StartHint == 0);
     uint64_t Candidate = AlignDownToPageBoundary(StartHint);
     if (Candidate == 0)
     {
@@ -1086,19 +1088,104 @@ uint64_t FindFreeMappingAddress(const Process* CurrentProcess, uint64_t StartHin
         }
     }
 
-    for (uint64_t Attempt = 0; Attempt < 1024 * 1024; ++Attempt)
+    if (NoHint && Candidate < MMAP_HIGH_BASE)
     {
-        if (!MappingOverlapsProcessLayout(CurrentProcess, Candidate, MappingLength) && !RangeHasAnyMappedPage(CurrentProcess, Candidate, MappingLength))
+        Candidate = MMAP_HIGH_BASE;
+    }
+
+    auto UpdateOverlapEnd = [&](uint64_t RegionStart, uint64_t RegionLength, bool* HasOverlap, uint64_t* OverlapEnd) -> void
+    {
+        if (RegionLength == 0)
         {
-            return Candidate;
+            return;
         }
 
-        if (Candidate > (UINT64_MAX - PAGE_SIZE))
+        if (!RangesOverlap(Candidate, MappingLength, RegionStart, RegionLength))
+        {
+            return;
+        }
+
+        uint64_t RegionEnd = AlignUpToPageBoundary(RegionStart + RegionLength);
+        if (RegionEnd == 0)
+        {
+            RegionEnd = RegionStart + RegionLength;
+        }
+
+        *HasOverlap = true;
+        if (RegionEnd > *OverlapEnd)
+        {
+            *OverlapEnd = RegionEnd;
+        }
+    };
+
+    for (uint64_t Attempt = 0; Attempt < (1024 * 1024); ++Attempt)
+    {
+        bool     HasOverlap = false;
+        uint64_t OverlapEnd = 0;
+
+        if (CurrentProcess != nullptr && CurrentProcess->AddressSpace != nullptr)
+        {
+            const VirtualAddressSpace* AddressSpace = CurrentProcess->AddressSpace;
+
+            if (CurrentProcess->FileType == FILE_TYPE_ELF)
+            {
+                const VirtualAddressSpaceELF* ELFAddressSpace = static_cast<const VirtualAddressSpaceELF*>(AddressSpace);
+                const ELFMemoryRegion*        Regions         = ELFAddressSpace->GetMemoryRegions();
+                size_t                        RegionCount     = ELFAddressSpace->GetMemoryRegionCount();
+
+                for (size_t RegionIndex = 0; RegionIndex < RegionCount; ++RegionIndex)
+                {
+                    UpdateOverlapEnd(Regions[RegionIndex].VirtualAddress, Regions[RegionIndex].Size, &HasOverlap, &OverlapEnd);
+                }
+            }
+
+            UpdateOverlapEnd(AddressSpace->GetCodeVirtualAddressStart(), AddressSpace->GetCodeSize(), &HasOverlap, &OverlapEnd);
+            UpdateOverlapEnd(AddressSpace->GetHeapVirtualAddressStart(), AddressSpace->GetHeapSize(), &HasOverlap, &OverlapEnd);
+            UpdateOverlapEnd(AddressSpace->GetStackVirtualAddressStart(), AddressSpace->GetStackSize(), &HasOverlap, &OverlapEnd);
+
+            for (size_t MappingIndex = 0; MappingIndex < MAX_MEMORY_MAPPINGS_PER_PROCESS; ++MappingIndex)
+            {
+                const ProcessMemoryMapping& ExistingMapping = CurrentProcess->MemoryMappings[MappingIndex];
+                if (!ExistingMapping.InUse)
+                {
+                    continue;
+                }
+
+                UpdateOverlapEnd(ExistingMapping.VirtualAddressStart, ExistingMapping.Length, &HasOverlap, &OverlapEnd);
+            }
+        }
+
+        if (!HasOverlap)
+        {
+            if (!RangeHasAnyMappedPage(CurrentProcess, Candidate, MappingLength))
+            {
+                return Candidate;
+            }
+
+            constexpr uint64_t MMAP_PROBE_STEP = (PAGE_SIZE * 512);
+            if (Candidate > (UINT64_MAX - MMAP_PROBE_STEP))
+            {
+                break;
+            }
+
+            Candidate = AlignUpToPageBoundary(Candidate + MMAP_PROBE_STEP);
+            if (Candidate == 0)
+            {
+                break;
+            }
+            continue;
+        }
+
+        if (OverlapEnd == 0)
         {
             break;
         }
 
-        Candidate += PAGE_SIZE;
+        Candidate = AlignUpToPageBoundary(OverlapEnd);
+        if (Candidate == 0)
+        {
+            break;
+        }
     }
 
     return 0;
