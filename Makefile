@@ -89,9 +89,10 @@ ESP_SIZE = 64
 ROOTFS_SIZE ?= 256
 ROOTFS_HEADROOM_MB ?= 256
 EXT2_SOURCE_ROOTFS = RootFileSystem/alpine-rootfs
-ROOTFS_SOURCE_SIZE_MB = $(shell if [ -d "$(EXT2_SOURCE_ROOTFS)" ]; then du -sm "$(EXT2_SOURCE_ROOTFS)" | awk '{print $$1}'; else echo 0; fi)
-ROOTFS_REQUIRED_SIZE_MB = $(shell echo $$(( $(ROOTFS_SOURCE_SIZE_MB) + $(ROOTFS_HEADROOM_MB) )))
-ROOTFS_EFFECTIVE_SIZE_MB = $(shell req=$(ROOTFS_REQUIRED_SIZE_MB); min=$(ROOTFS_SIZE); if [ $$req -gt $$min ]; then echo $$req; else echo $$min; fi)
+EXT2_OVERLAY_DIR = RootFileSystem/overlay
+ROOTFS_SOURCE_SIZE_MB := $(shell if [ -d "$(EXT2_SOURCE_ROOTFS)" ]; then size=$$(du -sm "$(EXT2_SOURCE_ROOTFS)" 2>/dev/null | awk 'NR==1{print $$1}'); echo $${size:-0}; else echo 0; fi)
+ROOTFS_REQUIRED_SIZE_MB := $(shell echo $$(( $(ROOTFS_SOURCE_SIZE_MB) + $(ROOTFS_HEADROOM_MB) )))
+ROOTFS_EFFECTIVE_SIZE_MB := $(shell req=$(ROOTFS_REQUIRED_SIZE_MB); min=$(ROOTFS_SIZE); if [ $$req -gt $$min ]; then echo $$req; else echo $$min; fi)
 IMG_SECTORS = $(shell echo $$(( ($(ESP_SIZE) + $(ROOTFS_EFFECTIVE_SIZE_MB) + 2) * 2048 )))
 ESP_SECTORS = $(shell echo $$(( $(ESP_SIZE) * 2048 )))
 ROOTFS_SECTORS = $(shell echo $$(( $(ROOTFS_EFFECTIVE_SIZE_MB) * 2048 )))
@@ -230,6 +231,7 @@ $(IMG): $(EFI) $(KERNEL) $(INITRAMFS)
 		mkfs.ext2 -F -m 0 $$ROOTFS >/dev/null; \
 		bash ./scripts/populate-ext2-rootfs.sh $$ROOTFS $(EXT2_SOURCE_ROOTFS); \
 	fi; \
+	bash ./scripts/apply-ext2-overlay.sh $$ROOTFS $(EXT2_OVERLAY_DIR); \
 	dd if=$$ESP of=$@ bs=512 seek=$$START conv=notrunc status=none; \
 	dd if=$$ROOTFS of=$@ bs=512 seek=$$ROOTFS_START conv=notrunc status=none; \
 	rm -f $$ESP $$ROOTFS
@@ -270,7 +272,9 @@ gdb-kernel: all
 debug:
 	./scripts/debug-kernel.sh
 
-ALL_SOURCE_FILES := $(shell find . -type f \( -name '*.c' -o -name '*.cpp' -o -name '*.h' -o -name '*.hpp' \) -not -path './busybox/*')
+ALL_SOURCE_FILES := $(shell find . \
+	\( -path './busybox' -o -path './RootFileSystem/alpine-rootfs' -o -path './build' -o -path './bin' \) -prune -o \
+	-type f \( -name '*.c' -o -name '*.cpp' -o -name '*.h' -o -name '*.hpp' \) -print 2>/dev/null)
 
 .PHONY: format qemu qemu-basic qemu-debug qemu-basic-debug gdb-kernel debug busybox-rootfs
 

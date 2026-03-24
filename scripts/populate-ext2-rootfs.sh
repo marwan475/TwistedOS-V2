@@ -28,7 +28,7 @@ SOURCE_ROOTFS_DIR="$(cd "${SOURCE_ROOTFS_DIR}" && pwd)"
 
 while IFS= read -r relative_dir; do
 	debugfs -w -R "mkdir /${relative_dir}" "${EXT2_IMAGE_PATH}" >/dev/null 2>&1 || true
-done < <(cd "${SOURCE_ROOTFS_DIR}" && find . -mindepth 1 -type d | sed 's|^\./||' | LC_ALL=C sort)
+done < <(cd "${SOURCE_ROOTFS_DIR}" && { find . -mindepth 1 -type d 2>/dev/null || true; } | sed 's|^\./||' | LC_ALL=C sort)
 
 while IFS= read -r relative_path; do
 	source_path="${SOURCE_ROOTFS_DIR}/${relative_path}"
@@ -44,6 +44,6 @@ while IFS= read -r relative_path; do
 	else
 		debugfs -w -R "write ${source_path} ${target_path}" "${EXT2_IMAGE_PATH}" >/dev/null
 	fi
-done < <(cd "${SOURCE_ROOTFS_DIR}" && find . -mindepth 1 \( -type f -o -type l \) | sed 's|^\./||' | LC_ALL=C sort)
+done < <(cd "${SOURCE_ROOTFS_DIR}" && { find . -mindepth 1 \( -type f -o -type l \) 2>/dev/null || true; } | sed 's|^\./||' | LC_ALL=C sort)
 
 echo "EXT2 rootfs populated from ${SOURCE_ROOTFS_DIR}"
