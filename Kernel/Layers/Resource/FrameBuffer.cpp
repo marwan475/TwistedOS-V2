@@ -99,6 +99,18 @@ struct LinuxFBVariableScreenInfo
     uint32_t       Reserved[4];
 };
 
+struct LinuxFBColorMap
+{
+    uint32_t Start;
+    uint32_t Length;
+    uint64_t Red;
+    uint64_t Green;
+    uint64_t Blue;
+    uint64_t Transparency;
+};
+
+constexpr uint32_t LINUX_FRAMEBUFFER_COLOR_MAP_ENTRY_COUNT = 256;
+
 uint32_t CountSetBits(uint32_t Value)
 {
     uint32_t Count = 0;
@@ -246,6 +258,68 @@ void PopulateFixedScreenInfo(const FrameBuffer* FB, LinuxFBFixScreenInfo* Info)
     Info->MMIOLength        = 0;
     Info->Acceleration      = LINUX_FB_ACCEL_NONE;
     Info->Capabilities      = 0;
+}
+
+bool WriteColorMapRampToUser(LogicLayer* Logic, uint64_t UserPointer, uint32_t Start, uint32_t Length)
+{
+    if (Length == 0 || UserPointer == 0)
+    {
+        return true;
+    }
+
+    if (Logic == nullptr)
+    {
+        return false;
+    }
+
+    for (uint32_t Index = 0; Index < Length; ++Index)
+    {
+        uint32_t AbsoluteIndex = Start + Index;
+        if (AbsoluteIndex >= LINUX_FRAMEBUFFER_COLOR_MAP_ENTRY_COUNT)
+        {
+            return false;
+        }
+
+        uint16_t Value = static_cast<uint16_t>((AbsoluteIndex * 0xFFFFu) / (LINUX_FRAMEBUFFER_COLOR_MAP_ENTRY_COUNT - 1));
+        uint64_t Destination = UserPointer + static_cast<uint64_t>(Index) * sizeof(uint16_t);
+        if (!Logic->CopyFromKernelToUser(&Value, reinterpret_cast<void*>(Destination), sizeof(Value)))
+        {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+bool ValidateReadableColorMapChannel(LogicLayer* Logic, uint64_t UserPointer, uint32_t Start, uint32_t Length)
+{
+    if (Length == 0 || UserPointer == 0)
+    {
+        return true;
+    }
+
+    if (Logic == nullptr)
+    {
+        return false;
+    }
+
+    for (uint32_t Index = 0; Index < Length; ++Index)
+    {
+        uint32_t AbsoluteIndex = Start + Index;
+        if (AbsoluteIndex >= LINUX_FRAMEBUFFER_COLOR_MAP_ENTRY_COUNT)
+        {
+            return false;
+        }
+
+        uint16_t Value      = 0;
+        uint64_t SourceAddr = UserPointer + static_cast<uint64_t>(Index) * sizeof(uint16_t);
+        if (!Logic->CopyFromUserToKernel(reinterpret_cast<const void*>(SourceAddr), &Value, sizeof(Value)))
+        {
+            return false;
+        }
+    }
+
+    return true;
 }
 } // namespace
 
@@ -562,9 +636,74 @@ int64_t FrameBuffer::Ioctl(File* OpenFile, uint64_t Request, uint64_t Argument, 
         return 0;
     }
 
-    if (Request == LINUX_IOCTL_FBIOGETCMAP || Request == LINUX_IOCTL_FBIOPUTCMAP)
+    if (Request == LINUX_IOCTL_FBIOGETCMAP)
     {
-        return LINUX_ERR_EINVAL;
+        if (Argument == 0 || Logic == nullptr)
+        {
+            return LINUX_ERR_EFAULT;
+        }
+
+        LinuxFBColorMap ColorMap = {};
+        if (!Logic->CopyFromUserToKernel(reinterpret_cast<const void*>(Argument), &ColorMap, sizeof(ColorMap)))
+        {
+            return LINUX_ERR_EFAULT;
+        }
+
+        if (ColorMap.Length == 0)
+        {
+            return 0;
+        }
+
+        if (ColorMap.Start >= LINUX_FRAMEBUFFER_COLOR_MAP_ENTRY_COUNT ||
+            ColorMap.Length > (LINUX_FRAMEBUFFER_COLOR_MAP_ENTRY_COUNT - ColorMap.Start))
+        {
+            return LINUX_ERR_EINVAL;
+        }
+
+        if (!WriteColorMapRampToUser(Logic, ColorMap.Red, ColorMap.Start, ColorMap.Length) ||
+            !WriteColorMapRampToUser(Logic, ColorMap.Green, ColorMap.Start, ColorMap.Length) ||
+            !WriteColorMapRampToUser(Logic, ColorMap.Blue, ColorMap.Start, ColorMap.Length) ||
+            !WriteColorMapRampToUser(Logic, ColorMap.Transparency, ColorMap.Start, ColorMap.Length))
+        {
+            return LINUX_ERR_EFAULT;
+        }
+
+        return 0;
+    }
+
+    if (Request == LINUX_IOCTL_FBIOPUTCMAP)
+    {
+        if (Argument == 0 || Logic == nullptr)
+        {
+            return LINUX_ERR_EFAULT;
+        }
+
+        LinuxFBColorMap ColorMap = {};
+        if (!Logic->CopyFromUserToKernel(reinterpret_cast<const void*>(Argument), &ColorMap, sizeof(ColorMap)))
+        {
+            return LINUX_ERR_EFAULT;
+        }
+
+        if (ColorMap.Length == 0)
+        {
+            return 0;
+        }
+
+        if (ColorMap.Start >= LINUX_FRAMEBUFFER_COLOR_MAP_ENTRY_COUNT ||
+            ColorMap.Length > (LINUX_FRAMEBUFFER_COLOR_MAP_ENTRY_COUNT - ColorMap.Start))
+        {
+            return LINUX_ERR_EINVAL;
+        }
+
+        if (!ValidateReadableColorMapChannel(Logic, ColorMap.Red, ColorMap.Start, ColorMap.Length) ||
+            !ValidateReadableColorMapChannel(Logic, ColorMap.Green, ColorMap.Start, ColorMap.Length) ||
+            !ValidateReadableColorMapChannel(Logic, ColorMap.Blue, ColorMap.Start, ColorMap.Length) ||
+            !ValidateReadableColorMapChannel(Logic, ColorMap.Transparency, ColorMap.Start, ColorMap.Length))
+        {
+            return LINUX_ERR_EFAULT;
+        }
+
+        return 0;
     }
 
     (void) RunningProcess;

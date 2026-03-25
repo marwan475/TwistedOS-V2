@@ -51,6 +51,16 @@ enum LinuxSocketErrors
     LINUX_SOCKET_ERR_ENAMETOOLONG = -36
 };
 
+enum LinuxPipeErrors
+{
+    LINUX_PIPE_ERR_EINVAL = -22,
+    LINUX_PIPE_ERR_ENOMEM = -12,
+    LINUX_PIPE_ERR_EAGAIN = -11,
+    LINUX_PIPE_ERR_EMFILE = -24,
+    LINUX_PIPE_ERR_EBADF  = -9,
+    LINUX_PIPE_ERR_EPIPE  = -32
+};
+
 struct LinuxSockAddr
 {
     uint16_t Family;
@@ -132,9 +142,21 @@ class InterProcessComunicationManager
 {
 private:
     static constexpr uint64_t MAX_TRACKED_SOCKETS = MAX_PROCESSES * MAX_OPEN_FILES_PER_PROCESS;
+    static constexpr uint64_t MAX_TRACKED_PIPES   = MAX_PROCESSES * MAX_OPEN_FILES_PER_PROCESS;
 
     Socket*  SocketList[MAX_TRACKED_SOCKETS];
     uint64_t SocketCount;
+
+    struct TrackedPipeEndpoint
+    {
+        Process* Owner;
+        int64_t  FileDescriptor;
+        INode*   Node;
+        void*    Endpoint;
+    };
+
+    TrackedPipeEndpoint PipeEndpointList[MAX_TRACKED_PIPES];
+    uint64_t            PipeEndpointCount;
 
     void InitializeSocketFileOperations(Socket* SocketEntry);
     void DestroySocket(Socket* SocketEntry);
@@ -151,4 +173,8 @@ public:
     int64_t ShutdownSocket(Process* Owner, int64_t FileDescriptor, int64_t How);
     bool    CloseSocket(Process* Owner, int64_t FileDescriptor);
     uint64_t GetSocketCount() const;
+
+    int64_t CreatePipe(Process* Owner, int64_t ReadFileDescriptor, int64_t WriteFileDescriptor, INode** ReadNodeOut, INode** WriteNodeOut);
+    int64_t DuplicatePipeDescriptor(Process* Owner, int64_t FileDescriptor, const File* SourceFile);
+    bool    ClosePipe(Process* Owner, int64_t FileDescriptor, const INode* Node);
 };

@@ -15,6 +15,34 @@ constexpr uint16_t LINUX_INET_EPHEMERAL_END   = 65535;
 constexpr int64_t  LINUX_SHUT_RD              = 0;
 constexpr int64_t  LINUX_SHUT_WR              = 1;
 constexpr int64_t  LINUX_SHUT_RDWR            = 2;
+constexpr uint64_t LINUX_PIPE_BUFFER_CAPACITY = 4096;
+
+constexpr uint32_t LINUX_POLLIN  = 0x0001u;
+constexpr uint32_t LINUX_POLLOUT = 0x0004u;
+constexpr uint32_t LINUX_POLLERR = 0x0008u;
+constexpr uint32_t LINUX_POLLHUP = 0x0010u;
+
+struct PipeEndpoint;
+
+struct PipeKernelObject
+{
+	uint8_t       Buffer[LINUX_PIPE_BUFFER_CAPACITY];
+	uint64_t      ReadOffset;
+	uint64_t      WriteOffset;
+	uint64_t      BufferedBytes;
+	uint64_t      ReaderReferenceCount;
+	uint64_t      WriterReferenceCount;
+	PipeEndpoint* ReadEndpoint;
+	PipeEndpoint* WriteEndpoint;
+	INode*        ReadNode;
+	INode*        WriteNode;
+};
+
+struct PipeEndpoint
+{
+	PipeKernelObject* Pipe;
+	bool              IsReadEnd;
+};
 
 uint16_t ReadLinuxAddressFamily(const void* SocketAddress)
 {
@@ -267,6 +295,178 @@ int64_t SocketIoctl(File* OpenFile, uint64_t Request, uint64_t Argument, LogicLa
 	(void) RunningProcess;
 	return LINUX_SOCKET_ERR_EBADF;
 }
+
+PipeEndpoint* GetPipeEndpointFromOpenFile(File* OpenFile)
+{
+	if (OpenFile == nullptr || OpenFile->Node == nullptr || OpenFile->Node->NodeData == nullptr)
+	{
+		return nullptr;
+	}
+
+	return reinterpret_cast<PipeEndpoint*>(OpenFile->Node->NodeData);
+}
+
+int64_t PipeRead(File* OpenFile, void* Buffer, uint64_t Count)
+{
+	if ((Buffer == nullptr && Count != 0) || OpenFile == nullptr)
+	{
+		return LINUX_PIPE_ERR_EINVAL;
+	}
+
+	if (Count == 0)
+	{
+		return 0;
+	}
+
+	PipeEndpoint* Endpoint = GetPipeEndpointFromOpenFile(OpenFile);
+	if (Endpoint == nullptr || Endpoint->Pipe == nullptr)
+	{
+		return LINUX_PIPE_ERR_EBADF;
+	}
+
+	if (!Endpoint->IsReadEnd)
+	{
+		return LINUX_PIPE_ERR_EBADF;
+	}
+
+	PipeKernelObject* Pipe = Endpoint->Pipe;
+	if (Pipe->BufferedBytes == 0)
+	{
+		if (Pipe->WriterReferenceCount == 0)
+		{
+			return 0;
+		}
+
+		return LINUX_PIPE_ERR_EAGAIN;
+	}
+
+	uint64_t BytesToRead = (Count < Pipe->BufferedBytes) ? Count : Pipe->BufferedBytes;
+	for (uint64_t Index = 0; Index < BytesToRead; ++Index)
+	{
+		reinterpret_cast<uint8_t*>(Buffer)[Index] = Pipe->Buffer[Pipe->ReadOffset];
+		Pipe->ReadOffset = (Pipe->ReadOffset + 1) % LINUX_PIPE_BUFFER_CAPACITY;
+	}
+
+	Pipe->BufferedBytes -= BytesToRead;
+	return static_cast<int64_t>(BytesToRead);
+}
+
+int64_t PipeWrite(File* OpenFile, const void* Buffer, uint64_t Count)
+{
+	if ((Buffer == nullptr && Count != 0) || OpenFile == nullptr)
+	{
+		return LINUX_PIPE_ERR_EINVAL;
+	}
+
+	if (Count == 0)
+	{
+		return 0;
+	}
+
+	PipeEndpoint* Endpoint = GetPipeEndpointFromOpenFile(OpenFile);
+	if (Endpoint == nullptr || Endpoint->Pipe == nullptr)
+	{
+		return LINUX_PIPE_ERR_EBADF;
+	}
+
+	if (Endpoint->IsReadEnd)
+	{
+		return LINUX_PIPE_ERR_EBADF;
+	}
+
+	PipeKernelObject* Pipe = Endpoint->Pipe;
+	if (Pipe->ReaderReferenceCount == 0)
+	{
+		return LINUX_PIPE_ERR_EPIPE;
+	}
+
+	uint64_t AvailableSpace = LINUX_PIPE_BUFFER_CAPACITY - Pipe->BufferedBytes;
+	if (AvailableSpace == 0)
+	{
+		return LINUX_PIPE_ERR_EAGAIN;
+	}
+
+	uint64_t BytesToWrite = (Count < AvailableSpace) ? Count : AvailableSpace;
+	for (uint64_t Index = 0; Index < BytesToWrite; ++Index)
+	{
+		Pipe->Buffer[Pipe->WriteOffset] = reinterpret_cast<const uint8_t*>(Buffer)[Index];
+		Pipe->WriteOffset = (Pipe->WriteOffset + 1) % LINUX_PIPE_BUFFER_CAPACITY;
+	}
+
+	Pipe->BufferedBytes += BytesToWrite;
+	return static_cast<int64_t>(BytesToWrite);
+}
+
+int64_t PipePoll(File* OpenFile, uint32_t RequestedEvents, uint32_t* ReturnedEvents, LogicLayer* Logic, Process* RunningProcess)
+{
+	(void) Logic;
+	(void) RunningProcess;
+
+	if (ReturnedEvents == nullptr)
+	{
+		return 0;
+	}
+
+	*ReturnedEvents = 0;
+
+	PipeEndpoint* Endpoint = GetPipeEndpointFromOpenFile(OpenFile);
+	if (Endpoint == nullptr || Endpoint->Pipe == nullptr)
+	{
+		*ReturnedEvents = LINUX_POLLERR;
+		return 0;
+	}
+
+	PipeKernelObject* Pipe = Endpoint->Pipe;
+
+	if (Endpoint->IsReadEnd)
+	{
+		if ((RequestedEvents & LINUX_POLLIN) != 0)
+		{
+			if (Pipe->BufferedBytes > 0)
+			{
+				*ReturnedEvents |= LINUX_POLLIN;
+			}
+			else if (Pipe->WriterReferenceCount == 0)
+			{
+				*ReturnedEvents |= LINUX_POLLHUP;
+			}
+		}
+	}
+	else
+	{
+		if ((RequestedEvents & LINUX_POLLOUT) != 0)
+		{
+			if (Pipe->ReaderReferenceCount == 0)
+			{
+				*ReturnedEvents |= (LINUX_POLLERR | LINUX_POLLHUP);
+			}
+			else if (Pipe->BufferedBytes < LINUX_PIPE_BUFFER_CAPACITY)
+			{
+				*ReturnedEvents |= LINUX_POLLOUT;
+			}
+		}
+	}
+
+	return 0;
+}
+
+int64_t PipeIoctl(File* OpenFile, uint64_t Request, uint64_t Argument, LogicLayer* Logic, Process* RunningProcess)
+{
+	(void) OpenFile;
+	(void) Request;
+	(void) Argument;
+	(void) Logic;
+	(void) RunningProcess;
+	return -25;
+}
+
+FileOperations PipeFileOperations = {
+	PipeRead,
+	PipeWrite,
+	nullptr,
+	nullptr,
+	PipePoll,
+	PipeIoctl};
 } // namespace
 
 /**
@@ -278,11 +478,19 @@ int64_t SocketIoctl(File* OpenFile, uint64_t Request, uint64_t Argument, LogicLa
  *   InterProcessComunicationManager - Constructed manager instance.
  */
 InterProcessComunicationManager::InterProcessComunicationManager()
-	: SocketCount(0)
+	: SocketCount(0), PipeEndpointCount(0)
 {
 	for (uint64_t Index = 0; Index < MAX_TRACKED_SOCKETS; ++Index)
 	{
 		SocketList[Index] = nullptr;
+	}
+
+	for (uint64_t Index = 0; Index < MAX_TRACKED_PIPES; ++Index)
+	{
+		PipeEndpointList[Index].Owner          = nullptr;
+		PipeEndpointList[Index].FileDescriptor = -1;
+		PipeEndpointList[Index].Node           = nullptr;
+		PipeEndpointList[Index].Endpoint       = nullptr;
 	}
 }
 
@@ -296,6 +504,24 @@ InterProcessComunicationManager::InterProcessComunicationManager()
  */
 InterProcessComunicationManager::~InterProcessComunicationManager()
 {
+	while (PipeEndpointCount > 0)
+	{
+		TrackedPipeEndpoint Entry = PipeEndpointList[0];
+		if (!ClosePipe(Entry.Owner, Entry.FileDescriptor, Entry.Node))
+		{
+			for (uint64_t ShiftIndex = 1; ShiftIndex < PipeEndpointCount; ++ShiftIndex)
+			{
+				PipeEndpointList[ShiftIndex - 1] = PipeEndpointList[ShiftIndex];
+			}
+
+			--PipeEndpointCount;
+			PipeEndpointList[PipeEndpointCount].Owner          = nullptr;
+			PipeEndpointList[PipeEndpointCount].FileDescriptor = -1;
+			PipeEndpointList[PipeEndpointCount].Node           = nullptr;
+			PipeEndpointList[PipeEndpointCount].Endpoint       = nullptr;
+		}
+	}
+
 	while (SocketCount > 0)
 	{
 		Socket* SocketEntry = SocketList[SocketCount - 1];
@@ -1317,6 +1543,255 @@ bool InterProcessComunicationManager::CloseSocket(Process* Owner, int64_t FileDe
 
 		--SocketCount;
 		SocketList[SocketCount] = nullptr;
+		return true;
+	}
+
+	return false;
+}
+
+int64_t InterProcessComunicationManager::CreatePipe(Process* Owner, int64_t ReadFileDescriptor, int64_t WriteFileDescriptor, INode** ReadNodeOut, INode** WriteNodeOut)
+{
+	if (Owner == nullptr || ReadNodeOut == nullptr || WriteNodeOut == nullptr || ReadFileDescriptor < 0 || WriteFileDescriptor < 0)
+	{
+		return LINUX_PIPE_ERR_EINVAL;
+	}
+
+	*ReadNodeOut  = nullptr;
+	*WriteNodeOut = nullptr;
+
+	if ((PipeEndpointCount + 2) > MAX_TRACKED_PIPES)
+	{
+		return LINUX_PIPE_ERR_EMFILE;
+	}
+
+	PipeKernelObject* Pipe = new PipeKernelObject;
+	if (Pipe == nullptr)
+	{
+		return LINUX_PIPE_ERR_ENOMEM;
+	}
+
+	Pipe->ReadOffset         = 0;
+	Pipe->WriteOffset        = 0;
+	Pipe->BufferedBytes      = 0;
+	Pipe->ReaderReferenceCount = 1;
+	Pipe->WriterReferenceCount = 1;
+	Pipe->ReadEndpoint       = nullptr;
+	Pipe->WriteEndpoint      = nullptr;
+	Pipe->ReadNode           = nullptr;
+	Pipe->WriteNode          = nullptr;
+
+	PipeEndpoint* ReadEndpoint = new PipeEndpoint;
+	if (ReadEndpoint == nullptr)
+	{
+		delete Pipe;
+		return LINUX_PIPE_ERR_ENOMEM;
+	}
+
+	PipeEndpoint* WriteEndpoint = new PipeEndpoint;
+	if (WriteEndpoint == nullptr)
+	{
+		delete ReadEndpoint;
+		delete Pipe;
+		return LINUX_PIPE_ERR_ENOMEM;
+	}
+
+	INode* ReadNode = new INode;
+	if (ReadNode == nullptr)
+	{
+		delete WriteEndpoint;
+		delete ReadEndpoint;
+		delete Pipe;
+		return LINUX_PIPE_ERR_ENOMEM;
+	}
+
+	INode* WriteNode = new INode;
+	if (WriteNode == nullptr)
+	{
+		delete ReadNode;
+		delete WriteEndpoint;
+		delete ReadEndpoint;
+		delete Pipe;
+		return LINUX_PIPE_ERR_ENOMEM;
+	}
+
+	ReadEndpoint->Pipe      = Pipe;
+	ReadEndpoint->IsReadEnd = true;
+
+	WriteEndpoint->Pipe      = Pipe;
+	WriteEndpoint->IsReadEnd = false;
+
+	ReadNode->NodeType             = INODE_DEV;
+	ReadNode->LinkReferenceCount   = 1;
+	ReadNode->UsesVirtualHardLinks = false;
+	ReadNode->NodeSize             = 0;
+	ReadNode->NodeData             = ReadEndpoint;
+	ReadNode->INodeOps             = nullptr;
+	ReadNode->FileOps              = &PipeFileOperations;
+
+	WriteNode->NodeType             = INODE_DEV;
+	WriteNode->LinkReferenceCount   = 1;
+	WriteNode->UsesVirtualHardLinks = false;
+	WriteNode->NodeSize             = 0;
+	WriteNode->NodeData             = WriteEndpoint;
+	WriteNode->INodeOps             = nullptr;
+	WriteNode->FileOps              = &PipeFileOperations;
+
+	Pipe->ReadEndpoint = ReadEndpoint;
+	Pipe->WriteEndpoint = WriteEndpoint;
+	Pipe->ReadNode = ReadNode;
+	Pipe->WriteNode = WriteNode;
+
+	PipeEndpointList[PipeEndpointCount].Owner          = Owner;
+	PipeEndpointList[PipeEndpointCount].FileDescriptor = ReadFileDescriptor;
+	PipeEndpointList[PipeEndpointCount].Node           = ReadNode;
+	PipeEndpointList[PipeEndpointCount].Endpoint       = ReadEndpoint;
+	++PipeEndpointCount;
+
+	PipeEndpointList[PipeEndpointCount].Owner          = Owner;
+	PipeEndpointList[PipeEndpointCount].FileDescriptor = WriteFileDescriptor;
+	PipeEndpointList[PipeEndpointCount].Node           = WriteNode;
+	PipeEndpointList[PipeEndpointCount].Endpoint       = WriteEndpoint;
+	++PipeEndpointCount;
+
+	*ReadNodeOut  = ReadNode;
+	*WriteNodeOut = WriteNode;
+	return 0;
+}
+
+int64_t InterProcessComunicationManager::DuplicatePipeDescriptor(Process* Owner, int64_t FileDescriptor, const File* SourceFile)
+{
+	if (Owner == nullptr || SourceFile == nullptr || SourceFile->Node == nullptr || FileDescriptor < 0)
+	{
+		return LINUX_PIPE_ERR_EINVAL;
+	}
+
+	if (SourceFile->Node->FileOps != &PipeFileOperations)
+	{
+		return 0;
+	}
+
+	if (SourceFile->Node->NodeData == nullptr)
+	{
+		return LINUX_PIPE_ERR_EBADF;
+	}
+
+	PipeEndpoint* Endpoint = nullptr;
+	for (uint64_t Index = 0; Index < PipeEndpointCount; ++Index)
+	{
+		if (PipeEndpointList[Index].Node != SourceFile->Node)
+		{
+			continue;
+		}
+
+		if (PipeEndpointList[Index].Endpoint != SourceFile->Node->NodeData)
+		{
+			continue;
+		}
+
+		Endpoint = reinterpret_cast<PipeEndpoint*>(SourceFile->Node->NodeData);
+		break;
+	}
+
+	if (Endpoint == nullptr)
+	{
+		return 0;
+	}
+
+	if (PipeEndpointCount >= MAX_TRACKED_PIPES)
+	{
+		return LINUX_PIPE_ERR_EMFILE;
+	}
+
+	if (Endpoint->Pipe == nullptr)
+	{
+		return LINUX_PIPE_ERR_EBADF;
+	}
+
+	if (Endpoint->IsReadEnd)
+	{
+		++Endpoint->Pipe->ReaderReferenceCount;
+	}
+	else
+	{
+		++Endpoint->Pipe->WriterReferenceCount;
+	}
+
+	PipeEndpointList[PipeEndpointCount].Owner          = Owner;
+	PipeEndpointList[PipeEndpointCount].FileDescriptor = FileDescriptor;
+	PipeEndpointList[PipeEndpointCount].Node           = SourceFile->Node;
+	PipeEndpointList[PipeEndpointCount].Endpoint       = Endpoint;
+	++PipeEndpointCount;
+
+	return 0;
+}
+
+bool InterProcessComunicationManager::ClosePipe(Process* Owner, int64_t FileDescriptor, const INode* Node)
+{
+	if (Owner == nullptr || FileDescriptor < 0 || Node == nullptr)
+	{
+		return false;
+	}
+
+	for (uint64_t Index = 0; Index < PipeEndpointCount; ++Index)
+	{
+		if (PipeEndpointList[Index].Owner != Owner || PipeEndpointList[Index].FileDescriptor != FileDescriptor || PipeEndpointList[Index].Node != Node)
+		{
+			continue;
+		}
+
+		PipeEndpoint*   Endpoint = reinterpret_cast<PipeEndpoint*>(PipeEndpointList[Index].Endpoint);
+		PipeKernelObject* Pipe   = (Endpoint != nullptr) ? Endpoint->Pipe : nullptr;
+
+		if (Pipe != nullptr)
+		{
+			if (Endpoint->IsReadEnd)
+			{
+				if (Pipe->ReaderReferenceCount > 0)
+				{
+					--Pipe->ReaderReferenceCount;
+				}
+			}
+			else
+			{
+				if (Pipe->WriterReferenceCount > 0)
+				{
+					--Pipe->WriterReferenceCount;
+				}
+			}
+		}
+
+		for (uint64_t ShiftIndex = Index + 1; ShiftIndex < PipeEndpointCount; ++ShiftIndex)
+		{
+			PipeEndpointList[ShiftIndex - 1] = PipeEndpointList[ShiftIndex];
+		}
+
+		--PipeEndpointCount;
+		PipeEndpointList[PipeEndpointCount].Owner          = nullptr;
+		PipeEndpointList[PipeEndpointCount].FileDescriptor = -1;
+		PipeEndpointList[PipeEndpointCount].Node           = nullptr;
+		PipeEndpointList[PipeEndpointCount].Endpoint       = nullptr;
+
+		if (Pipe != nullptr && Pipe->ReaderReferenceCount == 0 && Pipe->WriterReferenceCount == 0)
+		{
+			if (Pipe->ReadNode != nullptr)
+			{
+				Pipe->ReadNode->NodeData = nullptr;
+				delete Pipe->ReadNode;
+				Pipe->ReadNode = nullptr;
+			}
+
+			if (Pipe->WriteNode != nullptr)
+			{
+				Pipe->WriteNode->NodeData = nullptr;
+				delete Pipe->WriteNode;
+				Pipe->WriteNode = nullptr;
+			}
+
+			delete Pipe->ReadEndpoint;
+			delete Pipe->WriteEndpoint;
+			delete Pipe;
+		}
+
 		return true;
 	}
 

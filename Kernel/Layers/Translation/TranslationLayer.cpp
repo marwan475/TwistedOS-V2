@@ -3981,6 +3981,19 @@ int64_t TranslationLayer::HandleFcntlSystemCall(uint64_t FileDescriptor, uint64_
             DuplicatedFile->DescriptorFlags = SetCloseOnExec ? LINUX_FD_CLOEXEC : 0;
 
             CurrentProcess->FileTable[CandidateDescriptor] = DuplicatedFile;
+
+            InterProcessComunicationManager* IPC = Logic->GetInterProcessComunicationManager();
+            if (IPC != nullptr)
+            {
+                int64_t DuplicatePipeResult = IPC->DuplicatePipeDescriptor(CurrentProcess, static_cast<int64_t>(CandidateDescriptor), SourceFile);
+                if (DuplicatePipeResult < 0)
+                {
+                    delete DuplicatedFile;
+                    CurrentProcess->FileTable[CandidateDescriptor] = nullptr;
+                    return DuplicatePipeResult;
+                }
+            }
+
             return static_cast<int64_t>(CandidateDescriptor);
         }
 
@@ -4153,14 +4166,21 @@ int64_t TranslationLayer::HandleCloseSystemCall(uint64_t FileDescriptor)
 
     InterProcessComunicationManager* IPC = Logic->GetInterProcessComunicationManager();
     bool                              ClosedSocket = false;
+    bool                              ClosedPipe   = false;
     if (IPC != nullptr)
     {
         ClosedSocket = IPC->CloseSocket(CurrentProcess, static_cast<int64_t>(FileDescriptor));
+        ClosedPipe   = IPC->ClosePipe(CurrentProcess, static_cast<int64_t>(FileDescriptor), OpenFile->Node);
     }
 
     if (ClosedSocket && OpenFile->Node != nullptr)
     {
         delete OpenFile->Node;
+        OpenFile->Node = nullptr;
+    }
+
+    if (ClosedPipe)
+    {
         OpenFile->Node = nullptr;
     }
 
@@ -4510,6 +4530,114 @@ int64_t TranslationLayer::HandleAccessSystemCall(const char* Path, int64_t Mode)
     }
 
     return LINUX_ERR_EACCES;
+}
+
+int64_t TranslationLayer::HandlePipeSystemCall(void* PipeFileDescriptors)
+{
+    if (Logic == nullptr || PipeFileDescriptors == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    ProcessManager* PM = Logic->GetProcessManager();
+    if (PM == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    InterProcessComunicationManager* IPC = Logic->GetInterProcessComunicationManager();
+    if (IPC == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    Process* CurrentProcess = PM->GetRunningProcess();
+    if (CurrentProcess == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    int64_t ReadFileDescriptor  = -1;
+    int64_t WriteFileDescriptor = -1;
+
+    for (size_t FileIndex = 0; FileIndex < MAX_OPEN_FILES_PER_PROCESS; ++FileIndex)
+    {
+        if (CurrentProcess->FileTable[FileIndex] != nullptr)
+        {
+            continue;
+        }
+
+        if (ReadFileDescriptor < 0)
+        {
+            ReadFileDescriptor = static_cast<int64_t>(FileIndex);
+            continue;
+        }
+
+        WriteFileDescriptor = static_cast<int64_t>(FileIndex);
+        break;
+    }
+
+    if (ReadFileDescriptor < 0 || WriteFileDescriptor < 0)
+    {
+        return LINUX_ERR_EMFILE;
+    }
+
+    INode* ReadNode  = nullptr;
+    INode* WriteNode = nullptr;
+
+    int64_t CreatePipeResult = IPC->CreatePipe(CurrentProcess, ReadFileDescriptor, WriteFileDescriptor, &ReadNode, &WriteNode);
+    if (CreatePipeResult < 0)
+    {
+        return CreatePipeResult;
+    }
+
+    File* ReadFile = new File;
+    if (ReadFile == nullptr)
+    {
+        IPC->ClosePipe(CurrentProcess, ReadFileDescriptor, ReadNode);
+        IPC->ClosePipe(CurrentProcess, WriteFileDescriptor, WriteNode);
+        return LINUX_ERR_ENOMEM;
+    }
+
+    File* WriteFile = new File;
+    if (WriteFile == nullptr)
+    {
+        delete ReadFile;
+        IPC->ClosePipe(CurrentProcess, ReadFileDescriptor, ReadNode);
+        IPC->ClosePipe(CurrentProcess, WriteFileDescriptor, WriteNode);
+        return LINUX_ERR_ENOMEM;
+    }
+
+    ReadFile->FileDescriptor  = static_cast<uint64_t>(ReadFileDescriptor);
+    ReadFile->Node            = ReadNode;
+    ReadFile->CurrentOffset   = 0;
+    ReadFile->AccessFlags     = READ;
+    ReadFile->OpenFlags       = 0;
+    ReadFile->DescriptorFlags = 0;
+    ReadFile->DirectoryEntry  = nullptr;
+
+    WriteFile->FileDescriptor  = static_cast<uint64_t>(WriteFileDescriptor);
+    WriteFile->Node            = WriteNode;
+    WriteFile->CurrentOffset   = 0;
+    WriteFile->AccessFlags     = WRITE;
+    WriteFile->OpenFlags       = 1;
+    WriteFile->DescriptorFlags = 0;
+    WriteFile->DirectoryEntry  = nullptr;
+
+    CurrentProcess->FileTable[ReadFileDescriptor]  = ReadFile;
+    CurrentProcess->FileTable[WriteFileDescriptor] = WriteFile;
+
+    int32_t KernelPipeFileDescriptors[2] = {
+        static_cast<int32_t>(ReadFileDescriptor), static_cast<int32_t>(WriteFileDescriptor)};
+
+    if (!Logic->CopyFromKernelToUser(KernelPipeFileDescriptors, PipeFileDescriptors, sizeof(KernelPipeFileDescriptors)))
+    {
+        HandleCloseSystemCall(static_cast<uint64_t>(WriteFileDescriptor));
+        HandleCloseSystemCall(static_cast<uint64_t>(ReadFileDescriptor));
+        return LINUX_ERR_EFAULT;
+    }
+
+    return 0;
 }
 
 int64_t TranslationLayer::HandleRmdirSystemCall(const char* Path)
@@ -6729,8 +6857,11 @@ int64_t TranslationLayer::HandleDup2SystemCall(uint64_t OldFileDescriptor, uint6
     File* ExistingTargetFile = CurrentProcess->FileTable[NewFileDescriptor];
     if (ExistingTargetFile != nullptr)
     {
-        delete ExistingTargetFile;
-        CurrentProcess->FileTable[NewFileDescriptor] = nullptr;
+        int64_t CloseResult = HandleCloseSystemCall(NewFileDescriptor);
+        if (CloseResult < 0)
+        {
+            return CloseResult;
+        }
     }
 
     File* DuplicatedFile = new File;
@@ -6743,6 +6874,18 @@ int64_t TranslationLayer::HandleDup2SystemCall(uint64_t OldFileDescriptor, uint6
     DuplicatedFile->FileDescriptor               = NewFileDescriptor;
     DuplicatedFile->DescriptorFlags              = 0;
     CurrentProcess->FileTable[NewFileDescriptor] = DuplicatedFile;
+
+    InterProcessComunicationManager* IPC = Logic->GetInterProcessComunicationManager();
+    if (IPC != nullptr)
+    {
+        int64_t DuplicatePipeResult = IPC->DuplicatePipeDescriptor(CurrentProcess, static_cast<int64_t>(NewFileDescriptor), SourceFile);
+        if (DuplicatePipeResult < 0)
+        {
+            delete DuplicatedFile;
+            CurrentProcess->FileTable[NewFileDescriptor] = nullptr;
+            return DuplicatePipeResult;
+        }
+    }
 
     return static_cast<int64_t>(NewFileDescriptor);
 }
@@ -7187,6 +7330,17 @@ int64_t TranslationLayer::HandleVforkSystemCall()
 
         *CopiedFile                        = *ParentProcess->FileTable[FileIndex];
         ChildProcess->FileTable[FileIndex] = CopiedFile;
+
+        InterProcessComunicationManager* IPC = Logic->GetInterProcessComunicationManager();
+        if (IPC != nullptr)
+        {
+            int64_t DuplicatePipeResult = IPC->DuplicatePipeDescriptor(ChildProcess, static_cast<int64_t>(FileIndex), ParentProcess->FileTable[FileIndex]);
+            if (DuplicatePipeResult < 0)
+            {
+                PM->KillProcess(ChildId);
+                return DuplicatePipeResult;
+            }
+        }
     }
 
     ParentProcess->WaitingForVforkChild = true;

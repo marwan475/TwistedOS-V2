@@ -50,6 +50,7 @@ public:
     int64_t HandleGetcwdSystemCall(char* Buffer, uint64_t Size);
     int64_t HandleChdirSystemCall(const char* Path);
     int64_t HandleAccessSystemCall(const char* Path, int64_t Mode);
+    int64_t HandlePipeSystemCall(void* PipeFileDescriptors);
     int64_t HandleMkdirSystemCall(const char* Path, uint64_t Mode);
     int64_t HandleRmdirSystemCall(const char* Path);
     int64_t HandleLinkSystemCall(const char* OldPath, const char* NewPath);

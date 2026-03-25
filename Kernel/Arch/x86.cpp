@@ -270,8 +270,26 @@ static inline uint64_t ReadMSR(uint32_t msr)
     return ((uint64_t) high << 32) | low;
 }
 
+static inline bool IsCanonicalAddress(uint64_t address)
+{
+    uint64_t signBit = (address >> 47) & 1ULL;
+    uint64_t high    = address >> 48;
+
+    if (signBit == 0)
+    {
+        return high == 0;
+    }
+
+    return high == 0xFFFFULL;
+}
+
 void SetUserFSBase(uint64_t BaseAddress)
 {
+    if (!IsCanonicalAddress(BaseAddress))
+    {
+        BaseAddress = 0;
+    }
+
     WriteMSR(IA32_FS_BASE_MSR, BaseAddress);
 }
 

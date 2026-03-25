@@ -2695,6 +2695,16 @@ uint8_t LogicLayer::CopyProcess(uint8_t Id)
 
         *CopiedFile                        = *SourceProcess->FileTable[FileIndex];
         ChildProcess->FileTable[FileIndex] = CopiedFile;
+
+        if (IPC != nullptr)
+        {
+            int64_t DuplicatePipeResult = IPC->DuplicatePipeDescriptor(ChildProcess, static_cast<int64_t>(FileIndex), SourceProcess->FileTable[FileIndex]);
+            if (DuplicatePipeResult < 0)
+            {
+                KillProcess(ChildId);
+                return PROCESS_ID_INVALID;
+            }
+        }
     }
 
     Sched->AddToReadyQueue(ChildId);
