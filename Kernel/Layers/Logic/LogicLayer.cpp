@@ -3477,7 +3477,17 @@ VirtualAddressSpace* LogicLayer::MapELF(uint64_t CodeAddr, uint64_t CodeSize, co
 #ifdef DEBUG_BUILD
         if (MapELFDebugTTY != nullptr)
         {
-            MapELFDebugTTY->Serialprintf("fork_mapelf_dbg: fail=copy_pml4\n");
+            const CopyPageMapL4DebugInfo& CopyDebugInfo = Resource->GetVMM()->GetLastCopyPageMapL4DebugInfo();
+            const PageTableMutationDebugInfo& MutationDebugInfo = Resource->GetVMM()->GetLastPageTableMutationDebugInfo();
+            MapELFDebugTTY->Serialprintf(
+                "fork_mapelf_dbg: fail=copy_pml4 stage=%u pml4=%u pdpt=%u pd=%u entry=%p addr=%p alloc_attempts=%llu last_evt=%u last_idx=%u/%u/%u/%u last_entry=%p last_addr=%p\n",
+                static_cast<unsigned int>(CopyDebugInfo.FailureStage), static_cast<unsigned int>(CopyDebugInfo.PML4Index),
+                static_cast<unsigned int>(CopyDebugInfo.PDPTIndex), static_cast<unsigned int>(CopyDebugInfo.PDIndex),
+                reinterpret_cast<void*>(CopyDebugInfo.SourceEntryValue), reinterpret_cast<void*>(CopyDebugInfo.DerivedAddress),
+                static_cast<unsigned long long>(CopyDebugInfo.AllocationAttempts), static_cast<unsigned int>(MutationDebugInfo.Event),
+                static_cast<unsigned int>(MutationDebugInfo.PML4Index), static_cast<unsigned int>(MutationDebugInfo.PDPTIndex),
+                static_cast<unsigned int>(MutationDebugInfo.PDIndex), static_cast<unsigned int>(MutationDebugInfo.PTIndex),
+                reinterpret_cast<void*>(MutationDebugInfo.EntryValue), reinterpret_cast<void*>(MutationDebugInfo.DerivedAddress));
         }
 #endif
         return FailMapELFAddressSpace(0);

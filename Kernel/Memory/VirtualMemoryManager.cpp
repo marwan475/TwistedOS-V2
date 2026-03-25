@@ -78,7 +78,9 @@ void FreeClonedUserPagingHierarchy(PageTableEntry* NewPML4, PhysicalMemoryManage
  * Returns:
  *   VirtualMemoryManager - Constructed virtual memory manager instance.
  */
-VirtualMemoryManager::VirtualMemoryManager(UINTN PageMapL4TableAddr, PhysicalMemoryManager& PMM) : PageMapL4Table((PageTableEntry*) PageMapL4TableAddr), PMM(PMM)
+VirtualMemoryManager::VirtualMemoryManager(UINTN PageMapL4TableAddr, PhysicalMemoryManager& PMM) : PageMapL4Table((PageTableEntry*) PageMapL4TableAddr), PMM(PMM),
+                                                                                                        LastCopyPageMapL4DebugInfo{COPY_PML4_FAIL_NONE, 0xFFFF, 0xFFFF, 0xFFFF, 0, 0, 0, 0},
+                                                                                                        LastPageTableMutationDebugInfo{PAGE_TABLE_MUTATION_NONE, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0, 0}
 {
 }
 
@@ -102,6 +104,23 @@ bool VirtualMemoryManager::MapPage(UINTN PhysicalAddr, UINTN VirtualAddr, const 
     UINTN PageDirectoryTableIndex        = Vaddr.fields.pd_index;
     UINTN PageTableIndex                 = Vaddr.fields.pt_index;
 
+    const bool TrackSuspiciousSlot = (PageMapL4TableIndex == 0 && PageDirectoryPointerTableIndex == 2 && PageDirectoryTableIndex == 0);
+
+    auto RecordMutation = [&](PageTableMutationEvent Event, uint64_t EntryValue, uint64_t DerivedAddress) {
+        if (!TrackSuspiciousSlot)
+        {
+            return;
+        }
+
+        LastPageTableMutationDebugInfo.Event          = Event;
+        LastPageTableMutationDebugInfo.PML4Index      = static_cast<uint16_t>(PageMapL4TableIndex);
+        LastPageTableMutationDebugInfo.PDPTIndex      = static_cast<uint16_t>(PageDirectoryPointerTableIndex);
+        LastPageTableMutationDebugInfo.PDIndex        = static_cast<uint16_t>(PageDirectoryTableIndex);
+        LastPageTableMutationDebugInfo.PTIndex        = static_cast<uint16_t>(PageTableIndex);
+        LastPageTableMutationDebugInfo.EntryValue     = EntryValue;
+        LastPageTableMutationDebugInfo.DerivedAddress = DerivedAddress;
+    };
+
     PageTableEntry PmL4Entry = PageMapL4Table[PageMapL4TableIndex];
 
     if (!PmL4Entry.fields.present)
@@ -120,6 +139,7 @@ bool VirtualMemoryManager::MapPage(UINTN PhysicalAddr, UINTN VirtualAddr, const 
         PageDirectoryPointerTable.fields.user_access = Flags.UserAccess;
 
         PageMapL4Table[PageMapL4TableIndex] = PageDirectoryPointerTable;
+        RecordMutation(PAGE_TABLE_MUTATION_WRITE_PML4, PageDirectoryPointerTable.value, PageDirectoryPointerTable.value & PHYS_PAGE_ADDR_MASK);
         PmL4Entry                           = PageMapL4Table[PageMapL4TableIndex];
     }
     else if (Flags.UserAccess && !PmL4Entry.fields.user_access)
@@ -147,6 +167,7 @@ bool VirtualMemoryManager::MapPage(UINTN PhysicalAddr, UINTN VirtualAddr, const 
         PageDirectoryTable.fields.user_access = Flags.UserAccess;
 
         PageDirectoryPointerTable[PageDirectoryPointerTableIndex] = PageDirectoryTable;
+        RecordMutation(PAGE_TABLE_MUTATION_WRITE_PDPT, PageDirectoryTable.value, PageDirectoryTable.value & PHYS_PAGE_ADDR_MASK);
         PDPTEntry                                                 = PageDirectoryPointerTable[PageDirectoryPointerTableIndex];
     }
     else if (Flags.UserAccess && !PDPTEntry.fields.user_access)
@@ -174,12 +195,22 @@ bool VirtualMemoryManager::MapPage(UINTN PhysicalAddr, UINTN VirtualAddr, const 
         PageTable.fields.user_access = Flags.UserAccess;
 
         PageDirectoryTable[PageDirectoryTableIndex] = PageTable;
+        RecordMutation(PAGE_TABLE_MUTATION_WRITE_PD, PageTable.value, PageTable.value & PHYS_PAGE_ADDR_MASK);
         PDTEntry                                    = PageDirectoryTable[PageDirectoryTableIndex];
     }
     else if (Flags.UserAccess && !PDTEntry.fields.user_access)
     {
         PDTEntry.fields.user_access                 = 1;
         PageDirectoryTable[PageDirectoryTableIndex] = PDTEntry;
+    }
+
+    if (TrackSuspiciousSlot && !PDTEntry.fields.size)
+    {
+        uint64_t ExistingPTAddr = static_cast<uint64_t>(PDTEntry.value & PHYS_PAGE_ADDR_MASK);
+        if ((ExistingPTAddr & 0xFFFF000000000000ULL) != 0)
+        {
+            RecordMutation(PAGE_TABLE_MUTATION_OBSERVE_PD_NONCANONICAL, PDTEntry.value, ExistingPTAddr);
+        }
     }
 
     PageTableEntry* PageTable  = (PageTableEntry*) (PDTEntry.value & PHYS_PAGE_ADDR_MASK);
@@ -191,6 +222,7 @@ bool VirtualMemoryManager::MapPage(UINTN PhysicalAddr, UINTN VirtualAddr, const 
     NewPTEntry.fields.user_access = Flags.UserAccess;
 
     PageTable[PageTableIndex] = NewPTEntry;
+    RecordMutation(PAGE_TABLE_MUTATION_WRITE_PT, NewPTEntry.value, NewPTEntry.value & PHYS_PAGE_ADDR_MASK);
 
     return true;
 }
@@ -394,9 +426,26 @@ UINTN VirtualMemoryManager::UnmapRange(UINTN VirtualAddr, UINTN Pages)
  */
 PageTableEntry* VirtualMemoryManager::CopyPageMapL4Table()
 {
+    LastCopyPageMapL4DebugInfo = {COPY_PML4_FAIL_NONE, 0xFFFF, 0xFFFF, 0xFFFF, 0, 0, 0, 0};
+
+    uint64_t AllocationAttempts = 0;
+
+    auto RecordFailure = [&](CopyPageMapL4FailureStage FailureStage, uint16_t PML4Index, uint16_t PDPTIndex, uint16_t PDIndex, uint64_t SourceEntryValue,
+                             uint64_t DerivedAddress) {
+        LastCopyPageMapL4DebugInfo.FailureStage      = FailureStage;
+        LastCopyPageMapL4DebugInfo.PML4Index         = PML4Index;
+        LastCopyPageMapL4DebugInfo.PDPTIndex         = PDPTIndex;
+        LastCopyPageMapL4DebugInfo.PDIndex           = PDIndex;
+        LastCopyPageMapL4DebugInfo.SourceEntryValue  = SourceEntryValue;
+        LastCopyPageMapL4DebugInfo.DerivedAddress    = DerivedAddress;
+        LastCopyPageMapL4DebugInfo.AllocationAttempts = AllocationAttempts;
+    };
+
+    ++AllocationAttempts;
     void* NewPML4Addr = PMM.AllocatePagesFromDescriptor(1);
     if (NewPML4Addr == NULL)
     {
+        RecordFailure(COPY_PML4_FAIL_ALLOC_PML4, 0xFFFF, 0xFFFF, 0xFFFF, 0, 0);
         return NULL;
     }
 
@@ -422,9 +471,11 @@ PageTableEntry* VirtualMemoryManager::CopyPageMapL4Table()
             continue;
         }
 
+        ++AllocationAttempts;
         void* NewPDPTAddr = PMM.AllocatePagesFromDescriptor(1);
         if (NewPDPTAddr == NULL)
         {
+            RecordFailure(COPY_PML4_FAIL_ALLOC_PDPT, static_cast<uint16_t>(PML4Index), 0xFFFF, 0xFFFF, PML4Entry.value, 0);
             return FailCopy();
         }
 
@@ -433,6 +484,7 @@ PageTableEntry* VirtualMemoryManager::CopyPageMapL4Table()
         UINTN OldPDPTAddr       = (UINTN) (PML4Entry.value & PHYS_PAGE_ADDR_MASK);
         if ((OldPDPTAddr & 0xFFFF000000000000ULL) != 0)
         {
+            RecordFailure(COPY_PML4_FAIL_INVALID_OLD_PDPT, static_cast<uint16_t>(PML4Index), 0xFFFF, 0xFFFF, PML4Entry.value, OldPDPTAddr);
             return FailCopy();
         }
 
@@ -453,9 +505,11 @@ PageTableEntry* VirtualMemoryManager::CopyPageMapL4Table()
                 continue;
             }
 
+            ++AllocationAttempts;
             void* NewPDAddr = PMM.AllocatePagesFromDescriptor(1);
             if (NewPDAddr == NULL)
             {
+                RecordFailure(COPY_PML4_FAIL_ALLOC_PD, static_cast<uint16_t>(PML4Index), static_cast<uint16_t>(PDPTIndex), 0xFFFF, PDPTEntry.value, 0);
                 return FailCopy();
             }
 
@@ -464,6 +518,7 @@ PageTableEntry* VirtualMemoryManager::CopyPageMapL4Table()
             UINTN OldPDAddr       = (UINTN) (PDPTEntry.value & PHYS_PAGE_ADDR_MASK);
             if ((OldPDAddr & 0xFFFF000000000000ULL) != 0)
             {
+                RecordFailure(COPY_PML4_FAIL_INVALID_OLD_PD, static_cast<uint16_t>(PML4Index), static_cast<uint16_t>(PDPTIndex), 0xFFFF, PDPTEntry.value, OldPDAddr);
                 return FailCopy();
             }
 
@@ -484,9 +539,12 @@ PageTableEntry* VirtualMemoryManager::CopyPageMapL4Table()
                     continue;
                 }
 
+                ++AllocationAttempts;
                 void* NewPTAddr = PMM.AllocatePagesFromDescriptor(1);
                 if (NewPTAddr == NULL)
                 {
+                    RecordFailure(COPY_PML4_FAIL_ALLOC_PT, static_cast<uint16_t>(PML4Index), static_cast<uint16_t>(PDPTIndex), static_cast<uint16_t>(PDIndex),
+                                  PDEntry.value, 0);
                     return FailCopy();
                 }
 
@@ -495,6 +553,8 @@ PageTableEntry* VirtualMemoryManager::CopyPageMapL4Table()
                 UINTN OldPTAddr       = (UINTN) (PDEntry.value & PHYS_PAGE_ADDR_MASK);
                 if ((OldPTAddr & 0xFFFF000000000000ULL) != 0)
                 {
+                    RecordFailure(COPY_PML4_FAIL_INVALID_OLD_PT, static_cast<uint16_t>(PML4Index), static_cast<uint16_t>(PDPTIndex), static_cast<uint16_t>(PDIndex),
+                                  PDEntry.value, OldPTAddr);
                     return FailCopy();
                 }
 
@@ -522,4 +582,14 @@ PageTableEntry* VirtualMemoryManager::CopyPageMapL4Table()
     }
 
     return NewPML4;
+}
+
+const CopyPageMapL4DebugInfo& VirtualMemoryManager::GetLastCopyPageMapL4DebugInfo() const
+{
+    return LastCopyPageMapL4DebugInfo;
+}
+
+const PageTableMutationDebugInfo& VirtualMemoryManager::GetLastPageTableMutationDebugInfo() const
+{
+    return LastPageTableMutationDebugInfo;
 }

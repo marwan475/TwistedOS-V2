@@ -56,11 +56,58 @@ struct PageMappingFlags
     }
 };
 
+enum CopyPageMapL4FailureStage : uint8_t
+{
+    COPY_PML4_FAIL_NONE = 0,
+    COPY_PML4_FAIL_ALLOC_PML4,
+    COPY_PML4_FAIL_ALLOC_PDPT,
+    COPY_PML4_FAIL_INVALID_OLD_PDPT,
+    COPY_PML4_FAIL_ALLOC_PD,
+    COPY_PML4_FAIL_INVALID_OLD_PD,
+    COPY_PML4_FAIL_ALLOC_PT,
+    COPY_PML4_FAIL_INVALID_OLD_PT,
+};
+
+struct CopyPageMapL4DebugInfo
+{
+    CopyPageMapL4FailureStage FailureStage;
+    uint16_t                  PML4Index;
+    uint16_t                  PDPTIndex;
+    uint16_t                  PDIndex;
+    uint16_t                  Reserved;
+    uint64_t                  SourceEntryValue;
+    uint64_t                  DerivedAddress;
+    uint64_t                  AllocationAttempts;
+};
+
+enum PageTableMutationEvent : uint8_t
+{
+    PAGE_TABLE_MUTATION_NONE = 0,
+    PAGE_TABLE_MUTATION_WRITE_PML4,
+    PAGE_TABLE_MUTATION_WRITE_PDPT,
+    PAGE_TABLE_MUTATION_WRITE_PD,
+    PAGE_TABLE_MUTATION_WRITE_PT,
+    PAGE_TABLE_MUTATION_OBSERVE_PD_NONCANONICAL,
+};
+
+struct PageTableMutationDebugInfo
+{
+    PageTableMutationEvent Event;
+    uint16_t               PML4Index;
+    uint16_t               PDPTIndex;
+    uint16_t               PDIndex;
+    uint16_t               PTIndex;
+    uint64_t               EntryValue;
+    uint64_t               DerivedAddress;
+};
+
 class VirtualMemoryManager
 {
 private:
     PageTableEntry*        PageMapL4Table;
     PhysicalMemoryManager& PMM;
+    CopyPageMapL4DebugInfo LastCopyPageMapL4DebugInfo;
+    PageTableMutationDebugInfo LastPageTableMutationDebugInfo;
 
 public:
     VirtualMemoryManager(UINTN PageMapL4TableAddr, PhysicalMemoryManager& PMM);
@@ -71,4 +118,6 @@ public:
     UINTN           ProtectRange(UINTN VirtualAddr, UINTN Pages, bool UserAccess, bool Writeable, bool Executable);
     UINTN           UnmapRange(UINTN VirtualAddr, UINTN Pages);
     PageTableEntry* CopyPageMapL4Table();
+    const CopyPageMapL4DebugInfo& GetLastCopyPageMapL4DebugInfo() const;
+    const PageTableMutationDebugInfo& GetLastPageTableMutationDebugInfo() const;
 };
