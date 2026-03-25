@@ -6466,22 +6466,78 @@ int64_t TranslationLayer::HandleSetpgidSystemCall(int64_t Pid, int64_t ProcessGr
         return LINUX_ERR_ESRCH;
     }
 
-    if (TargetProcess->Id != CurrentProcess->Id)
+    bool TargetsCurrentProcess = (TargetProcess->Id == CurrentProcess->Id);
+    bool TargetsChildProcess   = (TargetProcess->ParrentId == CurrentProcess->Id);
+
+    if (!TargetsCurrentProcess && !TargetsChildProcess)
+    {
+        return LINUX_ERR_ESRCH;
+    }
+
+    if (TargetsChildProcess && TargetProcess->HasExecutedExecve)
+    {
+        return LINUX_ERR_EACCES;
+    }
+
+    auto GetEffectiveSessionId = [](Process* ProcessEntry) -> int32_t
+    {
+        if (ProcessEntry == nullptr)
+        {
+            return 0;
+        }
+
+        return (ProcessEntry->SessionId > 0) ? ProcessEntry->SessionId : static_cast<int32_t>(ProcessEntry->Id);
+    };
+
+    int32_t CurrentSessionId = GetEffectiveSessionId(CurrentProcess);
+    int32_t TargetSessionId  = GetEffectiveSessionId(TargetProcess);
+
+    if (TargetSessionId != CurrentSessionId)
+    {
+        return LINUX_ERR_EPERM;
+    }
+
+    if (TargetSessionId == static_cast<int32_t>(TargetProcess->Id))
     {
         return LINUX_ERR_EPERM;
     }
 
     int64_t EffectiveProcessGroupId = (ProcessGroupId == 0) ? EffectivePid : ProcessGroupId;
-    if (EffectiveProcessGroupId <= 0)
+    if (EffectiveProcessGroupId <= 0 || EffectiveProcessGroupId > 0xFF)
     {
         return LINUX_ERR_EINVAL;
     }
 
-    TargetProcess->ProcessGroupId = static_cast<int32_t>(EffectiveProcessGroupId);
-    if (TargetProcess->SessionId <= 0)
+    if (EffectiveProcessGroupId != static_cast<int64_t>(TargetProcess->Id))
     {
-        TargetProcess->SessionId = static_cast<int32_t>(CurrentProcess->Id);
+        bool ProcessGroupExistsInSession = false;
+
+        for (size_t Index = 0; Index < PM->GetMaxProcesses(); ++Index)
+        {
+            Process* CandidateProcess = PM->GetProcessById(static_cast<uint8_t>(Index));
+            if (CandidateProcess == nullptr || CandidateProcess->Status == PROCESS_TERMINATED)
+            {
+                continue;
+            }
+
+            int32_t CandidateSessionId = GetEffectiveSessionId(CandidateProcess);
+            int32_t CandidateGroupId   = (CandidateProcess->ProcessGroupId > 0) ? CandidateProcess->ProcessGroupId : static_cast<int32_t>(CandidateProcess->Id);
+
+            if (CandidateSessionId == TargetSessionId && CandidateGroupId == static_cast<int32_t>(EffectiveProcessGroupId))
+            {
+                ProcessGroupExistsInSession = true;
+                break;
+            }
+        }
+
+        if (!ProcessGroupExistsInSession)
+        {
+            return LINUX_ERR_EPERM;
+        }
     }
+
+    TargetProcess->ProcessGroupId = static_cast<int32_t>(EffectiveProcessGroupId);
+    TargetProcess->SessionId      = TargetSessionId;
 
     return 0;
 }
@@ -6786,6 +6842,21 @@ int64_t TranslationLayer::HandleGetuidSystemCall()
     return 0;
 }
 
+int64_t TranslationLayer::HandleSetuidSystemCall(int64_t UserId)
+{
+    if (UserId < 0)
+    {
+        return LINUX_ERR_EINVAL;
+    }
+
+    if (UserId == 0)
+    {
+        return 0;
+    }
+
+    return LINUX_ERR_EPERM;
+}
+
 int64_t TranslationLayer::HandleUnameSystemCall(void* Buffer)
 {
     if (Logic == nullptr || Buffer == nullptr)
@@ -6807,6 +6878,21 @@ int64_t TranslationLayer::HandleUnameSystemCall(void* Buffer)
 int64_t TranslationLayer::HandleGetgidSystemCall()
 {
     return 0;
+}
+
+int64_t TranslationLayer::HandleSetgidSystemCall(int64_t GroupId)
+{
+    if (GroupId < 0)
+    {
+        return LINUX_ERR_EINVAL;
+    }
+
+    if (GroupId == 0)
+    {
+        return 0;
+    }
+
+    return LINUX_ERR_EPERM;
 }
 
 int64_t TranslationLayer::HandleGeteuidSystemCall()
@@ -7580,6 +7666,7 @@ int64_t TranslationLayer::HandleExecveSystemCall(const char* Path, const char* c
         return LINUX_ERR_ENOENT;
     }
 
+    CurrentProcess->HasExecutedExecve        = true;
     CurrentProcess->DebugIsXorgProcess        = IsXorgExec;
     CurrentProcess->DebugSyscallTraceRemaining = IsXorgExec ? XORG_DEBUG_SYSCALL_TRACE_COUNT : 0;
 

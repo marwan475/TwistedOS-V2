@@ -103,6 +103,7 @@ bool InitializeProcessEntry(Process& ProcessEntry, ProcessState Status, ProcessL
     ProcessEntry.WaitingForSystemCallReturn = false;
     ProcessEntry.HasSavedSystemCallFrame    = false;
     ProcessEntry.HasPendingChildExit        = false;
+    ProcessEntry.HasExecutedExecve          = false;
     ProcessEntry.PendingChildId             = PROCESS_ID_INVALID;
     ProcessEntry.PendingChildStatus         = 0;
     ProcessEntry.SavedSystemCallFrame       = {};

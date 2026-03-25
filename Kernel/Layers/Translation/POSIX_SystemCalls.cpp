@@ -198,8 +198,14 @@ int64_t TranslationLayer::HandlePosixSystemCallNumber(uint64_t SystemCallNumber,
         case 102: // getuid
             return HandleGetuidSystemCall();
             break;
+        case 105: // setuid
+            return HandleSetuidSystemCall(static_cast<int64_t>(Arg1));
+            break;
         case 104: // getgid
             return HandleGetgidSystemCall();
+            break;
+        case 106: // setgid
+            return HandleSetgidSystemCall(static_cast<int64_t>(Arg1));
             break;
         case 107: // geteuid
             return HandleGeteuidSystemCall();

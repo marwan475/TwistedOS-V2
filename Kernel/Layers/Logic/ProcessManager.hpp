@@ -99,6 +99,7 @@ struct Process
     bool                        WaitingForSystemCallReturn = false;
     bool                        HasSavedSystemCallFrame    = false;
     bool                        HasPendingChildExit        = false;
+    bool                        HasExecutedExecve          = false;
     uint8_t                     PendingChildId             = PROCESS_ID_INVALID;
     int32_t                     PendingChildStatus         = 0;
     ProcessSavedSystemCallFrame SavedSystemCallFrame       = {};

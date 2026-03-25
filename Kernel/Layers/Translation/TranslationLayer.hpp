@@ -68,7 +68,9 @@ public:
     int64_t HandleMprotectSystemCall(void* Address, uint64_t Length, int64_t Protection);
     int64_t HandleBrkSystemCall(uint64_t Address);
     int64_t HandleGetuidSystemCall();
+    int64_t HandleSetuidSystemCall(int64_t UserId);
     int64_t HandleGetgidSystemCall();
+    int64_t HandleSetgidSystemCall(int64_t GroupId);
     int64_t HandleUnameSystemCall(void* Buffer);
     int64_t HandleGetpidSystemCall();
     int64_t HandleGetppidSystemCall();
