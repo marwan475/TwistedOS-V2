@@ -100,11 +100,12 @@ GDB = gdb
 QEMU_GDB_PORT = 1234
 QEMU_DEBUG_SERIAL_LOG = $(BUILD)qemu-debug-serial.log
 QEMU = qemu-system-x86_64
+QEMU_MEMORY ?= 3072M
 QEMU_FW = \
 	-drive if=pflash,format=raw,readonly=on,file=Firmware/code.fd \
 	-drive if=pflash,format=raw,file=Firmware/TwistedOS_VARS.fd
 QEMU_COMMON = \
-	-m 2048M \
+	-m $(QEMU_MEMORY) \
 	$(QEMU_FW) \
 	-serial stdio
 QEMU_FULL = \
@@ -256,7 +257,7 @@ qemu-basic-debug: all
 	@mkdir -p $(BUILD)
 	@echo "QEMU GDB server listening on localhost:$(QEMU_GDB_PORT)"
 	$(QEMU) \
-		-m 1024M \
+		-m $(QEMU_MEMORY) \
 		$(QEMU_FW) \
 		-drive file=$(IMG),format=raw \
 		-serial file:$(QEMU_DEBUG_SERIAL_LOG) \

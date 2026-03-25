@@ -7181,12 +7181,39 @@ int64_t TranslationLayer::HandleForkSystemCall()
         return LINUX_ERR_EFAULT;
     }
 
+    size_t MaxProcessCount    = PM->GetMaxProcesses();
+    size_t ActiveProcessCount = 0;
+    for (size_t ProcessIndex = 0; ProcessIndex < MaxProcessCount; ++ProcessIndex)
+    {
+        Process* Candidate = PM->GetProcessById(static_cast<uint8_t>(ProcessIndex));
+        if (Candidate != nullptr && Candidate->Status != PROCESS_TERMINATED)
+        {
+            ++ActiveProcessCount;
+        }
+    }
+
+    bool ProcessSlotsExhausted = (ActiveProcessCount >= MaxProcessCount);
+
     CurrentProcess->UserFSBase = GetUserFSBase();
 
     uint8_t ChildId = Logic->CopyProcess(CurrentProcess->Id);
     if (ChildId == PROCESS_ID_INVALID)
     {
-        return LINUX_ERR_EAGAIN;
+#ifdef DEBUG_BUILD
+    ResourceLayer* Resource = Logic->GetResourceLayer();
+    TTY*           Terminal = (Resource == nullptr) ? nullptr : Resource->GetTTY();
+        if (Terminal != nullptr)
+        {
+            Terminal->Serialprintf("fork_dbg: pid=%u copy_failed active=%u max=%u slots_exhausted=%u\n", CurrentProcess->Id, static_cast<uint32_t>(ActiveProcessCount),
+                                   static_cast<uint32_t>(MaxProcessCount), ProcessSlotsExhausted ? 1U : 0U);
+        }
+#endif
+        if (ProcessSlotsExhausted)
+        {
+            return LINUX_ERR_EAGAIN;
+        }
+
+        return LINUX_ERR_ENOMEM;
     }
 
     Process* ChildProcess = PM->GetProcessById(ChildId);

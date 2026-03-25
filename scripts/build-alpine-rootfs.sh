@@ -15,7 +15,7 @@ ROOTFS_OVERLAY_XINITRC="${ROOTFS_OVERLAY_DIR}/.xinitrc"
 ALPINE_MIRROR="${ALPINE_MIRROR:-https://dl-cdn.alpinelinux.org/alpine}"
 ALPINE_ARCH="${ALPINE_ARCH:-x86_64}"
 ALPINE_VERSION="${ALPINE_VERSION:-latest-stable}"
-ALPINE_EXTRA_PACKAGES="${ALPINE_EXTRA_PACKAGES:-xorg-server xinit dwm xsetroot xf86-video-fbdev}"
+ALPINE_EXTRA_PACKAGES="${ALPINE_EXTRA_PACKAGES:-xorg-server xinit xkeyboard-config dwm xsetroot xf86-video-fbdev}"
 ALPINE_REQUIRED_PACKAGES="libx11"
 
 require_command()

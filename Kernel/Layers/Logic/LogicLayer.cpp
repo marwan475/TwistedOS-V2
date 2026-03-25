@@ -436,6 +436,110 @@ bool AppendELFLoadSegmentsToAddressSpace(ResourceLayer* Resource, ELFManager* EL
     return true;
 }
 
+void FreeELFRegionsExcludingMainImage(PhysicalMemoryManager* PMM, const VirtualAddressSpaceELF* AddressSpace, uint64_t MainImageAddress, uint64_t MainImageSize)
+{
+    if (PMM == nullptr || AddressSpace == nullptr)
+    {
+        return;
+    }
+
+    uint64_t MainStart = AlignDownToPage(MainImageAddress);
+    uint64_t MainPages = (MainImageSize + PAGE_SIZE - 1) / PAGE_SIZE;
+    uint64_t MainEnd   = MainStart;
+    if (MainPages != 0 && MainPages <= ((UINT64_MAX - MainStart) / PAGE_SIZE))
+    {
+        MainEnd = MainStart + (MainPages * PAGE_SIZE);
+    }
+
+    const ELFMemoryRegion* Regions     = AddressSpace->GetMemoryRegions();
+    size_t                 RegionCount = AddressSpace->GetMemoryRegionCount();
+
+    uint64_t RangeStarts[16] = {};
+    uint64_t RangeEnds[16]   = {};
+    size_t   RangeCount      = 0;
+
+    for (size_t RegionIndex = 0; RegionIndex < RegionCount; ++RegionIndex)
+    {
+        uint64_t RegionPhysicalAddress = Regions[RegionIndex].PhysicalAddress;
+        uint64_t RegionSize            = Regions[RegionIndex].Size;
+        if (RegionPhysicalAddress == 0 || RegionSize == 0)
+        {
+            continue;
+        }
+
+        uint64_t Start      = AlignDownToPage(RegionPhysicalAddress);
+        uint64_t PageOffset = Regions[RegionIndex].VirtualAddress & (PAGE_SIZE - 1);
+        uint64_t PageCount  = (PageOffset + RegionSize + PAGE_SIZE - 1) / PAGE_SIZE;
+        if (PageCount == 0)
+        {
+            continue;
+        }
+
+        uint64_t End = Start + (PageCount * PAGE_SIZE);
+
+        bool Merged = true;
+        while (Merged)
+        {
+            Merged = false;
+            for (size_t RangeIndex = 0; RangeIndex < RangeCount; ++RangeIndex)
+            {
+                if (End < RangeStarts[RangeIndex] || Start > RangeEnds[RangeIndex])
+                {
+                    continue;
+                }
+
+                if (RangeStarts[RangeIndex] < Start)
+                {
+                    Start = RangeStarts[RangeIndex];
+                }
+                if (RangeEnds[RangeIndex] > End)
+                {
+                    End = RangeEnds[RangeIndex];
+                }
+
+                RangeStarts[RangeIndex] = RangeStarts[RangeCount - 1];
+                RangeEnds[RangeIndex]   = RangeEnds[RangeCount - 1];
+                --RangeCount;
+                Merged = true;
+                break;
+            }
+        }
+
+        if (RangeCount < 16)
+        {
+            RangeStarts[RangeCount] = Start;
+            RangeEnds[RangeCount]   = End;
+            ++RangeCount;
+        }
+    }
+
+    for (size_t RangeIndex = 0; RangeIndex < RangeCount; ++RangeIndex)
+    {
+        uint64_t Start = RangeStarts[RangeIndex];
+        uint64_t End   = RangeEnds[RangeIndex];
+        if (End <= Start)
+        {
+            continue;
+        }
+
+        if (MainEnd <= MainStart || End <= MainStart || Start >= MainEnd)
+        {
+            PMM->FreePagesFromDescriptor(reinterpret_cast<void*>(Start), (End - Start) / PAGE_SIZE);
+            continue;
+        }
+
+        if (Start < MainStart)
+        {
+            PMM->FreePagesFromDescriptor(reinterpret_cast<void*>(Start), (MainStart - Start) / PAGE_SIZE);
+        }
+
+        if (End > MainEnd)
+        {
+            PMM->FreePagesFromDescriptor(reinterpret_cast<void*>(MainEnd), (End - MainEnd) / PAGE_SIZE);
+        }
+    }
+}
+
 void RetainRunningExecutable(Process* TargetProcess, INode* ExecutableNode)
 {
     if (TargetProcess == nullptr)
@@ -2558,6 +2662,11 @@ uint8_t LogicLayer::CopyProcess(uint8_t Id)
         return PROCESS_ID_INVALID;
     }
 
+#ifdef DEBUG_BUILD
+    const bool TraceForkFailure = SourceProcess->DebugIsXorgProcess;
+    TTY*       ForkDebugTTY     = (TraceForkFailure && Resource != nullptr) ? Resource->GetTTY() : nullptr;
+#endif
+
     PhysicalMemoryManager* PMM = Resource->GetPMM();
     if (PMM == nullptr)
     {
@@ -2577,6 +2686,13 @@ uint8_t LogicLayer::CopyProcess(uint8_t Id)
     void*    CopiedImage     = PMM->AllocatePagesFromDescriptor(SourceCodePages);
     if (CopiedImage == nullptr)
     {
+#ifdef DEBUG_BUILD
+        if (ForkDebugTTY != nullptr)
+        {
+            ForkDebugTTY->Serialprintf("fork_copy_dbg: pid=%u fail=alloc_image pages=%llu code_size=%llu\n", SourceProcess->Id, static_cast<unsigned long long>(SourceCodePages),
+                                       static_cast<unsigned long long>(SourceCodeSize));
+        }
+#endif
         return PROCESS_ID_INVALID;
     }
 
@@ -2609,6 +2725,12 @@ uint8_t LogicLayer::CopyProcess(uint8_t Id)
 
     if (NewAddressSpace == nullptr)
     {
+#ifdef DEBUG_BUILD
+        if (ForkDebugTTY != nullptr)
+        {
+            ForkDebugTTY->Serialprintf("fork_copy_dbg: pid=%u fail=map_address_space file_type=%u\n", SourceProcess->Id, static_cast<unsigned int>(SourceProcess->FileType));
+        }
+#endif
         PMM->FreePagesFromDescriptor(CopiedImage, SourceCodePages);
         return PROCESS_ID_INVALID;
     }
@@ -2641,6 +2763,12 @@ uint8_t LogicLayer::CopyProcess(uint8_t Id)
     uint8_t ChildId = PM->CreateUserProcess(reinterpret_cast<void*>(NewAddressSpace->GetStackVirtualAddressStart()), ChildState, NewAddressSpace, SourceProcess->FileType);
     if (ChildId == PROCESS_ID_INVALID)
     {
+#ifdef DEBUG_BUILD
+        if (ForkDebugTTY != nullptr)
+        {
+            ForkDebugTTY->Serialprintf("fork_copy_dbg: pid=%u fail=create_user_process\n", SourceProcess->Id);
+        }
+#endif
         if (SourceProcess->FileType == FILE_TYPE_ELF)
         {
             CleanUpELF(NewAddressSpace);
@@ -2657,6 +2785,12 @@ uint8_t LogicLayer::CopyProcess(uint8_t Id)
     Process* ChildProcess = PM->GetProcessById(ChildId);
     if (ChildProcess == nullptr)
     {
+#ifdef DEBUG_BUILD
+        if (ForkDebugTTY != nullptr)
+        {
+            ForkDebugTTY->Serialprintf("fork_copy_dbg: pid=%u fail=child_lookup child_id=%u\n", SourceProcess->Id, ChildId);
+        }
+#endif
         KillProcess(ChildId);
         return PROCESS_ID_INVALID;
     }
@@ -2687,6 +2821,12 @@ uint8_t LogicLayer::CopyProcess(uint8_t Id)
 
     if (!CloneAnonymousProcessMappings(Resource, SourceProcess, ChildProcess))
     {
+#ifdef DEBUG_BUILD
+        if (ForkDebugTTY != nullptr)
+        {
+            ForkDebugTTY->Serialprintf("fork_copy_dbg: pid=%u fail=clone_anon_mappings child_id=%u\n", SourceProcess->Id, ChildId);
+        }
+#endif
         KillProcess(ChildId);
         return PROCESS_ID_INVALID;
     }
@@ -2706,6 +2846,12 @@ uint8_t LogicLayer::CopyProcess(uint8_t Id)
         File* CopiedFile = new File;
         if (CopiedFile == nullptr)
         {
+#ifdef DEBUG_BUILD
+            if (ForkDebugTTY != nullptr)
+            {
+                ForkDebugTTY->Serialprintf("fork_copy_dbg: pid=%u fail=alloc_file_entry fd=%u child_id=%u\n", SourceProcess->Id, static_cast<unsigned int>(FileIndex), ChildId);
+            }
+#endif
             KillProcess(ChildId);
             return PROCESS_ID_INVALID;
         }
@@ -2718,6 +2864,13 @@ uint8_t LogicLayer::CopyProcess(uint8_t Id)
             int64_t DuplicatePipeResult = IPC->DuplicatePipeDescriptor(ChildProcess, static_cast<int64_t>(FileIndex), SourceProcess->FileTable[FileIndex]);
             if (DuplicatePipeResult < 0)
             {
+#ifdef DEBUG_BUILD
+                if (ForkDebugTTY != nullptr)
+                {
+                    ForkDebugTTY->Serialprintf("fork_copy_dbg: pid=%u fail=dup_pipe fd=%u err=%lld child_id=%u\n", SourceProcess->Id, static_cast<unsigned int>(FileIndex),
+                                               static_cast<long long>(DuplicatePipeResult), ChildId);
+                }
+#endif
                 KillProcess(ChildId);
                 return PROCESS_ID_INVALID;
             }
@@ -3017,6 +3170,7 @@ VirtualAddressSpace* LogicLayer::MapRawBinary(uint64_t CodeAddr, uint64_t CodeSi
 
     if (!AddressSpace->Init(ProcessPageMapL4TableAddr, *Resource->GetPMM()))
     {
+        FreePageTableHierarchy(Resource->GetPMM(), ProcessPageMapL4TableAddr);
         Resource->GetPMM()->FreePagesFromDescriptor(ProcessHeap, USER_PROCESS_HEAP_SIZE / PAGE_SIZE);
         Resource->GetPMM()->FreePagesFromDescriptor(ProcessStack, USER_PROCESS_STACK_SIZE / PAGE_SIZE);
         delete AddressSpace;
@@ -3039,6 +3193,11 @@ VirtualAddressSpace* LogicLayer::MapRawBinary(uint64_t CodeAddr, uint64_t CodeSi
 VirtualAddressSpace* LogicLayer::MapELF(uint64_t CodeAddr, uint64_t CodeSize, const ELFHeader& Header, const VirtualAddressSpaceELF* SourceRuntimeELFAddressSpace, uint64_t* ProgramLoadBiasOut,
                                         uint64_t* InterpreterBaseOut, uint64_t* InterpreterEntryOut)
 {
+    const bool TraceForkELFClone = (SourceRuntimeELFAddressSpace != nullptr);
+#ifdef DEBUG_BUILD
+    TTY*       MapELFDebugTTY    = (TraceForkELFClone && Resource != nullptr) ? Resource->GetTTY() : nullptr;
+#endif
+
     if (ProgramLoadBiasOut != nullptr)
     {
         *ProgramLoadBiasOut = 0;
@@ -3056,12 +3215,24 @@ VirtualAddressSpace* LogicLayer::MapELF(uint64_t CodeAddr, uint64_t CodeSize, co
 
     if (ELF == nullptr || !ELF->ValidateProgramHeaderTable(Header, CodeSize))
     {
+#ifdef DEBUG_BUILD
+        if (MapELFDebugTTY != nullptr)
+        {
+            MapELFDebugTTY->Serialprintf("fork_mapelf_dbg: fail=validate_phdr_table code_size=%llu\n", static_cast<unsigned long long>(CodeSize));
+        }
+#endif
         return nullptr;
     }
 
     const ELFProgramHeader64* ProgramHeaders = ELF->GetProgramHeaderTable(CodeAddr, Header);
     if (ProgramHeaders == nullptr)
     {
+#ifdef DEBUG_BUILD
+        if (MapELFDebugTTY != nullptr)
+        {
+            MapELFDebugTTY->Serialprintf("fork_mapelf_dbg: fail=get_phdr_table\n");
+        }
+#endif
         return nullptr;
     }
 
@@ -3085,17 +3256,35 @@ VirtualAddressSpace* LogicLayer::MapELF(uint64_t CodeAddr, uint64_t CodeSize, co
 
         if (!ELF->ValidateProgramSegment(ProgramHeader, CodeSize))
         {
+#ifdef DEBUG_BUILD
+            if (MapELFDebugTTY != nullptr)
+            {
+                MapELFDebugTTY->Serialprintf("fork_mapelf_dbg: fail=validate_segment idx=%u\n", ProgramHeaderIndex);
+            }
+#endif
             return nullptr;
         }
 
         if (ProgramHeader.VirtualAddress > (UINT64_MAX - MainLoadBias))
         {
+#ifdef DEBUG_BUILD
+            if (MapELFDebugTTY != nullptr)
+            {
+                MapELFDebugTTY->Serialprintf("fork_mapelf_dbg: fail=segment_va_overflow idx=%u\n", ProgramHeaderIndex);
+            }
+#endif
             return nullptr;
         }
 
         uint64_t SegmentStart = ProgramHeader.VirtualAddress + MainLoadBias;
         if (SegmentStart > (UINT64_MAX - ProgramHeader.MemorySize))
         {
+#ifdef DEBUG_BUILD
+            if (MapELFDebugTTY != nullptr)
+            {
+                MapELFDebugTTY->Serialprintf("fork_mapelf_dbg: fail=segment_end_overflow idx=%u\n", ProgramHeaderIndex);
+            }
+#endif
             return nullptr;
         }
 
@@ -3116,6 +3305,12 @@ VirtualAddressSpace* LogicLayer::MapELF(uint64_t CodeAddr, uint64_t CodeSize, co
 
     if (!HasLoadableSegment)
     {
+#ifdef DEBUG_BUILD
+        if (MapELFDebugTTY != nullptr)
+        {
+            MapELFDebugTTY->Serialprintf("fork_mapelf_dbg: fail=no_loadable_segment\n");
+        }
+#endif
         return nullptr;
     }
 
@@ -3123,6 +3318,12 @@ VirtualAddressSpace* LogicLayer::MapELF(uint64_t CodeAddr, uint64_t CodeSize, co
     void* ProcessHeap  = Resource->GetPMM()->AllocatePagesFromDescriptor(USER_PROCESS_HEAP_SIZE / PAGE_SIZE);
     if (ProcessStack == nullptr || ProcessHeap == nullptr)
     {
+#ifdef DEBUG_BUILD
+        if (MapELFDebugTTY != nullptr)
+        {
+            MapELFDebugTTY->Serialprintf("fork_mapelf_dbg: fail=alloc_stack_or_heap stack=%p heap=%p\n", ProcessStack, ProcessHeap);
+        }
+#endif
         if (ProcessStack != nullptr)
         {
             Resource->GetPMM()->FreePagesFromDescriptor(ProcessStack, USER_PROCESS_STACK_SIZE / PAGE_SIZE);
@@ -3140,6 +3341,12 @@ VirtualAddressSpace* LogicLayer::MapELF(uint64_t CodeAddr, uint64_t CodeSize, co
     uint64_t ProcessStackVirtualAddrStart = (USER_PROCESS_VIRTUAL_STACK_TOP + 1) - USER_PROCESS_STACK_SIZE;
     if (ProcessHeapVirtualAddrStart + USER_PROCESS_HEAP_SIZE > ProcessStackVirtualAddrStart)
     {
+#ifdef DEBUG_BUILD
+        if (MapELFDebugTTY != nullptr)
+        {
+            MapELFDebugTTY->Serialprintf("fork_mapelf_dbg: fail=heap_stack_overlap heap_start=%p stack_start=%p\n", (void*) ProcessHeapVirtualAddrStart, (void*) ProcessStackVirtualAddrStart);
+        }
+#endif
         Resource->GetPMM()->FreePagesFromDescriptor(ProcessHeap, USER_PROCESS_HEAP_SIZE / PAGE_SIZE);
         Resource->GetPMM()->FreePagesFromDescriptor(ProcessStack, USER_PROCESS_STACK_SIZE / PAGE_SIZE);
         return nullptr;
@@ -3150,17 +3357,38 @@ VirtualAddressSpace* LogicLayer::MapELF(uint64_t CodeAddr, uint64_t CodeSize, co
 
     if (AddressSpace == nullptr)
     {
+#ifdef DEBUG_BUILD
+        if (MapELFDebugTTY != nullptr)
+        {
+            MapELFDebugTTY->Serialprintf("fork_mapelf_dbg: fail=alloc_address_space_obj\n");
+        }
+#endif
         Resource->GetPMM()->FreePagesFromDescriptor(ProcessHeap, USER_PROCESS_HEAP_SIZE / PAGE_SIZE);
         Resource->GetPMM()->FreePagesFromDescriptor(ProcessStack, USER_PROCESS_STACK_SIZE / PAGE_SIZE);
         return nullptr;
     }
 
-    if (!AppendELFLoadSegmentsToAddressSpace(Resource, ELF, AddressSpace, CodeAddr, CodeSize, Header, MainLoadBias))
-    {
+    auto FailMapELFAddressSpace = [&](uint64_t AdditionalPML4ToFree) -> VirtualAddressSpace* {
+        FreeELFRegionsExcludingMainImage(Resource->GetPMM(), AddressSpace, CodeAddr, CodeSize);
         Resource->GetPMM()->FreePagesFromDescriptor(ProcessHeap, USER_PROCESS_HEAP_SIZE / PAGE_SIZE);
         Resource->GetPMM()->FreePagesFromDescriptor(ProcessStack, USER_PROCESS_STACK_SIZE / PAGE_SIZE);
+        if (AdditionalPML4ToFree != 0)
+        {
+            FreePageTableHierarchy(Resource->GetPMM(), AdditionalPML4ToFree);
+        }
         delete AddressSpace;
         return nullptr;
+    };
+
+    if (!AppendELFLoadSegmentsToAddressSpace(Resource, ELF, AddressSpace, CodeAddr, CodeSize, Header, MainLoadBias))
+    {
+#ifdef DEBUG_BUILD
+        if (MapELFDebugTTY != nullptr)
+        {
+            MapELFDebugTTY->Serialprintf("fork_mapelf_dbg: fail=append_main_segments\n");
+        }
+#endif
+        return FailMapELFAddressSpace(0);
     }
 
     char InterpreterPath[ELF_INTERPRETER_PATH_MAX] = {};
@@ -3168,20 +3396,26 @@ VirtualAddressSpace* LogicLayer::MapELF(uint64_t CodeAddr, uint64_t CodeSize, co
     {
         if (VFS == nullptr)
         {
-            Resource->GetPMM()->FreePagesFromDescriptor(ProcessHeap, USER_PROCESS_HEAP_SIZE / PAGE_SIZE);
-            Resource->GetPMM()->FreePagesFromDescriptor(ProcessStack, USER_PROCESS_STACK_SIZE / PAGE_SIZE);
-            delete AddressSpace;
-            return nullptr;
+#ifdef DEBUG_BUILD
+            if (MapELFDebugTTY != nullptr)
+            {
+                MapELFDebugTTY->Serialprintf("fork_mapelf_dbg: fail=vfs_unavailable_for_interp\n");
+            }
+#endif
+            return FailMapELFAddressSpace(0);
         }
 
         Dentry* InterpreterDentry = VFS->Lookup(InterpreterPath);
         if (InterpreterDentry == nullptr || InterpreterDentry->inode == nullptr || InterpreterDentry->inode->NodeType != INODE_FILE || InterpreterDentry->inode->NodeSize == 0
             || !EnsureLazyLoadedINodeData(Resource, InterpreterDentry->inode))
         {
-            Resource->GetPMM()->FreePagesFromDescriptor(ProcessHeap, USER_PROCESS_HEAP_SIZE / PAGE_SIZE);
-            Resource->GetPMM()->FreePagesFromDescriptor(ProcessStack, USER_PROCESS_STACK_SIZE / PAGE_SIZE);
-            delete AddressSpace;
-            return nullptr;
+#ifdef DEBUG_BUILD
+            if (MapELFDebugTTY != nullptr)
+            {
+                MapELFDebugTTY->Serialprintf("fork_mapelf_dbg: fail=interp_lookup_or_load path='%s'\n", InterpreterPath);
+            }
+#endif
+            return FailMapELFAddressSpace(0);
         }
 
         uint64_t InterpreterSize  = InterpreterDentry->inode->NodeSize;
@@ -3189,10 +3423,13 @@ VirtualAddressSpace* LogicLayer::MapELF(uint64_t CodeAddr, uint64_t CodeSize, co
         void*    InterpreterImage = Resource->GetPMM()->AllocatePagesFromDescriptor(InterpreterPages);
         if (InterpreterImage == nullptr)
         {
-            Resource->GetPMM()->FreePagesFromDescriptor(ProcessHeap, USER_PROCESS_HEAP_SIZE / PAGE_SIZE);
-            Resource->GetPMM()->FreePagesFromDescriptor(ProcessStack, USER_PROCESS_STACK_SIZE / PAGE_SIZE);
-            delete AddressSpace;
-            return nullptr;
+#ifdef DEBUG_BUILD
+            if (MapELFDebugTTY != nullptr)
+            {
+                MapELFDebugTTY->Serialprintf("fork_mapelf_dbg: fail=alloc_interp_image pages=%llu\n", static_cast<unsigned long long>(InterpreterPages));
+            }
+#endif
+            return FailMapELFAddressSpace(0);
         }
 
         kmemset(InterpreterImage, 0, static_cast<size_t>(InterpreterPages * PAGE_SIZE));
@@ -3201,20 +3438,26 @@ VirtualAddressSpace* LogicLayer::MapELF(uint64_t CodeAddr, uint64_t CodeSize, co
         ELFHeader InterpreterHeader = ELF->ParseELF(reinterpret_cast<uint64_t>(InterpreterImage));
         if (!ELF->ValidateELF64(InterpreterHeader))
         {
+#ifdef DEBUG_BUILD
+            if (MapELFDebugTTY != nullptr)
+            {
+                MapELFDebugTTY->Serialprintf("fork_mapelf_dbg: fail=validate_interp_elf\n");
+            }
+#endif
             Resource->GetPMM()->FreePagesFromDescriptor(InterpreterImage, InterpreterPages);
-            Resource->GetPMM()->FreePagesFromDescriptor(ProcessHeap, USER_PROCESS_HEAP_SIZE / PAGE_SIZE);
-            Resource->GetPMM()->FreePagesFromDescriptor(ProcessStack, USER_PROCESS_STACK_SIZE / PAGE_SIZE);
-            delete AddressSpace;
-            return nullptr;
+            return FailMapELFAddressSpace(0);
         }
 
         uint64_t InterpreterLoadBias = GetELFLoadBias(InterpreterHeader, true);
         if (!AppendELFLoadSegmentsToAddressSpace(Resource, ELF, AddressSpace, reinterpret_cast<uint64_t>(InterpreterImage), InterpreterSize, InterpreterHeader, InterpreterLoadBias))
         {
-            Resource->GetPMM()->FreePagesFromDescriptor(ProcessHeap, USER_PROCESS_HEAP_SIZE / PAGE_SIZE);
-            Resource->GetPMM()->FreePagesFromDescriptor(ProcessStack, USER_PROCESS_STACK_SIZE / PAGE_SIZE);
-            delete AddressSpace;
-            return nullptr;
+#ifdef DEBUG_BUILD
+            if (MapELFDebugTTY != nullptr)
+            {
+                MapELFDebugTTY->Serialprintf("fork_mapelf_dbg: fail=append_interp_segments pages=%llu\n", static_cast<unsigned long long>(InterpreterPages));
+            }
+#endif
+            return FailMapELFAddressSpace(0);
         }
 
         if (InterpreterEntryOut != nullptr)
@@ -3231,18 +3474,24 @@ VirtualAddressSpace* LogicLayer::MapELF(uint64_t CodeAddr, uint64_t CodeSize, co
     uint64_t ProcessPageMapL4TableAddr = reinterpret_cast<uint64_t>(Resource->GetVMM()->CopyPageMapL4Table());
     if (ProcessPageMapL4TableAddr == 0)
     {
-        Resource->GetPMM()->FreePagesFromDescriptor(ProcessHeap, USER_PROCESS_HEAP_SIZE / PAGE_SIZE);
-        Resource->GetPMM()->FreePagesFromDescriptor(ProcessStack, USER_PROCESS_STACK_SIZE / PAGE_SIZE);
-        delete AddressSpace;
-        return nullptr;
+#ifdef DEBUG_BUILD
+        if (MapELFDebugTTY != nullptr)
+        {
+            MapELFDebugTTY->Serialprintf("fork_mapelf_dbg: fail=copy_pml4\n");
+        }
+#endif
+        return FailMapELFAddressSpace(0);
     }
 
     if (!AddressSpace->Init(ProcessPageMapL4TableAddr, *Resource->GetPMM()))
     {
-        Resource->GetPMM()->FreePagesFromDescriptor(ProcessHeap, USER_PROCESS_HEAP_SIZE / PAGE_SIZE);
-        Resource->GetPMM()->FreePagesFromDescriptor(ProcessStack, USER_PROCESS_STACK_SIZE / PAGE_SIZE);
-        delete AddressSpace;
-        return nullptr;
+#ifdef DEBUG_BUILD
+        if (MapELFDebugTTY != nullptr)
+        {
+            MapELFDebugTTY->Serialprintf("fork_mapelf_dbg: fail=address_space_init pml4=%p\n", (void*) ProcessPageMapL4TableAddr);
+        }
+#endif
+        return FailMapELFAddressSpace(ProcessPageMapL4TableAddr);
     }
 
     if (SourceRuntimeELFAddressSpace != nullptr)
@@ -3275,6 +3524,13 @@ VirtualAddressSpace* LogicLayer::MapELF(uint64_t CodeAddr, uint64_t CodeSize, co
 
             if (MatchingChildRegion == nullptr || MatchingChildRegion->PhysicalAddress == 0 || MatchingChildRegion->Size == 0)
             {
+#ifdef DEBUG_BUILD
+                if (MapELFDebugTTY != nullptr)
+                {
+                    MapELFDebugTTY->Serialprintf("fork_mapelf_dbg: fail=missing_child_region va=%p size=%llu\n", (void*) SourceRegion.VirtualAddress,
+                                                 static_cast<unsigned long long>(SourceRegion.Size));
+                }
+#endif
                 CleanUpELF(AddressSpace);
                 delete AddressSpace;
                 return nullptr;
@@ -3284,6 +3540,13 @@ VirtualAddressSpace* LogicLayer::MapELF(uint64_t CodeAddr, uint64_t CodeSize, co
             uint64_t ChildPageOffset  = MatchingChildRegion->VirtualAddress & (PAGE_SIZE - 1);
             if (SourcePageOffset != ChildPageOffset)
             {
+#ifdef DEBUG_BUILD
+                if (MapELFDebugTTY != nullptr)
+                {
+                    MapELFDebugTTY->Serialprintf("fork_mapelf_dbg: fail=region_offset_mismatch va=%p src_off=%llu child_off=%llu\n", (void*) SourceRegion.VirtualAddress,
+                                                 static_cast<unsigned long long>(SourcePageOffset), static_cast<unsigned long long>(ChildPageOffset));
+                }
+#endif
                 CleanUpELF(AddressSpace);
                 delete AddressSpace;
                 return nullptr;

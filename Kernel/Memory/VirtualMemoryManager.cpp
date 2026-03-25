@@ -7,6 +7,68 @@
 #include <CommonUtils.hpp>
 #include <Memory/VirtualMemoryManager.hpp>
 
+namespace
+{
+void FreeClonedUserPagingHierarchy(PageTableEntry* NewPML4, PhysicalMemoryManager& PMM)
+{
+    if (NewPML4 == NULL)
+    {
+        return;
+    }
+
+    for (UINTN PML4Index = 0; PML4Index < 256; PML4Index++)
+    {
+        PageTableEntry PML4Entry = NewPML4[PML4Index];
+        if (!PML4Entry.fields.present)
+        {
+            continue;
+        }
+
+        PageTableEntry* NewPDPT = (PageTableEntry*) (PML4Entry.value & PHYS_PAGE_ADDR_MASK);
+        if (NewPDPT == NULL)
+        {
+            continue;
+        }
+
+        for (UINTN PDPTIndex = 0; PDPTIndex < 512; PDPTIndex++)
+        {
+            PageTableEntry PDPTEntry = NewPDPT[PDPTIndex];
+            if (!PDPTEntry.fields.present || PDPTEntry.fields.size)
+            {
+                continue;
+            }
+
+            PageTableEntry* NewPD = (PageTableEntry*) (PDPTEntry.value & PHYS_PAGE_ADDR_MASK);
+            if (NewPD == NULL)
+            {
+                continue;
+            }
+
+            for (UINTN PDIndex = 0; PDIndex < 512; PDIndex++)
+            {
+                PageTableEntry PDEntry = NewPD[PDIndex];
+                if (!PDEntry.fields.present || PDEntry.fields.size)
+                {
+                    continue;
+                }
+
+                PageTableEntry* NewPT = (PageTableEntry*) (PDEntry.value & PHYS_PAGE_ADDR_MASK);
+                if (NewPT != NULL)
+                {
+                    PMM.FreePagesFromDescriptor(NewPT, 1);
+                }
+            }
+
+            PMM.FreePagesFromDescriptor(NewPD, 1);
+        }
+
+        PMM.FreePagesFromDescriptor(NewPDPT, 1);
+    }
+
+    PMM.FreePagesFromDescriptor(NewPML4, 1);
+}
+}
+
 /**
  * Function: VirtualMemoryManager::VirtualMemoryManager
  * Description: Initializes the virtual memory manager with the active PML4 table and physical memory manager.
@@ -341,6 +403,11 @@ PageTableEntry* VirtualMemoryManager::CopyPageMapL4Table()
     PageTableEntry* NewPML4 = (PageTableEntry*) NewPML4Addr;
     kmemset(NewPML4, 0, PAGE_SIZE);
 
+    auto FailCopy = [&]() -> PageTableEntry* {
+        FreeClonedUserPagingHierarchy(NewPML4, PMM);
+        return NULL;
+    };
+
     for (UINTN PML4Index = 0; PML4Index < 512; PML4Index++)
     {
         PageTableEntry PML4Entry = PageMapL4Table[PML4Index];
@@ -358,7 +425,7 @@ PageTableEntry* VirtualMemoryManager::CopyPageMapL4Table()
         void* NewPDPTAddr = PMM.AllocatePagesFromDescriptor(1);
         if (NewPDPTAddr == NULL)
         {
-            return NULL;
+            return FailCopy();
         }
 
         kmemset(NewPDPTAddr, 0, PAGE_SIZE);
@@ -366,7 +433,7 @@ PageTableEntry* VirtualMemoryManager::CopyPageMapL4Table()
         UINTN OldPDPTAddr       = (UINTN) (PML4Entry.value & PHYS_PAGE_ADDR_MASK);
         if ((OldPDPTAddr & 0xFFFF000000000000ULL) != 0)
         {
-            return NULL;
+            return FailCopy();
         }
 
         PageTableEntry* OldPDPT = (PageTableEntry*) OldPDPTAddr;
@@ -389,7 +456,7 @@ PageTableEntry* VirtualMemoryManager::CopyPageMapL4Table()
             void* NewPDAddr = PMM.AllocatePagesFromDescriptor(1);
             if (NewPDAddr == NULL)
             {
-                return NULL;
+                return FailCopy();
             }
 
             kmemset(NewPDAddr, 0, PAGE_SIZE);
@@ -397,7 +464,7 @@ PageTableEntry* VirtualMemoryManager::CopyPageMapL4Table()
             UINTN OldPDAddr       = (UINTN) (PDPTEntry.value & PHYS_PAGE_ADDR_MASK);
             if ((OldPDAddr & 0xFFFF000000000000ULL) != 0)
             {
-                return NULL;
+                return FailCopy();
             }
 
             PageTableEntry* OldPD = (PageTableEntry*) OldPDAddr;
@@ -420,7 +487,7 @@ PageTableEntry* VirtualMemoryManager::CopyPageMapL4Table()
                 void* NewPTAddr = PMM.AllocatePagesFromDescriptor(1);
                 if (NewPTAddr == NULL)
                 {
-                    return NULL;
+                    return FailCopy();
                 }
 
                 kmemset(NewPTAddr, 0, PAGE_SIZE);
@@ -428,7 +495,7 @@ PageTableEntry* VirtualMemoryManager::CopyPageMapL4Table()
                 UINTN OldPTAddr       = (UINTN) (PDEntry.value & PHYS_PAGE_ADDR_MASK);
                 if ((OldPTAddr & 0xFFFF000000000000ULL) != 0)
                 {
-                    return NULL;
+                    return FailCopy();
                 }
 
                 PageTableEntry* OldPT = (PageTableEntry*) OldPTAddr;

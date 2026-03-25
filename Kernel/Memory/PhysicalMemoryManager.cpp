@@ -10,7 +10,7 @@
 
 namespace
 {
-constexpr uint64_t PMM_BUDDY_PHYSICAL_LIMIT = 0x40000000ULL;
+constexpr uint64_t PMM_BUDDY_PHYSICAL_LIMIT = 0xC0000000ULL;
 }
 
 /**
