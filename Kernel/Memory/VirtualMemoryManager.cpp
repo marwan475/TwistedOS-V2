@@ -156,9 +156,19 @@ bool VirtualMemoryManager::ProtectPage(UINTN VirtualAddr, bool UserAccess, bool 
         return false;
     }
 
+    if (PDPTEntry.fields.size)
+    {
+        return false;
+    }
+
     PageTableEntry* PageDirectoryTable = (PageTableEntry*) (PDPTEntry.value & PHYS_PAGE_ADDR_MASK);
     PageTableEntry  PDTEntry           = PageDirectoryTable[PageDirectoryTableIndex];
     if (!PDTEntry.fields.present)
+    {
+        return false;
+    }
+
+    if (PDTEntry.fields.size)
     {
         return false;
     }
@@ -194,27 +204,43 @@ UINTN VirtualMemoryManager::MapRange(UINTN PhysicalAddr, UINTN VirtualAddr, UINT
 {
     UINTN RangeStartPhysical = PhysicalAddr & PHYS_PAGE_ADDR_MASK;
     UINTN RangeStartVirtual  = VirtualAddr & PHYS_PAGE_ADDR_MASK;
+    UINTN CurrentPhysical    = RangeStartPhysical;
+    UINTN CurrentVirtual     = RangeStartVirtual;
 
     for (UINTN i = 0; i < Pages; i++)
     {
-        UINTN Offset = i * PAGE_SIZE;
-        MapPage(RangeStartPhysical + Offset, RangeStartVirtual + Offset, Flags);
+        MapPage(CurrentPhysical, CurrentVirtual, Flags);
+
+        if (CurrentPhysical > (UINT64_MAX - PAGE_SIZE) || CurrentVirtual > (UINT64_MAX - PAGE_SIZE))
+        {
+            return CurrentVirtual;
+        }
+
+        CurrentPhysical += PAGE_SIZE;
+        CurrentVirtual += PAGE_SIZE;
     }
 
-    return RangeStartVirtual + (Pages * PAGE_SIZE);
+    return CurrentVirtual;
 }
 
 UINTN VirtualMemoryManager::ProtectRange(UINTN VirtualAddr, UINTN Pages, bool UserAccess, bool Writeable, bool Executable)
 {
     UINTN RangeStartVirtual = VirtualAddr & PHYS_PAGE_ADDR_MASK;
+    UINTN CurrentVirtual    = RangeStartVirtual;
 
     for (UINTN i = 0; i < Pages; i++)
     {
-        UINTN Offset = i * PAGE_SIZE;
-        ProtectPage(RangeStartVirtual + Offset, UserAccess, Writeable, Executable);
+        ProtectPage(CurrentVirtual, UserAccess, Writeable, Executable);
+
+        if (CurrentVirtual > (UINT64_MAX - PAGE_SIZE))
+        {
+            return CurrentVirtual;
+        }
+
+        CurrentVirtual += PAGE_SIZE;
     }
 
-    return RangeStartVirtual + (Pages * PAGE_SIZE);
+    return CurrentVirtual;
 }
 
 /**
@@ -246,10 +272,16 @@ bool VirtualMemoryManager::UnmapPage(UINTN VirtualAddr)
     if (!PDPTEntry.fields.present)
         return false;
 
+    if (PDPTEntry.fields.size)
+        return false;
+
     PageTableEntry* PageDirectoryTable = (PageTableEntry*) (PDPTEntry.value & PHYS_PAGE_ADDR_MASK);
     PageTableEntry  PDTEntry           = PageDirectoryTable[PageDirectoryTableIndex];
 
     if (!PDTEntry.fields.present)
+        return false;
+
+    if (PDTEntry.fields.size)
         return false;
 
     PageTableEntry* PageTable = (PageTableEntry*) (PDTEntry.value & PHYS_PAGE_ADDR_MASK);
@@ -273,14 +305,21 @@ bool VirtualMemoryManager::UnmapPage(UINTN VirtualAddr)
 UINTN VirtualMemoryManager::UnmapRange(UINTN VirtualAddr, UINTN Pages)
 {
     UINTN RangeStartVirtual = VirtualAddr & PHYS_PAGE_ADDR_MASK;
+    UINTN CurrentVirtual    = RangeStartVirtual;
 
     for (UINTN i = 0; i < Pages; i++)
     {
-        UINTN Offset = i * PAGE_SIZE;
-        UnmapPage(RangeStartVirtual + Offset);
+        UnmapPage(CurrentVirtual);
+
+        if (CurrentVirtual > (UINT64_MAX - PAGE_SIZE))
+        {
+            return CurrentVirtual;
+        }
+
+        CurrentVirtual += PAGE_SIZE;
     }
 
-    return RangeStartVirtual + (Pages * PAGE_SIZE);
+    return CurrentVirtual;
 }
 
 /**
@@ -310,6 +349,12 @@ PageTableEntry* VirtualMemoryManager::CopyPageMapL4Table()
             continue;
         }
 
+        if (PML4Index >= 256)
+        {
+            NewPML4[PML4Index] = PML4Entry;
+            continue;
+        }
+
         void* NewPDPTAddr = PMM.AllocatePagesFromDescriptor(1);
         if (NewPDPTAddr == NULL)
         {
@@ -318,7 +363,13 @@ PageTableEntry* VirtualMemoryManager::CopyPageMapL4Table()
 
         kmemset(NewPDPTAddr, 0, PAGE_SIZE);
 
-        PageTableEntry* OldPDPT = (PageTableEntry*) (PML4Entry.value & PHYS_PAGE_ADDR_MASK);
+        UINTN OldPDPTAddr       = (UINTN) (PML4Entry.value & PHYS_PAGE_ADDR_MASK);
+        if ((OldPDPTAddr & 0xFFFF000000000000ULL) != 0)
+        {
+            return NULL;
+        }
+
+        PageTableEntry* OldPDPT = (PageTableEntry*) OldPDPTAddr;
         PageTableEntry* NewPDPT = (PageTableEntry*) NewPDPTAddr;
 
         for (UINTN PDPTIndex = 0; PDPTIndex < 512; PDPTIndex++)
@@ -326,6 +377,12 @@ PageTableEntry* VirtualMemoryManager::CopyPageMapL4Table()
             PageTableEntry PDPTEntry = OldPDPT[PDPTIndex];
             if (!PDPTEntry.fields.present)
             {
+                continue;
+            }
+
+            if (PDPTEntry.fields.size)
+            {
+                NewPDPT[PDPTIndex] = PDPTEntry;
                 continue;
             }
 
@@ -337,7 +394,13 @@ PageTableEntry* VirtualMemoryManager::CopyPageMapL4Table()
 
             kmemset(NewPDAddr, 0, PAGE_SIZE);
 
-            PageTableEntry* OldPD = (PageTableEntry*) (PDPTEntry.value & PHYS_PAGE_ADDR_MASK);
+            UINTN OldPDAddr       = (UINTN) (PDPTEntry.value & PHYS_PAGE_ADDR_MASK);
+            if ((OldPDAddr & 0xFFFF000000000000ULL) != 0)
+            {
+                return NULL;
+            }
+
+            PageTableEntry* OldPD = (PageTableEntry*) OldPDAddr;
             PageTableEntry* NewPD = (PageTableEntry*) NewPDAddr;
 
             for (UINTN PDIndex = 0; PDIndex < 512; PDIndex++)
@@ -345,6 +408,12 @@ PageTableEntry* VirtualMemoryManager::CopyPageMapL4Table()
                 PageTableEntry PDEntry = OldPD[PDIndex];
                 if (!PDEntry.fields.present)
                 {
+                    continue;
+                }
+
+                if (PDEntry.fields.size)
+                {
+                    NewPD[PDIndex] = PDEntry;
                     continue;
                 }
 
@@ -356,7 +425,13 @@ PageTableEntry* VirtualMemoryManager::CopyPageMapL4Table()
 
                 kmemset(NewPTAddr, 0, PAGE_SIZE);
 
-                PageTableEntry* OldPT = (PageTableEntry*) (PDEntry.value & PHYS_PAGE_ADDR_MASK);
+                UINTN OldPTAddr       = (UINTN) (PDEntry.value & PHYS_PAGE_ADDR_MASK);
+                if ((OldPTAddr & 0xFFFF000000000000ULL) != 0)
+                {
+                    return NULL;
+                }
+
+                PageTableEntry* OldPT = (PageTableEntry*) OldPTAddr;
                 PageTableEntry* NewPT = (PageTableEntry*) NewPTAddr;
 
                 for (UINTN PTIndex = 0; PTIndex < 512; PTIndex++)

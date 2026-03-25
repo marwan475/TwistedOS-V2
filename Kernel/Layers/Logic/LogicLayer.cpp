@@ -436,21 +436,22 @@ bool AppendELFLoadSegmentsToAddressSpace(ResourceLayer* Resource, ELFManager* EL
     return true;
 }
 
-void RetainRunningExecutable(Process* TargetProcess, Dentry* ExecutableEntry)
+void RetainRunningExecutable(Process* TargetProcess, INode* ExecutableNode)
 {
     if (TargetProcess == nullptr)
     {
         return;
     }
 
-    TargetProcess->RunningExecutableDentry = ExecutableEntry;
+    TargetProcess->RunningExecutableDentry = nullptr;
+    TargetProcess->RunningExecutableINode  = ExecutableNode;
 
-    if (ExecutableEntry == nullptr || ExecutableEntry->inode == nullptr || !ExecutableEntry->inode->IsLazyLoad)
+    if (ExecutableNode == nullptr || !ExecutableNode->IsLazyLoad)
     {
         return;
     }
 
-    ++ExecutableEntry->inode->LazyLoadRefCount;
+    ++ExecutableNode->LazyLoadRefCount;
 }
 
 void ReleaseRunningExecutable(ResourceLayer* Resource, Process* TargetProcess)
@@ -460,30 +461,30 @@ void ReleaseRunningExecutable(ResourceLayer* Resource, Process* TargetProcess)
         return;
     }
 
-    Dentry* ExecutableEntry                = TargetProcess->RunningExecutableDentry;
+    INode* ExecutableNode                  = TargetProcess->RunningExecutableINode;
     TargetProcess->RunningExecutableDentry = nullptr;
+    TargetProcess->RunningExecutableINode  = nullptr;
 
-    if (ExecutableEntry == nullptr || ExecutableEntry->inode == nullptr || !ExecutableEntry->inode->IsLazyLoad)
+    if (ExecutableNode == nullptr || !ExecutableNode->IsLazyLoad)
     {
         return;
     }
 
-    INode* Node = ExecutableEntry->inode;
-    if (Node->LazyLoadRefCount > 0)
+    if (ExecutableNode->LazyLoadRefCount > 0)
     {
-        --Node->LazyLoadRefCount;
+        --ExecutableNode->LazyLoadRefCount;
     }
 
-    if (Node->LazyLoadRefCount == 0 && Node->NodeData != nullptr && Node->LazyDataBackedByPMM)
+    if (ExecutableNode->LazyLoadRefCount == 0 && ExecutableNode->NodeData != nullptr && ExecutableNode->LazyDataBackedByPMM)
     {
-        if (Resource != nullptr && Resource->GetPMM() != nullptr && Node->LazyDataPageCount != 0)
+        if (Resource != nullptr && Resource->GetPMM() != nullptr && ExecutableNode->LazyDataPageCount != 0)
         {
-            Resource->GetPMM()->FreePagesFromDescriptor(Node->NodeData, Node->LazyDataPageCount);
+            Resource->GetPMM()->FreePagesFromDescriptor(ExecutableNode->NodeData, ExecutableNode->LazyDataPageCount);
         }
 
-        Node->NodeData            = nullptr;
-        Node->LazyDataBackedByPMM = false;
-        Node->LazyDataPageCount   = 0;
+        ExecutableNode->NodeData            = nullptr;
+        ExecutableNode->LazyDataBackedByPMM = false;
+        ExecutableNode->LazyDataPageCount   = 0;
     }
 }
 
@@ -1291,7 +1292,7 @@ void FreePageTableHierarchy(PhysicalMemoryManager* PMM, uint64_t PageMapL4TableA
 
     PageTableEntry* PML4 = reinterpret_cast<PageTableEntry*>(PageMapL4TableAddr);
 
-    for (uint64_t PML4Index = 0; PML4Index < 512; ++PML4Index)
+    for (uint64_t PML4Index = 0; PML4Index < 256; ++PML4Index)
     {
         PageTableEntry PML4Entry = PML4[PML4Index];
         if (!PML4Entry.fields.present)
@@ -1313,6 +1314,11 @@ void FreePageTableHierarchy(PhysicalMemoryManager* PMM, uint64_t PageMapL4TableA
                 continue;
             }
 
+            if (PDPTEntry.fields.size)
+            {
+                continue;
+            }
+
             PageTableEntry* PD = reinterpret_cast<PageTableEntry*>(PDPTEntry.value & PHYS_PAGE_ADDR_MASK);
             if (PD == nullptr)
             {
@@ -1323,6 +1329,11 @@ void FreePageTableHierarchy(PhysicalMemoryManager* PMM, uint64_t PageMapL4TableA
             {
                 PageTableEntry PDEntry = PD[PDIndex];
                 if (!PDEntry.fields.present)
+                {
+                    continue;
+                }
+
+                if (PDEntry.fields.size)
                 {
                     continue;
                 }
@@ -2509,10 +2520,11 @@ uint8_t LogicLayer::ChangeProcessExecution(uint8_t Id, const char* FilePath, con
         delete OldAddressSpace;
     }
 
-    if (TargetProcess->RunningExecutableDentry != Entry)
+    INode* NewExecutableINode = (Entry != nullptr) ? Entry->inode : nullptr;
+    if (TargetProcess->RunningExecutableINode != NewExecutableINode)
     {
         ReleaseRunningExecutable(Resource, TargetProcess);
-        RetainRunningExecutable(TargetProcess, Entry);
+        RetainRunningExecutable(TargetProcess, NewExecutableINode);
     }
 
 #ifdef DEBUG_BUILD
@@ -2666,7 +2678,12 @@ uint8_t LogicLayer::CopyProcess(uint8_t Id)
         ChildProcess->ResourceLimitMaximum[ResourceLimitIndex] = SourceProcess->ResourceLimitMaximum[ResourceLimitIndex];
     }
     ChildProcess->CurrentFileSystemLocation = SourceProcess->CurrentFileSystemLocation;
-    RetainRunningExecutable(ChildProcess, SourceProcess->RunningExecutableDentry);
+    if (SourceProcess->RunningExecutableINode != nullptr)
+    {
+        ++SourceProcess->RunningExecutableINode->LazyLoadRefCount;
+    }
+    ChildProcess->RunningExecutableDentry = nullptr;
+    ChildProcess->RunningExecutableINode  = SourceProcess->RunningExecutableINode;
 
     if (!CloneAnonymousProcessMappings(Resource, SourceProcess, ChildProcess))
     {
@@ -2765,7 +2782,7 @@ uint8_t LogicLayer::CreateUserProcessFromVFS(const char* FilePath)
     if (CreatedProcess != nullptr)
     {
         CreatedProcess->CurrentFileSystemLocation = (Entry->parent != nullptr) ? Entry->parent : Entry;
-        RetainRunningExecutable(CreatedProcess, Entry);
+        RetainRunningExecutable(CreatedProcess, (Entry != nullptr) ? Entry->inode : nullptr);
     }
 
     return ProcessId;
@@ -2819,7 +2836,7 @@ uint8_t LogicLayer::CreateInitProcess()
     if (CreatedProcess != nullptr)
     {
         CreatedProcess->CurrentFileSystemLocation = (Entry->parent != nullptr) ? Entry->parent : Entry;
-        RetainRunningExecutable(CreatedProcess, Entry);
+        RetainRunningExecutable(CreatedProcess, (Entry != nullptr) ? Entry->inode : nullptr);
         SeedInitialUserFSBaseForProcess(Resource, CreatedProcess);
     }
 
