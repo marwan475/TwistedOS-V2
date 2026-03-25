@@ -219,6 +219,134 @@ bool LocalCStringEquals(const char* Left, const char* Right)
     }
 }
 
+bool IsLikelyPageTableAddress(uint64_t Address)
+{
+    if (Address == 0)
+    {
+        return false;
+    }
+
+    if ((Address & (PAGE_SIZE - 1)) != 0)
+    {
+        return false;
+    }
+
+    if ((Address & 0xFFFF000000000000ULL) != 0)
+    {
+        return false;
+    }
+
+    return true;
+}
+
+void DumpPageTableEntryVerbose(TTY* Terminal, const char* Label, uint16_t Index, PageTableEntry Entry)
+{
+    if (Terminal == nullptr)
+    {
+        return;
+    }
+
+    Terminal->Serialprintf(
+        "fork_mapelf_dbg: %s[%u]=%p addr=%p p=%u w=%u u=%u wt=%u cd=%u a=%u d=%u ps=%u g=%u nx=%u\n", Label, static_cast<unsigned int>(Index),
+        reinterpret_cast<void*>(Entry.value), reinterpret_cast<void*>(Entry.value & PHYS_PAGE_ADDR_MASK), static_cast<unsigned int>(Entry.fields.present),
+        static_cast<unsigned int>(Entry.fields.writeable), static_cast<unsigned int>(Entry.fields.user_access),
+        static_cast<unsigned int>(Entry.fields.write_through), static_cast<unsigned int>(Entry.fields.cache_disabled),
+        static_cast<unsigned int>(Entry.fields.accessed), static_cast<unsigned int>(Entry.fields.dirty), static_cast<unsigned int>(Entry.fields.size),
+        static_cast<unsigned int>(Entry.fields.global), static_cast<unsigned int>(Entry.fields.execution_disabled));
+}
+
+void DumpCopyPML4FailureContext(TTY* Terminal, const CopyPageMapL4DebugInfo& CopyDebugInfo)
+{
+    if (Terminal == nullptr)
+    {
+        return;
+    }
+
+    uint64_t SourcePML4Addr = X86ReadCR3() & PHYS_PAGE_ADDR_MASK;
+    Terminal->Serialprintf("fork_mapelf_dbg: source_cr3=%p source_pml4=%p\n", reinterpret_cast<void*>(X86ReadCR3()), reinterpret_cast<void*>(SourcePML4Addr));
+
+    if (!IsLikelyPageTableAddress(SourcePML4Addr))
+    {
+        Terminal->Serialprintf("fork_mapelf_dbg: source_pml4_invalid=%p\n", reinterpret_cast<void*>(SourcePML4Addr));
+        return;
+    }
+
+    PageTableEntry* SourcePML4 = reinterpret_cast<PageTableEntry*>(SourcePML4Addr);
+
+    for (uint16_t PML4Index = 0; PML4Index < 16; ++PML4Index)
+    {
+        DumpPageTableEntryVerbose(Terminal, "src_pml4", PML4Index, SourcePML4[PML4Index]);
+    }
+
+    if (CopyDebugInfo.PML4Index == 0xFFFF)
+    {
+        return;
+    }
+
+    PageTableEntry TargetPML4Entry = SourcePML4[CopyDebugInfo.PML4Index];
+    DumpPageTableEntryVerbose(Terminal, "src_pml4_target", CopyDebugInfo.PML4Index, TargetPML4Entry);
+
+    uint64_t PDPTAddr = TargetPML4Entry.value & PHYS_PAGE_ADDR_MASK;
+    if (!TargetPML4Entry.fields.present || !IsLikelyPageTableAddress(PDPTAddr))
+    {
+        Terminal->Serialprintf("fork_mapelf_dbg: src_pdpt_unavailable pml4=%u addr=%p present=%u\n", static_cast<unsigned int>(CopyDebugInfo.PML4Index),
+                             reinterpret_cast<void*>(PDPTAddr), static_cast<unsigned int>(TargetPML4Entry.fields.present));
+        return;
+    }
+
+    PageTableEntry* SourcePDPT = reinterpret_cast<PageTableEntry*>(PDPTAddr);
+    for (uint16_t PDPTIndex = 0; PDPTIndex < 32; ++PDPTIndex)
+    {
+        DumpPageTableEntryVerbose(Terminal, "src_pdpt", PDPTIndex, SourcePDPT[PDPTIndex]);
+    }
+
+    if (CopyDebugInfo.PDPTIndex == 0xFFFF)
+    {
+        return;
+    }
+
+    PageTableEntry TargetPDPTEntry = SourcePDPT[CopyDebugInfo.PDPTIndex];
+    DumpPageTableEntryVerbose(Terminal, "src_pdpt_target", CopyDebugInfo.PDPTIndex, TargetPDPTEntry);
+
+    uint64_t PDAddr = TargetPDPTEntry.value & PHYS_PAGE_ADDR_MASK;
+    if (!TargetPDPTEntry.fields.present || TargetPDPTEntry.fields.size || !IsLikelyPageTableAddress(PDAddr))
+    {
+        Terminal->Serialprintf("fork_mapelf_dbg: src_pd_unavailable pdpt=%u addr=%p present=%u size=%u\n", static_cast<unsigned int>(CopyDebugInfo.PDPTIndex),
+                             reinterpret_cast<void*>(PDAddr), static_cast<unsigned int>(TargetPDPTEntry.fields.present),
+                             static_cast<unsigned int>(TargetPDPTEntry.fields.size));
+        return;
+    }
+
+    PageTableEntry* SourcePD = reinterpret_cast<PageTableEntry*>(PDAddr);
+    for (uint16_t PDIndex = 0; PDIndex < 64; ++PDIndex)
+    {
+        DumpPageTableEntryVerbose(Terminal, "src_pd", PDIndex, SourcePD[PDIndex]);
+    }
+
+    if (CopyDebugInfo.PDIndex == 0xFFFF)
+    {
+        return;
+    }
+
+    PageTableEntry TargetPDEntry = SourcePD[CopyDebugInfo.PDIndex];
+    DumpPageTableEntryVerbose(Terminal, "src_pd_target", CopyDebugInfo.PDIndex, TargetPDEntry);
+
+    uint64_t PTAddr = TargetPDEntry.value & PHYS_PAGE_ADDR_MASK;
+    if (!TargetPDEntry.fields.present || TargetPDEntry.fields.size || !IsLikelyPageTableAddress(PTAddr))
+    {
+        Terminal->Serialprintf("fork_mapelf_dbg: src_pt_unavailable pd=%u addr=%p present=%u size=%u\n", static_cast<unsigned int>(CopyDebugInfo.PDIndex),
+                             reinterpret_cast<void*>(PTAddr), static_cast<unsigned int>(TargetPDEntry.fields.present),
+                             static_cast<unsigned int>(TargetPDEntry.fields.size));
+        return;
+    }
+
+    PageTableEntry* SourcePT = reinterpret_cast<PageTableEntry*>(PTAddr);
+    for (uint16_t PTIndex = 0; PTIndex < 64; ++PTIndex)
+    {
+        DumpPageTableEntryVerbose(Terminal, "src_pt", PTIndex, SourcePT[PTIndex]);
+    }
+}
+
 bool EnsureLazyLoadedINodeData(ResourceLayer* Resource, INode* Node)
 {
     if (Node == nullptr)
@@ -3488,6 +3616,10 @@ VirtualAddressSpace* LogicLayer::MapELF(uint64_t CodeAddr, uint64_t CodeSize, co
                 static_cast<unsigned int>(MutationDebugInfo.PML4Index), static_cast<unsigned int>(MutationDebugInfo.PDPTIndex),
                 static_cast<unsigned int>(MutationDebugInfo.PDIndex), static_cast<unsigned int>(MutationDebugInfo.PTIndex),
                 reinterpret_cast<void*>(MutationDebugInfo.EntryValue), reinterpret_cast<void*>(MutationDebugInfo.DerivedAddress));
+
+                MapELFDebugTTY->Serialprintf("fork_mapelf_dbg: verbose_dump_begin\n");
+                DumpCopyPML4FailureContext(MapELFDebugTTY, CopyDebugInfo);
+                MapELFDebugTTY->Serialprintf("fork_mapelf_dbg: verbose_dump_end\n");
         }
 #endif
         return FailMapELFAddressSpace(0);

@@ -176,6 +176,12 @@ bool VirtualMemoryManager::MapPage(UINTN PhysicalAddr, UINTN VirtualAddr, const 
         PageDirectoryPointerTable[PageDirectoryPointerTableIndex] = PDPTEntry;
     }
 
+    if (PDPTEntry.fields.size)
+    {
+        RecordMutation(PAGE_TABLE_MUTATION_PDPT_LARGE_PAGE_CONFLICT, PDPTEntry.value, PDPTEntry.value & PHYS_PAGE_ADDR_MASK);
+        return false;
+    }
+
     PageTableEntry* PageDirectoryTable = (PageTableEntry*) (PDPTEntry.value & PHYS_PAGE_ADDR_MASK);
     PageTableEntry  PDTEntry           = PageDirectoryTable[PageDirectoryTableIndex];
 
@@ -204,7 +210,13 @@ bool VirtualMemoryManager::MapPage(UINTN PhysicalAddr, UINTN VirtualAddr, const 
         PageDirectoryTable[PageDirectoryTableIndex] = PDTEntry;
     }
 
-    if (TrackSuspiciousSlot && !PDTEntry.fields.size)
+    if (PDTEntry.fields.size)
+    {
+        RecordMutation(PAGE_TABLE_MUTATION_PD_LARGE_PAGE_CONFLICT, PDTEntry.value, PDTEntry.value & PHYS_PAGE_ADDR_MASK);
+        return false;
+    }
+
+    if (TrackSuspiciousSlot)
     {
         uint64_t ExistingPTAddr = static_cast<uint64_t>(PDTEntry.value & PHYS_PAGE_ADDR_MASK);
         if ((ExistingPTAddr & 0xFFFF000000000000ULL) != 0)
@@ -441,6 +453,25 @@ PageTableEntry* VirtualMemoryManager::CopyPageMapL4Table()
         LastCopyPageMapL4DebugInfo.AllocationAttempts = AllocationAttempts;
     };
 
+    auto IsValidTablePhysicalAddress = [&](UINTN Address) -> bool {
+        if (Address == 0)
+        {
+            return false;
+        }
+
+        if ((Address & (PAGE_SIZE - 1)) != 0)
+        {
+            return false;
+        }
+
+        if ((Address & 0xFFFF000000000000ULL) != 0)
+        {
+            return false;
+        }
+
+        return Address < 0xC0000000ULL;
+    };
+
     ++AllocationAttempts;
     void* NewPML4Addr = PMM.AllocatePagesFromDescriptor(1);
     if (NewPML4Addr == NULL)
@@ -482,7 +513,7 @@ PageTableEntry* VirtualMemoryManager::CopyPageMapL4Table()
         kmemset(NewPDPTAddr, 0, PAGE_SIZE);
 
         UINTN OldPDPTAddr       = (UINTN) (PML4Entry.value & PHYS_PAGE_ADDR_MASK);
-        if ((OldPDPTAddr & 0xFFFF000000000000ULL) != 0)
+        if (!IsValidTablePhysicalAddress(OldPDPTAddr))
         {
             RecordFailure(COPY_PML4_FAIL_INVALID_OLD_PDPT, static_cast<uint16_t>(PML4Index), 0xFFFF, 0xFFFF, PML4Entry.value, OldPDPTAddr);
             return FailCopy();
@@ -505,6 +536,19 @@ PageTableEntry* VirtualMemoryManager::CopyPageMapL4Table()
                 continue;
             }
 
+            UINTN OldPDAddr       = (UINTN) (PDPTEntry.value & PHYS_PAGE_ADDR_MASK);
+            if (!IsValidTablePhysicalAddress(OldPDAddr))
+            {
+                if (!PDPTEntry.fields.user_access)
+                {
+                    NewPDPT[PDPTIndex] = PDPTEntry;
+                    continue;
+                }
+
+                RecordFailure(COPY_PML4_FAIL_INVALID_OLD_PD, static_cast<uint16_t>(PML4Index), static_cast<uint16_t>(PDPTIndex), 0xFFFF, PDPTEntry.value, OldPDAddr);
+                return FailCopy();
+            }
+
             ++AllocationAttempts;
             void* NewPDAddr = PMM.AllocatePagesFromDescriptor(1);
             if (NewPDAddr == NULL)
@@ -514,13 +558,6 @@ PageTableEntry* VirtualMemoryManager::CopyPageMapL4Table()
             }
 
             kmemset(NewPDAddr, 0, PAGE_SIZE);
-
-            UINTN OldPDAddr       = (UINTN) (PDPTEntry.value & PHYS_PAGE_ADDR_MASK);
-            if ((OldPDAddr & 0xFFFF000000000000ULL) != 0)
-            {
-                RecordFailure(COPY_PML4_FAIL_INVALID_OLD_PD, static_cast<uint16_t>(PML4Index), static_cast<uint16_t>(PDPTIndex), 0xFFFF, PDPTEntry.value, OldPDAddr);
-                return FailCopy();
-            }
 
             PageTableEntry* OldPD = (PageTableEntry*) OldPDAddr;
             PageTableEntry* NewPD = (PageTableEntry*) NewPDAddr;
@@ -539,6 +576,20 @@ PageTableEntry* VirtualMemoryManager::CopyPageMapL4Table()
                     continue;
                 }
 
+                UINTN OldPTAddr       = (UINTN) (PDEntry.value & PHYS_PAGE_ADDR_MASK);
+                if (!IsValidTablePhysicalAddress(OldPTAddr))
+                {
+                    if (!PDEntry.fields.user_access)
+                    {
+                        NewPD[PDIndex] = PDEntry;
+                        continue;
+                    }
+
+                    RecordFailure(COPY_PML4_FAIL_INVALID_OLD_PT, static_cast<uint16_t>(PML4Index), static_cast<uint16_t>(PDPTIndex), static_cast<uint16_t>(PDIndex),
+                                  PDEntry.value, OldPTAddr);
+                    return FailCopy();
+                }
+
                 ++AllocationAttempts;
                 void* NewPTAddr = PMM.AllocatePagesFromDescriptor(1);
                 if (NewPTAddr == NULL)
@@ -549,14 +600,6 @@ PageTableEntry* VirtualMemoryManager::CopyPageMapL4Table()
                 }
 
                 kmemset(NewPTAddr, 0, PAGE_SIZE);
-
-                UINTN OldPTAddr       = (UINTN) (PDEntry.value & PHYS_PAGE_ADDR_MASK);
-                if ((OldPTAddr & 0xFFFF000000000000ULL) != 0)
-                {
-                    RecordFailure(COPY_PML4_FAIL_INVALID_OLD_PT, static_cast<uint16_t>(PML4Index), static_cast<uint16_t>(PDPTIndex), static_cast<uint16_t>(PDIndex),
-                                  PDEntry.value, OldPTAddr);
-                    return FailCopy();
-                }
 
                 PageTableEntry* OldPT = (PageTableEntry*) OldPTAddr;
                 PageTableEntry* NewPT = (PageTableEntry*) NewPTAddr;
