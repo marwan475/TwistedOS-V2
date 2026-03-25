@@ -473,6 +473,7 @@ PageTableEntry* VirtualMemoryManager::CopyPageMapL4Table()
     };
 
     constexpr UINTN TABLE_ADDRESS_SOFTWARE_BITS_MASK = 0x000FF00000000000ULL;
+    constexpr UINTN TABLE_ENTRY_FLAG_MASK            = ~PHYS_PAGE_ADDR_MASK & ~TABLE_ADDRESS_SOFTWARE_BITS_MASK;
 
     auto NormalizeTablePhysicalAddress = [&](UINTN Address) -> UINTN {
         if (IsValidTablePhysicalAddress(Address))
@@ -558,7 +559,7 @@ PageTableEntry* VirtualMemoryManager::CopyPageMapL4Table()
             OldPDAddr       = NormalizeTablePhysicalAddress(OldPDAddr);
             if (OldPDAddr == 0)
             {
-                NewPDPT[PDPTIndex] = PDPTEntry;
+                NewPDPT[PDPTIndex].value = 0;
                 continue;
             }
 
@@ -593,7 +594,7 @@ PageTableEntry* VirtualMemoryManager::CopyPageMapL4Table()
                 OldPTAddr       = NormalizeTablePhysicalAddress(OldPTAddr);
                 if (OldPTAddr == 0)
                 {
-                    NewPD[PDIndex] = PDEntry;
+                    NewPD[PDIndex].value = 0;
                     continue;
                 }
 
@@ -617,17 +618,17 @@ PageTableEntry* VirtualMemoryManager::CopyPageMapL4Table()
                 }
 
                 PageTableEntry NewPDEntry = PDEntry;
-                NewPDEntry.value          = ((UINTN) NewPTAddr & PHYS_PAGE_ADDR_MASK) | (PDEntry.value & ~PHYS_PAGE_ADDR_MASK);
+                NewPDEntry.value          = ((UINTN) NewPTAddr & PHYS_PAGE_ADDR_MASK) | (PDEntry.value & TABLE_ENTRY_FLAG_MASK);
                 NewPD[PDIndex]            = NewPDEntry;
             }
 
             PageTableEntry NewPDPTEntry = PDPTEntry;
-            NewPDPTEntry.value          = ((UINTN) NewPDAddr & PHYS_PAGE_ADDR_MASK) | (PDPTEntry.value & ~PHYS_PAGE_ADDR_MASK);
+            NewPDPTEntry.value          = ((UINTN) NewPDAddr & PHYS_PAGE_ADDR_MASK) | (PDPTEntry.value & TABLE_ENTRY_FLAG_MASK);
             NewPDPT[PDPTIndex]          = NewPDPTEntry;
         }
 
         PageTableEntry NewPML4Entry = PML4Entry;
-        NewPML4Entry.value          = ((UINTN) NewPDPTAddr & PHYS_PAGE_ADDR_MASK) | (PML4Entry.value & ~PHYS_PAGE_ADDR_MASK);
+        NewPML4Entry.value          = ((UINTN) NewPDPTAddr & PHYS_PAGE_ADDR_MASK) | (PML4Entry.value & TABLE_ENTRY_FLAG_MASK);
         NewPML4[PML4Index]          = NewPML4Entry;
     }
 

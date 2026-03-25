@@ -179,6 +179,44 @@ uint64_t AlignDownToPage(uint64_t Value)
     return Value & ~(static_cast<uint64_t>(PAGE_SIZE) - 1);
 }
 
+bool IsValidTablePhysicalAddress(uint64_t Address)
+{
+    if (Address == 0)
+    {
+        return false;
+    }
+
+    if ((Address & (PAGE_SIZE - 1)) != 0)
+    {
+        return false;
+    }
+
+    if ((Address & 0xFFFF000000000000ULL) != 0)
+    {
+        return false;
+    }
+
+    return Address < 0xC0000000ULL;
+}
+
+uint64_t NormalizeTablePhysicalAddress(uint64_t Address)
+{
+    constexpr uint64_t TABLE_ADDRESS_SOFTWARE_BITS_MASK = 0x000FF00000000000ULL;
+
+    if (IsValidTablePhysicalAddress(Address))
+    {
+        return Address;
+    }
+
+    uint64_t SanitizedAddress = Address & ~TABLE_ADDRESS_SOFTWARE_BITS_MASK;
+    if (IsValidTablePhysicalAddress(SanitizedAddress))
+    {
+        return SanitizedAddress;
+    }
+
+    return 0;
+}
+
 uint64_t LocalCStringLength(const char* String)
 {
     if (String == nullptr)
@@ -435,6 +473,30 @@ bool EnsureLazyLoadedINodeData(ResourceLayer* Resource, INode* Node)
     }
 #endif
 
+    return true;
+}
+
+bool CopyPhysicalBackedBuffer(ResourceLayer* Resource, void* Destination, const void* Source, uint64_t Size)
+{
+    if (Resource == nullptr || Destination == nullptr || Source == nullptr)
+    {
+        return false;
+    }
+
+    if (Size == 0)
+    {
+        return true;
+    }
+
+    uint64_t PreviousPageTable = Resource->ReadCurrentPageTable();
+    if (PreviousPageTable == 0)
+    {
+        return false;
+    }
+
+    Resource->LoadKernelPageTable();
+    memcpy(Destination, Source, static_cast<size_t>(Size));
+    Resource->LoadPageTable(PreviousPageTable);
     return true;
 }
 
@@ -1189,11 +1251,13 @@ bool IsUserAccessiblePageMapped(uint64_t PageMapL4TableAddr, uint64_t Address)
         return false;
     }
 
-    PageTableEntry* PDPT = reinterpret_cast<PageTableEntry*>(PML4Entry.value & PHYS_PAGE_ADDR_MASK);
-    if (PDPT == nullptr)
+    uint64_t PDPTAddress = NormalizeTablePhysicalAddress(PML4Entry.value & PHYS_PAGE_ADDR_MASK);
+    if (PDPTAddress == 0)
     {
         return false;
     }
+
+    PageTableEntry* PDPT = reinterpret_cast<PageTableEntry*>(PDPTAddress);
 
     PageTableEntry PDPTEntry = PDPT[Vaddr.fields.pdpt_index];
     if (!PDPTEntry.fields.present || !PDPTEntry.fields.user_access)
@@ -1201,11 +1265,13 @@ bool IsUserAccessiblePageMapped(uint64_t PageMapL4TableAddr, uint64_t Address)
         return false;
     }
 
-    PageTableEntry* PD = reinterpret_cast<PageTableEntry*>(PDPTEntry.value & PHYS_PAGE_ADDR_MASK);
-    if (PD == nullptr)
+    uint64_t PDAddress = NormalizeTablePhysicalAddress(PDPTEntry.value & PHYS_PAGE_ADDR_MASK);
+    if (PDAddress == 0)
     {
         return false;
     }
+
+    PageTableEntry* PD = reinterpret_cast<PageTableEntry*>(PDAddress);
 
     PageTableEntry PDEntry = PD[Vaddr.fields.pd_index];
     if (!PDEntry.fields.present || !PDEntry.fields.user_access)
@@ -1218,11 +1284,13 @@ bool IsUserAccessiblePageMapped(uint64_t PageMapL4TableAddr, uint64_t Address)
         return true;
     }
 
-    PageTableEntry* PT = reinterpret_cast<PageTableEntry*>(PDEntry.value & PHYS_PAGE_ADDR_MASK);
-    if (PT == nullptr)
+    uint64_t PTAddress = NormalizeTablePhysicalAddress(PDEntry.value & PHYS_PAGE_ADDR_MASK);
+    if (PTAddress == 0)
     {
         return false;
     }
+
+    PageTableEntry* PT = reinterpret_cast<PageTableEntry*>(PTAddress);
 
     PageTableEntry PTEntry = PT[Vaddr.fields.pt_index];
     if (!PTEntry.fields.present || !PTEntry.fields.user_access)
@@ -1340,7 +1408,12 @@ bool CloneAnonymousProcessMappings(ResourceLayer* Resource, const Process* Sourc
                 return false;
             }
 
-            memcpy(NewPages, reinterpret_cast<const void*>(SourceMapping.PhysicalAddressStart), static_cast<size_t>(PageCount * PAGE_SIZE));
+            if (!CopyPhysicalBackedBuffer(Resource, NewPages, reinterpret_cast<const void*>(SourceMapping.PhysicalAddressStart),
+                                          PageCount * PAGE_SIZE))
+            {
+                PMM->FreePagesFromDescriptor(NewPages, PageCount);
+                return false;
+            }
 
             bool MappingSucceeded = true;
             for (uint64_t PageIndex = 0; PageIndex < PageCount; ++PageIndex)
@@ -2580,7 +2653,11 @@ uint8_t LogicLayer::ChangeProcessExecution(uint8_t Id, const char* FilePath, con
     }
 
     kmemset(CopiedImage, 0, Pages * PAGE_SIZE);
-    memcpy(CopiedImage, Entry->inode->NodeData, static_cast<size_t>(CodeSize));
+    if (!CopyPhysicalBackedBuffer(Resource, CopiedImage, Entry->inode->NodeData, CodeSize))
+    {
+        PMM->FreePagesFromDescriptor(CopiedImage, Pages);
+        return PROCESS_ID_INVALID;
+    }
 
     ELFHeader            Header                    = {};
     VirtualAddressSpace* NewAddressSpace           = nullptr;
@@ -2825,7 +2902,11 @@ uint8_t LogicLayer::CopyProcess(uint8_t Id)
     }
 
     kmemset(CopiedImage, 0, SourceCodePages * PAGE_SIZE);
-    memcpy(CopiedImage, reinterpret_cast<void*>(SourceCodePhysAddr), static_cast<size_t>(SourceCodeSize));
+    if (!CopyPhysicalBackedBuffer(Resource, CopiedImage, reinterpret_cast<void*>(SourceCodePhysAddr), SourceCodeSize))
+    {
+        PMM->FreePagesFromDescriptor(CopiedImage, SourceCodePages);
+        return PROCESS_ID_INVALID;
+    }
 
     VirtualAddressSpace* NewAddressSpace = nullptr;
 
@@ -2871,7 +2952,20 @@ uint8_t LogicLayer::CopyProcess(uint8_t Id)
     uint64_t HeapBytesToCopy = (SourceHeapSize < ChildHeapSize) ? SourceHeapSize : ChildHeapSize;
     if (SourceHeapPhysAddr != 0 && ChildHeapPhysAddr != 0 && HeapBytesToCopy != 0)
     {
-        memcpy(reinterpret_cast<void*>(ChildHeapPhysAddr), reinterpret_cast<void*>(SourceHeapPhysAddr), static_cast<size_t>(HeapBytesToCopy));
+        if (!CopyPhysicalBackedBuffer(Resource, reinterpret_cast<void*>(ChildHeapPhysAddr), reinterpret_cast<void*>(SourceHeapPhysAddr), HeapBytesToCopy))
+        {
+            if (SourceProcess->FileType == FILE_TYPE_ELF)
+            {
+                CleanUpELF(NewAddressSpace);
+            }
+            else
+            {
+                CleanUpRawBinary(NewAddressSpace);
+            }
+
+            delete NewAddressSpace;
+            return PROCESS_ID_INVALID;
+        }
     }
 
     uint64_t SourceStackPhysAddr = SourceAddressSpace->GetStackPhysicalAddress();
@@ -2882,7 +2976,20 @@ uint8_t LogicLayer::CopyProcess(uint8_t Id)
     uint64_t StackBytesToCopy = (SourceStackSize < ChildStackSize) ? SourceStackSize : ChildStackSize;
     if (SourceStackPhysAddr != 0 && ChildStackPhysAddr != 0 && StackBytesToCopy != 0)
     {
-        memcpy(reinterpret_cast<void*>(ChildStackPhysAddr), reinterpret_cast<void*>(SourceStackPhysAddr), static_cast<size_t>(StackBytesToCopy));
+        if (!CopyPhysicalBackedBuffer(Resource, reinterpret_cast<void*>(ChildStackPhysAddr), reinterpret_cast<void*>(SourceStackPhysAddr), StackBytesToCopy))
+        {
+            if (SourceProcess->FileType == FILE_TYPE_ELF)
+            {
+                CleanUpELF(NewAddressSpace);
+            }
+            else
+            {
+                CleanUpRawBinary(NewAddressSpace);
+            }
+
+            delete NewAddressSpace;
+            return PROCESS_ID_INVALID;
+        }
     }
 
     CpuState ChildState = SourceProcess->State;
@@ -3050,7 +3157,11 @@ uint8_t LogicLayer::CreateUserProcessFromVFS(const char* FilePath)
     }
 
     kmemset(CopiedImage, 0, Pages * PAGE_SIZE);
-    memcpy(CopiedImage, Entry->inode->NodeData, CodeSize);
+    if (!CopyPhysicalBackedBuffer(Resource, CopiedImage, Entry->inode->NodeData, CodeSize))
+    {
+        Resource->GetPMM()->FreePagesFromDescriptor(CopiedImage, Pages);
+        return PROCESS_ID_INVALID;
+    }
 
     uint8_t ProcessId = CreateUserProcess(reinterpret_cast<uint64_t>(CopiedImage), CodeSize);
     if (ProcessId == PROCESS_ID_INVALID)
@@ -3104,7 +3215,11 @@ uint8_t LogicLayer::CreateInitProcess()
     }
 
     kmemset(CopiedImage, 0, Pages * PAGE_SIZE);
-    memcpy(CopiedImage, Entry->inode->NodeData, CodeSize);
+    if (!CopyPhysicalBackedBuffer(Resource, CopiedImage, Entry->inode->NodeData, CodeSize))
+    {
+        Resource->GetPMM()->FreePagesFromDescriptor(CopiedImage, Pages);
+        return PROCESS_ID_INVALID;
+    }
 
     uint8_t ProcessId = CreateUserProcess(reinterpret_cast<uint64_t>(CopiedImage), CodeSize, InitPath);
     if (ProcessId == PROCESS_ID_INVALID)
@@ -3561,7 +3676,11 @@ VirtualAddressSpace* LogicLayer::MapELF(uint64_t CodeAddr, uint64_t CodeSize, co
         }
 
         kmemset(InterpreterImage, 0, static_cast<size_t>(InterpreterPages * PAGE_SIZE));
-        memcpy(InterpreterImage, InterpreterDentry->inode->NodeData, static_cast<size_t>(InterpreterSize));
+        if (!CopyPhysicalBackedBuffer(Resource, InterpreterImage, InterpreterDentry->inode->NodeData, InterpreterSize))
+        {
+            Resource->GetPMM()->FreePagesFromDescriptor(InterpreterImage, InterpreterPages);
+            return FailMapELFAddressSpace(0);
+        }
 
         ELFHeader InterpreterHeader = ELF->ParseELF(reinterpret_cast<uint64_t>(InterpreterImage));
         if (!ELF->ValidateELF64(InterpreterHeader))
@@ -3706,7 +3825,20 @@ VirtualAddressSpace* LogicLayer::MapELF(uint64_t CodeAddr, uint64_t CodeSize, co
             uint64_t ChildCopyStart  = AlignDownToPage(MatchingChildRegion->PhysicalAddress);
             uint64_t CopyBytes       = PageCount * PAGE_SIZE;
 
-            memcpy(reinterpret_cast<void*>(ChildCopyStart), reinterpret_cast<const void*>(SourceCopyStart), static_cast<size_t>(CopyBytes));
+            if (!CopyPhysicalBackedBuffer(Resource, reinterpret_cast<void*>(ChildCopyStart), reinterpret_cast<const void*>(SourceCopyStart),
+                                          CopyBytes))
+            {
+#ifdef DEBUG_BUILD
+                if (MapELFDebugTTY != nullptr)
+                {
+                    MapELFDebugTTY->Serialprintf("fork_mapelf_dbg: fail=copy_region_data src=%p dst=%p bytes=%llu\n", (void*) SourceCopyStart,
+                                                 (void*) ChildCopyStart, static_cast<unsigned long long>(CopyBytes));
+                }
+#endif
+                CleanUpELF(AddressSpace);
+                delete AddressSpace;
+                return nullptr;
+            }
         }
     }
 
@@ -4271,6 +4403,16 @@ bool LogicLayer::CopyFromUserToKernel(const void* UserSource, void* KernelDestin
         Resource->LoadPageTable(UserPageTable);
     }
 
+    if (!IsUserAddressRangeMappedByPageTables(CurrentProcess, reinterpret_cast<uint64_t>(UserSource), Count))
+    {
+        if (NeedsPageTableSwitch)
+        {
+            Resource->LoadPageTable(PreviousPageTable);
+        }
+
+        return false;
+    }
+
     memcpy(KernelDestination, UserSource, static_cast<size_t>(Count));
 
     if (NeedsPageTableSwitch)
@@ -4325,6 +4467,16 @@ bool LogicLayer::CopyFromKernelToUser(const void* KernelSource, void* UserDestin
     if (NeedsPageTableSwitch)
     {
         Resource->LoadPageTable(UserPageTable);
+    }
+
+    if (!IsUserAddressRangeMappedByPageTables(CurrentProcess, reinterpret_cast<uint64_t>(UserDestination), Count))
+    {
+        if (NeedsPageTableSwitch)
+        {
+            Resource->LoadPageTable(PreviousPageTable);
+        }
+
+        return false;
     }
 
     memcpy(UserDestination, KernelSource, static_cast<size_t>(Count));

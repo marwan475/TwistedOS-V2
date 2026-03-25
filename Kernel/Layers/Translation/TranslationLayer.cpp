@@ -1155,6 +1155,44 @@ uint64_t AlignUpToPageBoundary(uint64_t Value)
     return (Value + PAGE_SIZE - 1) & PHYS_PAGE_ADDR_MASK;
 }
 
+bool IsValidTablePhysicalAddress(uint64_t Address)
+{
+    if (Address == 0)
+    {
+        return false;
+    }
+
+    if ((Address & (PAGE_SIZE - 1)) != 0)
+    {
+        return false;
+    }
+
+    if ((Address & 0xFFFF000000000000ULL) != 0)
+    {
+        return false;
+    }
+
+    return Address < 0xC0000000ULL;
+}
+
+uint64_t NormalizeTablePhysicalAddress(uint64_t Address)
+{
+    constexpr uint64_t TABLE_ADDRESS_SOFTWARE_BITS_MASK = 0x000FF00000000000ULL;
+
+    if (IsValidTablePhysicalAddress(Address))
+    {
+        return Address;
+    }
+
+    uint64_t SanitizedAddress = Address & ~TABLE_ADDRESS_SOFTWARE_BITS_MASK;
+    if (IsValidTablePhysicalAddress(SanitizedAddress))
+    {
+        return SanitizedAddress;
+    }
+
+    return 0;
+}
+
 bool RangesOverlap(uint64_t StartA, uint64_t LengthA, uint64_t StartB, uint64_t LengthB)
 {
     if (LengthA == 0 || LengthB == 0)
@@ -1294,18 +1332,26 @@ bool IsVirtualAddressMapped(uint64_t PageMapL4TableAddr, uint64_t Address)
     VirtualAddress Vaddr;
     Vaddr.value = Address;
 
-    PageTableEntry* PML4      = reinterpret_cast<PageTableEntry*>(PageMapL4TableAddr);
+    uint64_t PML4Address = NormalizeTablePhysicalAddress(PageMapL4TableAddr);
+    if (PML4Address == 0)
+    {
+        return false;
+    }
+
+    PageTableEntry* PML4      = reinterpret_cast<PageTableEntry*>(PML4Address);
     PageTableEntry  PML4Entry = PML4[Vaddr.fields.pml4_index];
     if (!PML4Entry.fields.present)
     {
         return false;
     }
 
-    PageTableEntry* PDPT = reinterpret_cast<PageTableEntry*>(PML4Entry.value & PHYS_PAGE_ADDR_MASK);
-    if (PDPT == nullptr)
+    uint64_t PDPTAddress = NormalizeTablePhysicalAddress(PML4Entry.value & PHYS_PAGE_ADDR_MASK);
+    if (PDPTAddress == 0)
     {
         return false;
     }
+
+    PageTableEntry* PDPT = reinterpret_cast<PageTableEntry*>(PDPTAddress);
 
     PageTableEntry PDPTEntry = PDPT[Vaddr.fields.pdpt_index];
     if (!PDPTEntry.fields.present)
@@ -1313,11 +1359,13 @@ bool IsVirtualAddressMapped(uint64_t PageMapL4TableAddr, uint64_t Address)
         return false;
     }
 
-    PageTableEntry* PD = reinterpret_cast<PageTableEntry*>(PDPTEntry.value & PHYS_PAGE_ADDR_MASK);
-    if (PD == nullptr)
+    uint64_t PDAddress = NormalizeTablePhysicalAddress(PDPTEntry.value & PHYS_PAGE_ADDR_MASK);
+    if (PDAddress == 0)
     {
         return false;
     }
+
+    PageTableEntry* PD = reinterpret_cast<PageTableEntry*>(PDAddress);
 
     PageTableEntry PDEntry = PD[Vaddr.fields.pd_index];
     if (!PDEntry.fields.present)
@@ -1325,11 +1373,18 @@ bool IsVirtualAddressMapped(uint64_t PageMapL4TableAddr, uint64_t Address)
         return false;
     }
 
-    PageTableEntry* PT = reinterpret_cast<PageTableEntry*>(PDEntry.value & PHYS_PAGE_ADDR_MASK);
-    if (PT == nullptr)
+    if (PDEntry.fields.size)
+    {
+        return true;
+    }
+
+    uint64_t PTAddress = NormalizeTablePhysicalAddress(PDEntry.value & PHYS_PAGE_ADDR_MASK);
+    if (PTAddress == 0)
     {
         return false;
     }
+
+    PageTableEntry* PT = reinterpret_cast<PageTableEntry*>(PTAddress);
 
     PageTableEntry PTEntry = PT[Vaddr.fields.pt_index];
     return PTEntry.fields.present;
