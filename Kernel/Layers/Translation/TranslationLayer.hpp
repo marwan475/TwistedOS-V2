@@ -22,6 +22,7 @@ public:
 
     // Posix system call handlers
     int64_t HandleReadSystemCall(uint64_t FileDescriptor, void* Buffer, uint64_t Count);
+    int64_t HandleReadvSystemCall(uint64_t FileDescriptor, const void* Iov, uint64_t IovCount);
     int64_t HandleWriteSystemCall(uint64_t FileDescriptor, const void* Buffer, uint64_t Count);
     int64_t HandleWritevSystemCall(uint64_t FileDescriptor, const void* Iov, uint64_t IovCount);
     int64_t HandlePollSystemCall(void* PollFdArray, uint64_t PollFdCount, int64_t TimeoutMilliseconds);
