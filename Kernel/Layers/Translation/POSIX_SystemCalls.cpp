@@ -117,6 +117,9 @@ int64_t TranslationLayer::HandlePosixSystemCallNumber(uint64_t SystemCallNumber,
         case 43: // accept
             return HandleAcceptSystemCall(Arg1, reinterpret_cast<void*>(Arg2), reinterpret_cast<void*>(Arg3));
             break;
+        case 47: // recvmsg
+            return HandleRecvmsgSystemCall(Arg1, reinterpret_cast<void*>(Arg2), static_cast<int64_t>(Arg3));
+            break;
         case 48: // shutdown
             return HandleShutdownSystemCall(Arg1, static_cast<int64_t>(Arg2));
             break;
@@ -129,11 +132,17 @@ int64_t TranslationLayer::HandlePosixSystemCallNumber(uint64_t SystemCallNumber,
         case 51: // getsockname
             return HandleGetsocknameSystemCall(Arg1, reinterpret_cast<void*>(Arg2), reinterpret_cast<void*>(Arg3));
             break;
+        case 52: // getpeername
+            return HandleGetpeernameSystemCall(Arg1, reinterpret_cast<void*>(Arg2), reinterpret_cast<void*>(Arg3));
+            break;
         case 54: // setsockopt
             return HandleSetsockoptSystemCall(Arg1, static_cast<int64_t>(Arg2), static_cast<int64_t>(Arg3), reinterpret_cast<const void*>(Arg4), Arg5);
             break;
         case 55: // getsockopt
             return HandleGetsockoptSystemCall(Arg1, static_cast<int64_t>(Arg2), static_cast<int64_t>(Arg3), reinterpret_cast<void*>(Arg4), reinterpret_cast<void*>(Arg5));
+            break;
+        case 56: // clone
+            return HandleCloneSystemCall(Arg1, reinterpret_cast<void*>(Arg2), reinterpret_cast<int*>(Arg3), reinterpret_cast<int*>(Arg4), Arg5);
             break;
         case 57: // fork
             return HandleForkSystemCall();
@@ -270,6 +279,9 @@ int64_t TranslationLayer::HandlePosixSystemCallNumber(uint64_t SystemCallNumber,
         case 231: // exit_group
             return HandleExitGroupSystemCall(static_cast<int64_t>(Arg1));
             break;
+        case 232: // epoll_wait
+            return HandleEpollWaitSystemCall(Arg1, reinterpret_cast<void*>(Arg2), static_cast<int64_t>(Arg3), static_cast<int64_t>(Arg4));
+            break;
         case 233: // epoll_ctl
             return HandleEpollCtlSystemCall(Arg1, static_cast<int64_t>(Arg2), Arg3, reinterpret_cast<const void*>(Arg4));
             break;
@@ -288,11 +300,17 @@ int64_t TranslationLayer::HandlePosixSystemCallNumber(uint64_t SystemCallNumber,
         case 280: // utimensat
             return HandleUtimensatSystemCall(static_cast<int64_t>(Arg1), reinterpret_cast<const char*>(Arg2), reinterpret_cast<const void*>(Arg3), static_cast<int64_t>(Arg4));
             break;
+        case 281: // epoll_pwait
+            return HandleEpollPwaitSystemCall(Arg1, reinterpret_cast<void*>(Arg2), static_cast<int64_t>(Arg3), static_cast<int64_t>(Arg4), reinterpret_cast<const void*>(Arg5), Arg6);
+            break;
         case 291: // epoll_create1
             return HandleEpollCreate1SystemCall(static_cast<int64_t>(Arg1));
             break;
         case 302: // prlimit64
             return HandlePrlimit64SystemCall(static_cast<int64_t>(Arg1), static_cast<int64_t>(Arg2), reinterpret_cast<const void*>(Arg3), reinterpret_cast<void*>(Arg4));
+            break;
+        case 324: // membarrier
+            return HandleMembarrierSystemCall(static_cast<int64_t>(Arg1), static_cast<uint32_t>(Arg2), static_cast<int32_t>(Arg3));
             break;
             /*
                     case 4: // stat

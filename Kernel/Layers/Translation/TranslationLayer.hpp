@@ -28,6 +28,8 @@ public:
     int64_t HandlePollSystemCall(void* PollFdArray, uint64_t PollFdCount, int64_t TimeoutMilliseconds);
     int64_t HandleEpollCreate1SystemCall(int64_t Flags);
     int64_t HandleEpollCtlSystemCall(uint64_t EpollFileDescriptor, int64_t Operation, uint64_t TargetFileDescriptor, const void* Event);
+    int64_t HandleEpollWaitSystemCall(uint64_t EpollFileDescriptor, void* Events, int64_t MaxEvents, int64_t TimeoutMilliseconds);
+    int64_t HandleEpollPwaitSystemCall(uint64_t EpollFileDescriptor, void* Events, int64_t MaxEvents, int64_t TimeoutMilliseconds, const void* SigMask, uint64_t SigsetSize);
     int64_t HandleLseekSystemCall(uint64_t FileDescriptor, int64_t Offset, int64_t Whence);
     int64_t HandleIoctlSystemCall(uint64_t FileDescriptor, uint64_t Request, uint64_t Argument);
     int64_t HandleSocketSystemCall(int64_t Domain, int64_t Type, int64_t Protocol);
@@ -37,6 +39,8 @@ public:
     int64_t HandleBindSystemCall(uint64_t FileDescriptor, const void* SocketAddress, uint64_t SocketAddressLength);
     int64_t HandleListenSystemCall(uint64_t FileDescriptor, int64_t Backlog);
     int64_t HandleGetsocknameSystemCall(uint64_t FileDescriptor, void* SocketAddress, void* SocketAddressLength);
+    int64_t HandleGetpeernameSystemCall(uint64_t FileDescriptor, void* SocketAddress, void* SocketAddressLength);
+    int64_t HandleRecvmsgSystemCall(uint64_t FileDescriptor, void* MessageHeader, int64_t Flags);
     int64_t HandleSetsockoptSystemCall(uint64_t FileDescriptor, int64_t Level, int64_t OptionName, const void* OptionValue, uint64_t OptionLength);
     int64_t HandleGetsockoptSystemCall(uint64_t FileDescriptor, int64_t Level, int64_t OptionName, void* OptionValue, void* OptionLength);
     int64_t HandleOpenSystemCall(const char* Path, uint64_t Flags);
@@ -95,6 +99,7 @@ public:
     int64_t HandleGettimeofdaySystemCall(void* TimeValue, void* TimeZone);
     int64_t HandleClockGettimeSystemCall(int64_t ClockId, void* TimeSpec);
     int64_t HandleClockGetresSystemCall(int64_t ClockId, void* TimeSpec);
+    int64_t HandleCloneSystemCall(uint64_t Flags, void* ChildStack, int* ParentTid, int* ChildTid, uint64_t NewTls);
     int64_t HandleForkSystemCall();
     int64_t HandleVforkSystemCall();
     int64_t HandleExitGroupSystemCall(int64_t Status);
@@ -105,6 +110,7 @@ public:
     int64_t HandleRtSigactionSystemCall(int64_t Signal, const void* Action, void* OldAction, uint64_t SigsetSize);
     int64_t HandleRtSigprocmaskSystemCall(int64_t How, const void* Set, void* OldSet, uint64_t SigsetSize);
     int64_t HandleRtSigsuspendSystemCall(const void* Set, uint64_t SigsetSize);
+    int64_t HandleMembarrierSystemCall(int64_t Command, uint32_t Flags, int32_t CpuId);
     int64_t HandleArchPrctlSystemCall(uint64_t Code, uint64_t Address);
     int64_t HandleSetTidAddressSystemCall(int* TidPointer);
 

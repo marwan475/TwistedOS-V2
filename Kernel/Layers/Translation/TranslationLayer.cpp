@@ -60,6 +60,19 @@ struct LinuxIOVec
     uint64_t Length;
 };
 
+struct LinuxMsgHdr
+{
+    uint64_t Name;
+    uint32_t NameLength;
+    uint32_t Padding0;
+    uint64_t Iov;
+    uint64_t IovLength;
+    uint64_t Control;
+    uint64_t ControlLength;
+    int32_t  Flags;
+    uint32_t Padding1;
+};
+
 struct LinuxStat
 {
     uint64_t Device;
@@ -271,6 +284,27 @@ constexpr uint64_t LINUX_UNBLOCKABLE_SIGNAL_MASK = (LINUX_SIGKILL_MASK | LINUX_S
 constexpr int64_t LINUX_SIGNAL_SIGKILL = 9;
 constexpr int64_t LINUX_SIGNAL_SIGSTOP = 19;
 
+constexpr uint64_t LINUX_CLONE_SIGNAL_MASK       = 0xFFULL;
+constexpr uint64_t LINUX_CLONE_VM                = 0x00000100ULL;
+constexpr uint64_t LINUX_CLONE_VFORK             = 0x00004000ULL;
+constexpr uint64_t LINUX_CLONE_THREAD            = 0x00010000ULL;
+constexpr uint64_t LINUX_CLONE_SETTLS            = 0x00080000ULL;
+constexpr uint64_t LINUX_CLONE_PARENT_SETTID     = 0x00100000ULL;
+constexpr uint64_t LINUX_CLONE_CHILD_CLEARTID    = 0x00200000ULL;
+constexpr uint64_t LINUX_CLONE_DETACHED          = 0x00400000ULL;
+constexpr uint64_t LINUX_CLONE_CHILD_SETTID      = 0x01000000ULL;
+constexpr uint64_t LINUX_CLONE_UNTRACED          = 0x00800000ULL;
+constexpr uint64_t LINUX_CLONE_NEWCGROUP         = 0x02000000ULL;
+constexpr uint64_t LINUX_CLONE_NEWUTS            = 0x04000000ULL;
+constexpr uint64_t LINUX_CLONE_NEWIPC            = 0x08000000ULL;
+constexpr uint64_t LINUX_CLONE_NEWUSER           = 0x10000000ULL;
+constexpr uint64_t LINUX_CLONE_NEWPID            = 0x20000000ULL;
+constexpr uint64_t LINUX_CLONE_NEWNET            = 0x40000000ULL;
+constexpr uint64_t LINUX_CLONE_IO                = 0x80000000ULL;
+
+constexpr uint64_t LINUX_CLONE_UNSUPPORTED_FLAGS = (LINUX_CLONE_VM | LINUX_CLONE_THREAD | LINUX_CLONE_SETTLS | LINUX_CLONE_NEWCGROUP | LINUX_CLONE_NEWUTS
+                                                    | LINUX_CLONE_NEWIPC | LINUX_CLONE_NEWUSER | LINUX_CLONE_NEWPID | LINUX_CLONE_NEWNET | LINUX_CLONE_IO);
+
 constexpr int64_t LINUX_ITIMER_REAL    = 0;
 constexpr int64_t LINUX_ITIMER_VIRTUAL = 1;
 constexpr int64_t LINUX_ITIMER_PROF    = 2;
@@ -316,6 +350,21 @@ constexpr uint64_t LINUX_RLIMIT_RTTIME_DEFAULT    = LINUX_RLIM_INFINITY;
 constexpr uint64_t LINUX_TIMER_NANOSECONDS_PER_TICK = 10000000;
 constexpr uint64_t LINUX_TIMER_MICROSECONDS_PER_TICK = (LINUX_TIMER_NANOSECONDS_PER_TICK / 1000);
 constexpr uint64_t LINUX_TIMER_TICKS_PER_SECOND = (1000000000ULL / LINUX_TIMER_NANOSECONDS_PER_TICK);
+
+constexpr int64_t LINUX_MEMBARRIER_CMD_QUERY                                = 0;
+constexpr int64_t LINUX_MEMBARRIER_CMD_GLOBAL                               = (1 << 0);
+constexpr int64_t LINUX_MEMBARRIER_CMD_PRIVATE_EXPEDITED                    = (1 << 3);
+constexpr int64_t LINUX_MEMBARRIER_CMD_REGISTER_PRIVATE_EXPEDITED           = (1 << 4);
+constexpr int64_t LINUX_MEMBARRIER_CMD_PRIVATE_EXPEDITED_SYNC_CORE          = (1 << 5);
+constexpr int64_t LINUX_MEMBARRIER_CMD_REGISTER_PRIVATE_EXPEDITED_SYNC_CORE = (1 << 6);
+constexpr int64_t LINUX_MEMBARRIER_CMD_PRIVATE_EXPEDITED_RSEQ               = (1 << 7);
+constexpr int64_t LINUX_MEMBARRIER_CMD_REGISTER_PRIVATE_EXPEDITED_RSEQ      = (1 << 8);
+
+constexpr uint32_t LINUX_MEMBARRIER_CMD_FLAG_CPU = (1u << 0);
+
+constexpr int64_t LINUX_MEMBARRIER_SUPPORTED_COMMANDS =
+    (LINUX_MEMBARRIER_CMD_GLOBAL | LINUX_MEMBARRIER_CMD_PRIVATE_EXPEDITED | LINUX_MEMBARRIER_CMD_REGISTER_PRIVATE_EXPEDITED
+     | LINUX_MEMBARRIER_CMD_PRIVATE_EXPEDITED_SYNC_CORE | LINUX_MEMBARRIER_CMD_REGISTER_PRIVATE_EXPEDITED_SYNC_CORE);
 
 bool IsSupportedLinuxClockId(int64_t ClockId)
 {
@@ -2476,6 +2525,246 @@ int64_t TranslationLayer::HandleEpollCtlSystemCall(uint64_t EpollFileDescriptor,
                                    KernelEvent.Data);
 }
 
+int64_t TranslationLayer::HandleEpollWaitSystemCall(uint64_t EpollFileDescriptor, void* Events, int64_t MaxEvents, int64_t TimeoutMilliseconds)
+{
+    if (Logic == nullptr || Events == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    if (MaxEvents <= 0 || static_cast<uint64_t>(MaxEvents) > SYSCALL_IOV_MAX)
+    {
+        return LINUX_ERR_EINVAL;
+    }
+
+    ProcessManager* PM = Logic->GetProcessManager();
+    if (PM == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    Process* CurrentProcess = PM->GetRunningProcess();
+    if (CurrentProcess == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    SynchronizationManager* Sync = Logic->GetSynchronizationManager();
+    if (Sync == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    if (EpollFileDescriptor >= MAX_OPEN_FILES_PER_PROCESS)
+    {
+        return LINUX_ERR_EBADF;
+    }
+
+    File* EpollFile = CurrentProcess->FileTable[EpollFileDescriptor];
+    if (EpollFile == nullptr)
+    {
+        return LINUX_ERR_EBADF;
+    }
+
+    EventQueueKernelObject* EventQueue = Sync->GetEventQueue(CurrentProcess->Id, EpollFileDescriptor);
+    if (EventQueue == nullptr)
+    {
+        return LINUX_ERR_EINVAL;
+    }
+
+    auto EvaluateReadyEvents = [&](bool* HasTTYReadableWait) -> int64_t
+    {
+        bool    WantsTTYRead = false;
+        int64_t ReadyCount   = 0;
+
+        EpollWatchTag* Watch = EventQueue->Watches.Head();
+        while (Watch != nullptr)
+        {
+            if (ReadyCount >= MaxEvents)
+            {
+                break;
+            }
+
+            uint32_t Revents = 0;
+
+            if (Watch->FileDescriptor >= MAX_OPEN_FILES_PER_PROCESS)
+            {
+                Revents = LINUX_EPOLLERR;
+            }
+            else
+            {
+                File* WatchedFile = CurrentProcess->FileTable[Watch->FileDescriptor];
+                if (WatchedFile == nullptr || WatchedFile->Node == nullptr)
+                {
+                    Revents = LINUX_EPOLLERR;
+                }
+                else
+                {
+                    if (WatchedFile->Node->FileOps != nullptr && WatchedFile->Node->FileOps->Poll != nullptr)
+                    {
+                        uint32_t PollRequestedEvents = 0;
+                        if ((Watch->Events & LINUX_EPOLLIN) != 0)
+                        {
+                            PollRequestedEvents |= static_cast<uint32_t>(LINUX_POLLIN);
+                        }
+                        if ((Watch->Events & LINUX_EPOLLOUT) != 0)
+                        {
+                            PollRequestedEvents |= static_cast<uint32_t>(LINUX_POLLOUT);
+                        }
+
+                        uint32_t PollReturnedEvents = 0;
+                        int64_t  PollResult         = WatchedFile->Node->FileOps->Poll(WatchedFile, PollRequestedEvents, &PollReturnedEvents, Logic, CurrentProcess);
+                        if (PollResult < 0)
+                        {
+                            return PollResult;
+                        }
+
+                        if ((PollReturnedEvents & static_cast<uint32_t>(LINUX_POLLIN)) != 0)
+                        {
+                            Revents |= LINUX_EPOLLIN;
+                        }
+                        if ((PollReturnedEvents & static_cast<uint32_t>(LINUX_POLLOUT)) != 0)
+                        {
+                            Revents |= LINUX_EPOLLOUT;
+                        }
+                        if ((PollReturnedEvents & static_cast<uint32_t>(LINUX_POLLERR)) != 0)
+                        {
+                            Revents |= LINUX_EPOLLERR;
+                        }
+                        if ((PollReturnedEvents & static_cast<uint32_t>(LINUX_POLLHUP)) != 0)
+                        {
+                            Revents |= LINUX_EPOLLHUP;
+                        }
+                    }
+                    else
+                    {
+                        if ((Watch->Events & LINUX_EPOLLIN) != 0)
+                        {
+                            bool IsTTYNode = (WatchedFile->Node->NodeType == INODE_DEV && WatchedFile->DirectoryEntry != nullptr && WatchedFile->DirectoryEntry->name != nullptr
+                                              && CStrEquals(WatchedFile->DirectoryEntry->name, "tty"));
+                            if (IsTTYNode)
+                            {
+                                WantsTTYRead  = true;
+                                TTY* Terminal = reinterpret_cast<TTY*>(WatchedFile->Node->NodeData);
+                                if (Terminal != nullptr && Terminal->GetBufferedInputBytes() > 0)
+                                {
+                                    Revents |= LINUX_EPOLLIN;
+                                }
+                            }
+                            else if (WatchedFile->Node->NodeType != INODE_DIR)
+                            {
+                                Revents |= LINUX_EPOLLIN;
+                            }
+                        }
+
+                        if ((Watch->Events & LINUX_EPOLLOUT) != 0 && WatchedFile->AccessFlags != READ)
+                        {
+                            Revents |= LINUX_EPOLLOUT;
+                        }
+                    }
+                }
+            }
+
+            if ((Revents & Watch->Events) != 0 || (Revents & (LINUX_EPOLLERR | LINUX_EPOLLHUP)) != 0)
+            {
+                LinuxEpollEvent KernelEvent = {};
+                KernelEvent.Events          = (Revents & (Watch->Events | LINUX_EPOLLERR | LINUX_EPOLLHUP));
+                KernelEvent.Data            = Watch->UserData;
+
+                void* UserEventAddress = reinterpret_cast<void*>(reinterpret_cast<uint64_t>(Events) + (static_cast<uint64_t>(ReadyCount) * sizeof(LinuxEpollEvent)));
+                if (!Logic->CopyFromKernelToUser(&KernelEvent, UserEventAddress, sizeof(KernelEvent)))
+                {
+                    return LINUX_ERR_EFAULT;
+                }
+
+                ++ReadyCount;
+            }
+
+            Watch = EventQueue->Watches.Next(Watch);
+        }
+
+        if (HasTTYReadableWait != nullptr)
+        {
+            *HasTTYReadableWait = WantsTTYRead;
+        }
+
+        return ReadyCount;
+    };
+
+    bool    HasTTYReadableWait = false;
+    int64_t ReadyCount         = EvaluateReadyEvents(&HasTTYReadableWait);
+    if (ReadyCount < 0)
+    {
+        return ReadyCount;
+    }
+
+    if (ReadyCount > 0)
+    {
+        return ReadyCount;
+    }
+
+    if (TimeoutMilliseconds == 0)
+    {
+        return 0;
+    }
+
+    if (!HasTTYReadableWait)
+    {
+        if (TimeoutMilliseconds > 0)
+        {
+            uint64_t SleepTicks = static_cast<uint64_t>((TimeoutMilliseconds + 9) / 10);
+            if (SleepTicks == 0)
+            {
+                SleepTicks = 1;
+            }
+            Logic->SleepProcess(CurrentProcess->Id, SleepTicks);
+        }
+        return 0;
+    }
+
+    if (TimeoutMilliseconds < 0)
+    {
+        while (true)
+        {
+            Logic->BlockProcessForTTYInput(CurrentProcess->Id);
+
+            bool DummyTTYWaitFlag = false;
+            ReadyCount            = EvaluateReadyEvents(&DummyTTYWaitFlag);
+            if (ReadyCount != 0)
+            {
+                return ReadyCount;
+            }
+        }
+    }
+
+    int64_t RemainingMilliseconds = TimeoutMilliseconds;
+    while (RemainingMilliseconds > 0)
+    {
+        Logic->SleepProcess(CurrentProcess->Id, 1);
+
+        bool DummyTTYWaitFlag = false;
+        ReadyCount            = EvaluateReadyEvents(&DummyTTYWaitFlag);
+        if (ReadyCount != 0)
+        {
+            return ReadyCount;
+        }
+
+        RemainingMilliseconds -= 10;
+    }
+
+    return 0;
+}
+
+int64_t TranslationLayer::HandleEpollPwaitSystemCall(uint64_t EpollFileDescriptor, void* Events, int64_t MaxEvents, int64_t TimeoutMilliseconds, const void* SigMask, uint64_t SigsetSize)
+{
+    if (SigMask != nullptr && SigsetSize != LINUX_RT_SIGSET_SIZE)
+    {
+        return LINUX_ERR_EINVAL;
+    }
+
+    return HandleEpollWaitSystemCall(EpollFileDescriptor, Events, MaxEvents, TimeoutMilliseconds);
+}
+
 int64_t TranslationLayer::HandleIoctlSystemCall(uint64_t FileDescriptor, uint64_t Request, uint64_t Argument)
 {
     if (Logic == nullptr)
@@ -3096,6 +3385,202 @@ int64_t TranslationLayer::HandleGetsocknameSystemCall(uint64_t FileDescriptor, v
     }
 
     return 0;
+}
+
+int64_t TranslationLayer::HandleGetpeernameSystemCall(uint64_t FileDescriptor, void* SocketAddress, void* SocketAddressLength)
+{
+    if (Logic == nullptr || SocketAddress == nullptr || SocketAddressLength == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    ProcessManager* PM = Logic->GetProcessManager();
+    if (PM == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    Process* CurrentProcess = PM->GetRunningProcess();
+    if (CurrentProcess == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    if (FileDescriptor >= MAX_OPEN_FILES_PER_PROCESS)
+    {
+        return LINUX_ERR_EBADF;
+    }
+
+    File* OpenFile = CurrentProcess->FileTable[FileDescriptor];
+    if (OpenFile == nullptr || OpenFile->Node == nullptr || OpenFile->Node->NodeData == nullptr)
+    {
+        return LINUX_ERR_EBADF;
+    }
+
+    Socket* SocketEntry = reinterpret_cast<Socket*>(OpenFile->Node->NodeData);
+    if (SocketEntry == nullptr)
+    {
+        return LINUX_ERR_ENOTSOCK;
+    }
+
+    uint32_t UserLength = 0;
+    if (!Logic->CopyFromUserToKernel(SocketAddressLength, &UserLength, sizeof(UserLength)))
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    uint8_t  KernelSocketAddress[SYSCALL_MAX_SOCKET_ADDRESS] = {};
+    uint32_t RequiredLength = 0;
+
+    if (SocketEntry->Domain == LINUX_AF_UNIX)
+    {
+        UnixSocket* UnixImplementation = reinterpret_cast<UnixSocket*>(SocketEntry->Implementation);
+        if (UnixImplementation == nullptr || UnixImplementation->ConnectedPeer == nullptr)
+        {
+            return LINUX_ERR_ENOTCONN;
+        }
+
+        Socket* PeerSocket = UnixImplementation->ConnectedPeer;
+        if (PeerSocket->Domain != LINUX_AF_UNIX)
+        {
+            return LINUX_ERR_ENOTCONN;
+        }
+
+        UnixSocket* PeerUnix = reinterpret_cast<UnixSocket*>(PeerSocket->Implementation);
+        LinuxSockAddrUn* UnixAddress = reinterpret_cast<LinuxSockAddrUn*>(KernelSocketAddress);
+        UnixAddress->Family = static_cast<uint16_t>(LINUX_AF_UNIX);
+        RequiredLength      = static_cast<uint32_t>(sizeof(uint16_t));
+
+        if (PeerUnix != nullptr && PeerUnix->IsBound && PeerUnix->Path != nullptr)
+        {
+            uint64_t MaxPathBytes = sizeof(UnixAddress->Path);
+            if (PeerUnix->IsAbstract)
+            {
+                uint64_t CopyLength = PeerUnix->PathLength;
+                if (CopyLength > MaxPathBytes)
+                {
+                    CopyLength = MaxPathBytes;
+                }
+
+                for (uint64_t Index = 0; Index < CopyLength; ++Index)
+                {
+                    UnixAddress->Path[Index] = PeerUnix->Path[Index];
+                }
+
+                RequiredLength = static_cast<uint32_t>(sizeof(uint16_t) + CopyLength);
+            }
+            else
+            {
+                uint64_t CopyLength = PeerUnix->PathLength;
+                if (MaxPathBytes > 0 && CopyLength > (MaxPathBytes - 1))
+                {
+                    CopyLength = (MaxPathBytes - 1);
+                }
+
+                for (uint64_t Index = 0; Index < CopyLength; ++Index)
+                {
+                    UnixAddress->Path[Index] = PeerUnix->Path[Index];
+                }
+
+                if (MaxPathBytes > 0)
+                {
+                    UnixAddress->Path[CopyLength] = '\0';
+                    RequiredLength = static_cast<uint32_t>(sizeof(uint16_t) + CopyLength + 1);
+                }
+            }
+        }
+    }
+    else if (SocketEntry->Domain == LINUX_AF_INET)
+    {
+        NetworkSocket* NetworkImplementation = reinterpret_cast<NetworkSocket*>(SocketEntry->Implementation);
+        if (NetworkImplementation == nullptr || (NetworkImplementation->RemoteIp == 0 && NetworkImplementation->RemotePort == 0))
+        {
+            return LINUX_ERR_ENOTCONN;
+        }
+
+        LinuxSockAddrIn* InternetAddress = reinterpret_cast<LinuxSockAddrIn*>(KernelSocketAddress);
+        InternetAddress->Family          = static_cast<uint16_t>(LINUX_AF_INET);
+        InternetAddress->Port            = NetworkImplementation->RemotePort;
+        InternetAddress->Address         = NetworkImplementation->RemoteIp;
+        for (size_t Index = 0; Index < sizeof(InternetAddress->Zero); ++Index)
+        {
+            InternetAddress->Zero[Index] = 0;
+        }
+
+        RequiredLength = static_cast<uint32_t>(sizeof(LinuxSockAddrIn));
+    }
+    else if (SocketEntry->Domain == LINUX_AF_NETLINK)
+    {
+        NetlinkSocket* NetlinkImplementation = reinterpret_cast<NetlinkSocket*>(SocketEntry->Implementation);
+        if (NetlinkImplementation == nullptr)
+        {
+            return LINUX_ERR_EINVAL;
+        }
+
+        LinuxSockAddrNl* NetlinkAddress = reinterpret_cast<LinuxSockAddrNl*>(KernelSocketAddress);
+        NetlinkAddress->Family          = static_cast<uint16_t>(LINUX_AF_NETLINK);
+        NetlinkAddress->Pad             = 0;
+        NetlinkAddress->Pid             = NetlinkImplementation->RemotePid;
+        NetlinkAddress->Groups          = NetlinkImplementation->RemoteGroups;
+
+        RequiredLength = static_cast<uint32_t>(sizeof(LinuxSockAddrNl));
+    }
+    else
+    {
+        return LINUX_ERR_EAFNOSUPPORT;
+    }
+
+    uint32_t CopyLength = (UserLength < RequiredLength) ? UserLength : RequiredLength;
+    if (CopyLength > 0 && !Logic->CopyFromKernelToUser(KernelSocketAddress, SocketAddress, CopyLength))
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    if (!Logic->CopyFromKernelToUser(&RequiredLength, SocketAddressLength, sizeof(RequiredLength)))
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    return 0;
+}
+
+int64_t TranslationLayer::HandleRecvmsgSystemCall(uint64_t FileDescriptor, void* MessageHeader, int64_t Flags)
+{
+    if (Logic == nullptr || MessageHeader == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    if (Flags != 0)
+    {
+        return LINUX_ERR_EINVAL;
+    }
+
+    LinuxMsgHdr KernelMessageHeader = {};
+    if (!Logic->CopyFromUserToKernel(MessageHeader, &KernelMessageHeader, sizeof(KernelMessageHeader)))
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    int64_t ReadResult = HandleReadvSystemCall(FileDescriptor, reinterpret_cast<const void*>(KernelMessageHeader.Iov), KernelMessageHeader.IovLength);
+    if (ReadResult < 0)
+    {
+        return ReadResult;
+    }
+
+    if (KernelMessageHeader.Name != 0 && KernelMessageHeader.NameLength > 0)
+    {
+        KernelMessageHeader.NameLength = 0;
+    }
+
+    KernelMessageHeader.Flags = 0;
+
+    if (!Logic->CopyFromKernelToUser(&KernelMessageHeader, MessageHeader, sizeof(KernelMessageHeader)))
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    return ReadResult;
 }
 
 int64_t TranslationLayer::HandleSetsockoptSystemCall(uint64_t FileDescriptor, int64_t Level, int64_t OptionName, const void* OptionValue, uint64_t OptionLength)
@@ -7438,6 +7923,102 @@ int64_t TranslationLayer::HandleClockGetresSystemCall(int64_t ClockId, void* Tim
     return Logic->CopyFromKernelToUser(&KernelTimeSpec, TimeSpec, sizeof(KernelTimeSpec)) ? 0 : LINUX_ERR_EFAULT;
 }
 
+int64_t TranslationLayer::HandleCloneSystemCall(uint64_t Flags, void* ChildStack, int* ParentTid, int* ChildTid, uint64_t NewTls)
+{
+    (void) ChildStack;
+    (void) NewTls;
+
+    if (Logic == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    ProcessManager* PM = Logic->GetProcessManager();
+    if (PM == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    if ((Flags & LINUX_CLONE_UNSUPPORTED_FLAGS) != 0)
+    {
+        return LINUX_ERR_EINVAL;
+    }
+
+    uint64_t AllowedFlags = (LINUX_CLONE_SIGNAL_MASK | LINUX_CLONE_VFORK | LINUX_CLONE_PARENT_SETTID | LINUX_CLONE_CHILD_SETTID | LINUX_CLONE_CHILD_CLEARTID
+                             | LINUX_CLONE_DETACHED | LINUX_CLONE_UNTRACED);
+    if ((Flags & ~AllowedFlags) != 0)
+    {
+        return LINUX_ERR_EINVAL;
+    }
+
+    uint64_t SignalNumber = (Flags & LINUX_CLONE_SIGNAL_MASK);
+    if (SignalNumber > static_cast<uint64_t>(LINUX_SIGNAL_MAX))
+    {
+        return LINUX_ERR_EINVAL;
+    }
+
+    if ((Flags & LINUX_CLONE_PARENT_SETTID) != 0 && ParentTid == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    if ((Flags & LINUX_CLONE_CHILD_SETTID) != 0 && ChildTid == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    if ((Flags & LINUX_CLONE_CHILD_CLEARTID) != 0 && ChildTid == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    int64_t ChildPid = 0;
+    if ((Flags & LINUX_CLONE_VFORK) != 0)
+    {
+        ChildPid = HandleVforkSystemCall();
+    }
+    else
+    {
+        ChildPid = HandleForkSystemCall();
+    }
+
+    if (ChildPid < 0)
+    {
+        return ChildPid;
+    }
+
+    Process* ChildProcess = PM->GetProcessById(static_cast<uint8_t>(ChildPid));
+    if (ChildProcess == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    if ((Flags & LINUX_CLONE_PARENT_SETTID) != 0)
+    {
+        int32_t ChildTidValue = static_cast<int32_t>(ChildPid);
+        if (!Logic->CopyFromKernelToUser(&ChildTidValue, ParentTid, sizeof(ChildTidValue)))
+        {
+            return LINUX_ERR_EFAULT;
+        }
+    }
+
+    if ((Flags & LINUX_CLONE_CHILD_SETTID) != 0)
+    {
+        int32_t ChildTidValue = static_cast<int32_t>(ChildPid);
+        if (!Logic->CopyFromKernelToUser(&ChildTidValue, ChildTid, sizeof(ChildTidValue)))
+        {
+            return LINUX_ERR_EFAULT;
+        }
+    }
+
+    if ((Flags & LINUX_CLONE_CHILD_CLEARTID) != 0)
+    {
+        ChildProcess->ClearChildTidAddress = ChildTid;
+    }
+
+    return ChildPid;
+}
+
 int64_t TranslationLayer::HandleForkSystemCall()
 {
     if (Logic == nullptr)
@@ -8786,6 +9367,46 @@ int64_t TranslationLayer::HandleRtSigsuspendSystemCall(const void* Set, uint64_t
 
     CurrentProcess->BlockedSignalMask = PreviousMask;
     return LINUX_ERR_EINTR;
+}
+
+int64_t TranslationLayer::HandleMembarrierSystemCall(int64_t Command, uint32_t Flags, int32_t CpuId)
+{
+    (void) CpuId;
+
+    if (Flags != 0)
+    {
+        if (Flags != LINUX_MEMBARRIER_CMD_FLAG_CPU)
+        {
+            return LINUX_ERR_EINVAL;
+        }
+
+        if (Command != LINUX_MEMBARRIER_CMD_PRIVATE_EXPEDITED_RSEQ && Command != LINUX_MEMBARRIER_CMD_REGISTER_PRIVATE_EXPEDITED_RSEQ)
+        {
+            return LINUX_ERR_EINVAL;
+        }
+
+        return LINUX_ERR_EINVAL;
+    }
+
+    if (Command == LINUX_MEMBARRIER_CMD_QUERY)
+    {
+        return LINUX_MEMBARRIER_SUPPORTED_COMMANDS;
+    }
+
+    switch (Command)
+    {
+        case LINUX_MEMBARRIER_CMD_GLOBAL:
+        case LINUX_MEMBARRIER_CMD_PRIVATE_EXPEDITED:
+        case LINUX_MEMBARRIER_CMD_REGISTER_PRIVATE_EXPEDITED:
+        case LINUX_MEMBARRIER_CMD_PRIVATE_EXPEDITED_SYNC_CORE:
+        case LINUX_MEMBARRIER_CMD_REGISTER_PRIVATE_EXPEDITED_SYNC_CORE:
+            __asm__ __volatile__("mfence" ::: "memory");
+            return 0;
+        default:
+            break;
+    }
+
+    return LINUX_ERR_EINVAL;
 }
 
 int64_t TranslationLayer::HandleSetTidAddressSystemCall(int* TidPointer)
