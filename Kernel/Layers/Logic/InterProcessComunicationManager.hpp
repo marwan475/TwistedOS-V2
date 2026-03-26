@@ -124,6 +124,11 @@ struct UnixSocket{
     uint64_t PendingConnectionCount;
     uint64_t PendingConnectionCapacity;
     Socket*  ConnectedPeer;
+    uint8_t* ReceiveBuffer;
+    uint64_t ReceiveBufferCapacity;
+    uint64_t ReceiveReadOffset;
+    uint64_t ReceiveWriteOffset;
+    uint64_t ReceiveBufferedBytes;
     bool     IsShutdownRead;
     bool     IsShutdownWrite;
 };

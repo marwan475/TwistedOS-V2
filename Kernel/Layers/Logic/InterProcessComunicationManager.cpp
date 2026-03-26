@@ -16,6 +16,7 @@ constexpr int64_t  LINUX_SHUT_RD              = 0;
 constexpr int64_t  LINUX_SHUT_WR              = 1;
 constexpr int64_t  LINUX_SHUT_RDWR            = 2;
 constexpr uint64_t LINUX_PIPE_BUFFER_CAPACITY = 4096;
+constexpr uint64_t LINUX_UNIX_SOCKET_BUFFER_CAPACITY = 65536;
 
 constexpr uint32_t LINUX_POLLIN  = 0x0001u;
 constexpr uint32_t LINUX_POLLOUT = 0x0004u;
@@ -192,23 +193,168 @@ Socket* GetSocketFromOpenFile(File* OpenFile)
 	return reinterpret_cast<Socket*>(OpenFile->Node->NodeData);
 }
 
+bool IsConnectedUnixStreamSocket(const Socket* SocketEntry, const UnixSocket* SocketImplementation)
+{
+	if (SocketEntry == nullptr || SocketImplementation == nullptr)
+	{
+		return false;
+	}
+
+	if (SocketEntry->Domain != LINUX_AF_UNIX)
+	{
+		return false;
+	}
+
+	if (SocketEntry->Type != LINUX_SOCK_STREAM && SocketEntry->Type != LINUX_SOCK_SEQPACKET)
+	{
+		return false;
+	}
+
+	return SocketImplementation->ConnectedPeer != nullptr;
+}
+
+int64_t ReadFromUnixReceiveBuffer(UnixSocket* SocketImplementation, void* Buffer, uint64_t Count)
+{
+	if ((Buffer == nullptr && Count != 0) || SocketImplementation == nullptr)
+	{
+		return LINUX_SOCKET_ERR_EINVAL;
+	}
+
+	if (Count == 0)
+	{
+		return 0;
+	}
+
+	if (SocketImplementation->ReceiveBuffer == nullptr || SocketImplementation->ReceiveBufferCapacity == 0)
+	{
+		return LINUX_SOCKET_ERR_EBADF;
+	}
+
+	if (SocketImplementation->ReceiveBufferedBytes == 0)
+	{
+		return 0;
+	}
+
+	uint64_t BytesToRead = (Count < SocketImplementation->ReceiveBufferedBytes) ? Count : SocketImplementation->ReceiveBufferedBytes;
+	for (uint64_t Index = 0; Index < BytesToRead; ++Index)
+	{
+		reinterpret_cast<uint8_t*>(Buffer)[Index] = SocketImplementation->ReceiveBuffer[SocketImplementation->ReceiveReadOffset];
+		SocketImplementation->ReceiveReadOffset = (SocketImplementation->ReceiveReadOffset + 1) % SocketImplementation->ReceiveBufferCapacity;
+	}
+
+	SocketImplementation->ReceiveBufferedBytes -= BytesToRead;
+	return static_cast<int64_t>(BytesToRead);
+}
+
+int64_t WriteToUnixPeerBuffer(Socket* SocketEntry, UnixSocket* SocketImplementation, const void* Buffer, uint64_t Count)
+{
+	if ((Buffer == nullptr && Count != 0) || SocketEntry == nullptr || SocketImplementation == nullptr)
+	{
+		return LINUX_SOCKET_ERR_EINVAL;
+	}
+
+	if (Count == 0)
+	{
+		return 0;
+	}
+
+	if (!IsConnectedUnixStreamSocket(SocketEntry, SocketImplementation))
+	{
+		return LINUX_SOCKET_ERR_ENOTCONN;
+	}
+
+	Socket* PeerSocket = SocketImplementation->ConnectedPeer;
+	if (PeerSocket == nullptr || PeerSocket->Domain != LINUX_AF_UNIX)
+	{
+		return LINUX_SOCKET_ERR_ENOTCONN;
+	}
+
+	UnixSocket* PeerImplementation = reinterpret_cast<UnixSocket*>(PeerSocket->Implementation);
+	if (PeerImplementation == nullptr)
+	{
+		return LINUX_SOCKET_ERR_ENOTCONN;
+	}
+
+	if (PeerImplementation->IsShutdownRead)
+	{
+		return LINUX_SOCKET_ERR_EPIPE;
+	}
+
+	if (PeerImplementation->ReceiveBuffer == nullptr || PeerImplementation->ReceiveBufferCapacity == 0)
+	{
+		return LINUX_SOCKET_ERR_EBADF;
+	}
+
+	if (PeerImplementation->ReceiveBufferedBytes >= PeerImplementation->ReceiveBufferCapacity)
+	{
+		return LINUX_SOCKET_ERR_EAGAIN;
+	}
+
+	uint64_t AvailableSpace = PeerImplementation->ReceiveBufferCapacity - PeerImplementation->ReceiveBufferedBytes;
+	uint64_t BytesToWrite   = (Count < AvailableSpace) ? Count : AvailableSpace;
+
+	for (uint64_t Index = 0; Index < BytesToWrite; ++Index)
+	{
+		PeerImplementation->ReceiveBuffer[PeerImplementation->ReceiveWriteOffset] = reinterpret_cast<const uint8_t*>(Buffer)[Index];
+		PeerImplementation->ReceiveWriteOffset = (PeerImplementation->ReceiveWriteOffset + 1) % PeerImplementation->ReceiveBufferCapacity;
+	}
+
+	PeerImplementation->ReceiveBufferedBytes += BytesToWrite;
+	return static_cast<int64_t>(BytesToWrite);
+}
+
 int64_t SocketRead(File* OpenFile, void* Buffer, uint64_t Count)
 {
-	(void) Buffer;
-	(void) Count;
-
 	Socket* SocketEntry = GetSocketFromOpenFile(OpenFile);
 	if (SocketEntry == nullptr)
 	{
 		return LINUX_SOCKET_ERR_EBADF;
 	}
 
+	if ((Buffer == nullptr && Count != 0))
+	{
+		return LINUX_SOCKET_ERR_EINVAL;
+	}
+
+	if (Count == 0)
+	{
+		return 0;
+	}
+
 	if (SocketEntry->Domain == LINUX_AF_UNIX)
 	{
 		UnixSocket* SocketImplementation = reinterpret_cast<UnixSocket*>(SocketEntry->Implementation);
-		if (SocketImplementation != nullptr && SocketImplementation->IsShutdownRead)
+		if (SocketImplementation == nullptr)
+		{
+			return LINUX_SOCKET_ERR_EBADF;
+		}
+
+		if (SocketImplementation->IsShutdownRead)
 		{
 			return 0;
+		}
+
+		if (!SocketImplementation->IsListening && (SocketEntry->Type == LINUX_SOCK_STREAM || SocketEntry->Type == LINUX_SOCK_SEQPACKET))
+		{
+			int64_t ReadResult = ReadFromUnixReceiveBuffer(SocketImplementation, Buffer, Count);
+			if (ReadResult > 0)
+			{
+				return ReadResult;
+			}
+
+			Socket* PeerSocket = SocketImplementation->ConnectedPeer;
+			if (PeerSocket == nullptr || PeerSocket->Domain != LINUX_AF_UNIX)
+			{
+				return 0;
+			}
+
+			UnixSocket* PeerImplementation = reinterpret_cast<UnixSocket*>(PeerSocket->Implementation);
+			if (PeerImplementation == nullptr || PeerImplementation->IsShutdownWrite)
+			{
+				return 0;
+			}
+
+			return LINUX_SOCKET_ERR_EAGAIN;
 		}
 	}
 	else if (SocketEntry->Domain == LINUX_AF_INET)
@@ -225,21 +371,38 @@ int64_t SocketRead(File* OpenFile, void* Buffer, uint64_t Count)
 
 int64_t SocketWrite(File* OpenFile, const void* Buffer, uint64_t Count)
 {
-	(void) Buffer;
-	(void) Count;
-
 	Socket* SocketEntry = GetSocketFromOpenFile(OpenFile);
 	if (SocketEntry == nullptr)
 	{
 		return LINUX_SOCKET_ERR_EBADF;
 	}
 
+	if ((Buffer == nullptr && Count != 0))
+	{
+		return LINUX_SOCKET_ERR_EINVAL;
+	}
+
+	if (Count == 0)
+	{
+		return 0;
+	}
+
 	if (SocketEntry->Domain == LINUX_AF_UNIX)
 	{
 		UnixSocket* SocketImplementation = reinterpret_cast<UnixSocket*>(SocketEntry->Implementation);
-		if (SocketImplementation != nullptr && SocketImplementation->IsShutdownWrite)
+		if (SocketImplementation == nullptr)
+		{
+			return LINUX_SOCKET_ERR_EBADF;
+		}
+
+		if (SocketImplementation->IsShutdownWrite)
 		{
 			return LINUX_SOCKET_ERR_EPIPE;
+		}
+
+		if (!SocketImplementation->IsListening && (SocketEntry->Type == LINUX_SOCK_STREAM || SocketEntry->Type == LINUX_SOCK_SEQPACKET))
+		{
+			return WriteToUnixPeerBuffer(SocketEntry, SocketImplementation, Buffer, Count);
 		}
 	}
 	else if (SocketEntry->Domain == LINUX_AF_INET)
@@ -309,21 +472,47 @@ int64_t SocketPoll(File* OpenFile, uint32_t RequestedEvents, uint32_t* ReturnedE
 					*ReturnedEvents |= LINUX_POLLIN;
 				}
 			}
+			else if (SocketImplementation->ReceiveBufferedBytes > 0)
+			{
+				*ReturnedEvents |= LINUX_POLLIN;
+			}
 			else if (SocketImplementation->IsShutdownRead)
 			{
 				*ReturnedEvents |= LINUX_POLLHUP;
+			}
+			else
+			{
+				Socket* PeerSocket = SocketImplementation->ConnectedPeer;
+				UnixSocket* PeerImplementation = (PeerSocket != nullptr && PeerSocket->Domain == LINUX_AF_UNIX)
+					? reinterpret_cast<UnixSocket*>(PeerSocket->Implementation)
+					: nullptr;
+
+				if (PeerSocket == nullptr || PeerImplementation == nullptr || PeerImplementation->IsShutdownWrite)
+				{
+					*ReturnedEvents |= LINUX_POLLHUP;
+				}
 			}
 		}
 
 		if ((RequestedEvents & LINUX_POLLOUT) != 0)
 		{
-			if (!SocketImplementation->IsShutdownWrite && SocketImplementation->ConnectedPeer != nullptr)
+			Socket* PeerSocket = SocketImplementation->ConnectedPeer;
+			UnixSocket* PeerImplementation = (PeerSocket != nullptr && PeerSocket->Domain == LINUX_AF_UNIX)
+				? reinterpret_cast<UnixSocket*>(PeerSocket->Implementation)
+				: nullptr;
+
+			if (SocketImplementation->IsShutdownWrite)
+			{
+				*ReturnedEvents |= LINUX_POLLERR;
+			}
+			else if (PeerImplementation != nullptr && !PeerImplementation->IsShutdownRead &&
+					 PeerImplementation->ReceiveBufferedBytes < PeerImplementation->ReceiveBufferCapacity)
 			{
 				*ReturnedEvents |= LINUX_POLLOUT;
 			}
-			else if (SocketImplementation->IsShutdownWrite)
+			else if (PeerImplementation == nullptr || PeerImplementation->IsShutdownRead)
 			{
-				*ReturnedEvents |= LINUX_POLLERR;
+				*ReturnedEvents |= (LINUX_POLLERR | LINUX_POLLHUP);
 			}
 		}
 
@@ -618,6 +807,16 @@ void InterProcessComunicationManager::DestroySocket(Socket* SocketEntry)
 			SocketImplementation->PendingConnectionCapacity = 0;
 		}
 
+		if (SocketImplementation != nullptr && SocketImplementation->ReceiveBuffer != nullptr)
+		{
+			delete[] SocketImplementation->ReceiveBuffer;
+			SocketImplementation->ReceiveBuffer = nullptr;
+			SocketImplementation->ReceiveBufferCapacity = 0;
+			SocketImplementation->ReceiveReadOffset = 0;
+			SocketImplementation->ReceiveWriteOffset = 0;
+			SocketImplementation->ReceiveBufferedBytes = 0;
+		}
+
 		delete SocketImplementation;
 	}
 	else if (SocketEntry->Domain == LINUX_AF_INET)
@@ -717,6 +916,21 @@ Socket* InterProcessComunicationManager::CreateSocket(int64_t Domain, int64_t Ty
 		SocketImplementation->PendingConnectionCount = 0;
 		SocketImplementation->PendingConnectionCapacity = 0;
 		SocketImplementation->ConnectedPeer = nullptr;
+		SocketImplementation->ReceiveBuffer = new uint8_t[LINUX_UNIX_SOCKET_BUFFER_CAPACITY];
+		if (SocketImplementation->ReceiveBuffer == nullptr)
+		{
+			delete SocketImplementation;
+			delete NewSocket;
+			if (ErrorCode != nullptr)
+			{
+				*ErrorCode = LINUX_SOCKET_ERR_ENOMEM;
+			}
+			return nullptr;
+		}
+		SocketImplementation->ReceiveBufferCapacity = LINUX_UNIX_SOCKET_BUFFER_CAPACITY;
+		SocketImplementation->ReceiveReadOffset = 0;
+		SocketImplementation->ReceiveWriteOffset = 0;
+		SocketImplementation->ReceiveBufferedBytes = 0;
 		SocketImplementation->IsShutdownRead = false;
 		SocketImplementation->IsShutdownWrite = false;
 		NewSocket->Implementation  = SocketImplementation;

@@ -3752,6 +3752,22 @@ int64_t TranslationLayer::HandleGetsockoptSystemCall(uint64_t FileDescriptor, in
         case LINUX_SO_ERROR:
             OptionValueResult = 0;
             break;
+        case LINUX_SO_REUSEADDR:
+        case LINUX_SO_BROADCAST:
+        case LINUX_SO_KEEPALIVE:
+        case LINUX_SO_OOBINLINE:
+        case LINUX_SO_REUSEPORT:
+        case LINUX_SO_PASSCRED:
+            OptionValueResult = 0;
+            break;
+        case LINUX_SO_SNDBUF:
+        case LINUX_SO_RCVBUF:
+            OptionValueResult = 65536;
+            break;
+        case LINUX_SO_RCVLOWAT:
+        case LINUX_SO_SNDLOWAT:
+            OptionValueResult = 1;
+            break;
         case LINUX_SO_DOMAIN:
             OptionValueResult = SocketEntry->Domain;
             break;
