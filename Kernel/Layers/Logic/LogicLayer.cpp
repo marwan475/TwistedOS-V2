@@ -2824,6 +2824,9 @@ uint8_t LogicLayer::ChangeProcessExecution(uint8_t Id, const char* FilePath, con
     uint64_t CodeSize = Entry->inode->NodeSize;
     uint64_t Pages    = (CodeSize + PAGE_SIZE - 1) / PAGE_SIZE;
 
+    uint64_t ExecPreviousPageTable = Resource->ReadCurrentPageTable();
+    Resource->LoadKernelPageTable();
+
 #ifdef DEBUG_BUILD
     if (ExecTraceTTY != nullptr)
     {
@@ -2835,6 +2838,7 @@ uint8_t LogicLayer::ChangeProcessExecution(uint8_t Id, const char* FilePath, con
     void* CopiedImage = PMM->AllocatePagesFromDescriptor(Pages);
     if (CopiedImage == nullptr)
     {
+        Resource->LoadPageTable(ExecPreviousPageTable);
         return PROCESS_ID_INVALID;
     }
 
@@ -2856,6 +2860,7 @@ uint8_t LogicLayer::ChangeProcessExecution(uint8_t Id, const char* FilePath, con
     if (!ZeroPhysicalBackedBuffer(Resource, CopiedImage, static_cast<uint64_t>(Pages * PAGE_SIZE)))
     {
         PMM->FreePagesFromDescriptor(CopiedImage, Pages);
+        Resource->LoadPageTable(ExecPreviousPageTable);
         return PROCESS_ID_INVALID;
     }
 
@@ -2877,6 +2882,7 @@ uint8_t LogicLayer::ChangeProcessExecution(uint8_t Id, const char* FilePath, con
     if (!CopyPhysicalBackedBuffer(Resource, CopiedImage, Entry->inode->NodeData, CodeSize))
     {
         PMM->FreePagesFromDescriptor(CopiedImage, Pages);
+        Resource->LoadPageTable(ExecPreviousPageTable);
         return PROCESS_ID_INVALID;
     }
 
@@ -2974,8 +2980,11 @@ uint8_t LogicLayer::ChangeProcessExecution(uint8_t Id, const char* FilePath, con
     if (NewAddressSpace == nullptr)
     {
         PMM->FreePagesFromDescriptor(CopiedImage, Pages);
+        Resource->LoadPageTable(ExecPreviousPageTable);
         return PROCESS_ID_INVALID;
     }
+
+    Resource->LoadPageTable(ExecPreviousPageTable);
 
     CpuState NewState = {};
     NewState.rip      = NewUserEntryPoint;
@@ -3140,6 +3149,10 @@ uint8_t LogicLayer::CopyProcess(uint8_t Id)
     }
 
     uint64_t SourceCodePages = (SourceCodeSize + PAGE_SIZE - 1) / PAGE_SIZE;
+
+    uint64_t ForkPreviousPageTable = Resource->ReadCurrentPageTable();
+    Resource->LoadKernelPageTable();
+
     void*    CopiedImage     = PMM->AllocatePagesFromDescriptor(SourceCodePages);
     if (CopiedImage == nullptr)
     {
@@ -3150,17 +3163,20 @@ uint8_t LogicLayer::CopyProcess(uint8_t Id)
                                        static_cast<unsigned long long>(SourceCodeSize));
         }
 #endif
+        Resource->LoadPageTable(ForkPreviousPageTable);
         return PROCESS_ID_INVALID;
     }
 
     if (!ZeroPhysicalBackedBuffer(Resource, CopiedImage, static_cast<uint64_t>(SourceCodePages * PAGE_SIZE)))
     {
         PMM->FreePagesFromDescriptor(CopiedImage, SourceCodePages);
+        Resource->LoadPageTable(ForkPreviousPageTable);
         return PROCESS_ID_INVALID;
     }
     if (!CopyPhysicalBackedBuffer(Resource, CopiedImage, reinterpret_cast<void*>(SourceCodePhysAddr), SourceCodeSize))
     {
         PMM->FreePagesFromDescriptor(CopiedImage, SourceCodePages);
+        Resource->LoadPageTable(ForkPreviousPageTable);
         return PROCESS_ID_INVALID;
     }
 
@@ -3171,6 +3187,7 @@ uint8_t LogicLayer::CopyProcess(uint8_t Id)
         if (ELF == nullptr)
         {
             PMM->FreePagesFromDescriptor(CopiedImage, SourceCodePages);
+            Resource->LoadPageTable(ForkPreviousPageTable);
             return PROCESS_ID_INVALID;
         }
 
@@ -3178,6 +3195,7 @@ uint8_t LogicLayer::CopyProcess(uint8_t Id)
         if (!ELF->ValidateELF(Header))
         {
             PMM->FreePagesFromDescriptor(CopiedImage, SourceCodePages);
+            Resource->LoadPageTable(ForkPreviousPageTable);
             return PROCESS_ID_INVALID;
         }
 
@@ -3197,8 +3215,11 @@ uint8_t LogicLayer::CopyProcess(uint8_t Id)
         }
 #endif
         PMM->FreePagesFromDescriptor(CopiedImage, SourceCodePages);
+        Resource->LoadPageTable(ForkPreviousPageTable);
         return PROCESS_ID_INVALID;
     }
+
+    Resource->LoadPageTable(ForkPreviousPageTable);
 
     uint64_t SourceHeapPhysAddr = SourceAddressSpace->GetHeapPhysicalAddress();
     uint64_t SourceHeapSize     = SourceAddressSpace->GetHeapSize();
