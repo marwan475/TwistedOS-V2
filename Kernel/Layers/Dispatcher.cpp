@@ -8,6 +8,7 @@
 
 #include <Arch/x86.hpp>
 #include <Layers/Resource/Drivers/IDEController.hpp>
+#include <Memory/VirtualMemoryManager.hpp>
 #include <Memory/KernelHeapAllocations.hpp>
 #include <Testing/KernelSelfTests.hpp>
 
@@ -18,6 +19,91 @@ constexpr uint64_t KEYBOARD_INTERRUPT_VECTOR    = 33;
 constexpr uint64_t IDE_PRIMARY_INTERRUPT_VECTOR = 46;
 constexpr uint64_t SYSCALL_INTERRUPT_VECTOR     = 128;
 constexpr uint64_t SCHEDULER_TICK_INTERVAL      = 5;
+
+void DumpPageWalkForAddress(TTY* Terminal, uint64_t ActiveCR3, uint64_t Address, const char* Label)
+{
+    if (Terminal == nullptr)
+    {
+        return;
+    }
+
+    uint64_t PML4Address = ActiveCR3 & PHYS_PAGE_ADDR_MASK;
+    if (PML4Address == 0)
+    {
+        Terminal->Serialprintf("pf_walk: %s addr=%p cr3=%p pml4=<invalid>\n", Label, (void*) Address, (void*) ActiveCR3);
+        return;
+    }
+
+    VirtualAddress Vaddr;
+    Vaddr.value = Address;
+
+    PageTableEntry* PML4 = reinterpret_cast<PageTableEntry*>(PML4Address);
+    PageTableEntry  PML4Entry = PML4[Vaddr.fields.pml4_index];
+
+    Terminal->Serialprintf("pf_walk: %s addr=%p idx[pml4=%u pdpt=%u pd=%u pt=%u] pml4e=%p p=%u rw=%u us=%u ps=%u nx=%u\n", Label, (void*) Address,
+                           static_cast<unsigned int>(Vaddr.fields.pml4_index), static_cast<unsigned int>(Vaddr.fields.pdpt_index),
+                           static_cast<unsigned int>(Vaddr.fields.pd_index), static_cast<unsigned int>(Vaddr.fields.pt_index), (void*) PML4Entry.value,
+                           static_cast<unsigned int>(PML4Entry.fields.present), static_cast<unsigned int>(PML4Entry.fields.writeable),
+                           static_cast<unsigned int>(PML4Entry.fields.user_access), static_cast<unsigned int>(PML4Entry.fields.size),
+                           static_cast<unsigned int>(PML4Entry.fields.execution_disabled));
+
+    if (!PML4Entry.fields.present)
+    {
+        return;
+    }
+
+    uint64_t PDPTAddress = PML4Entry.value & PHYS_PAGE_ADDR_MASK;
+    if (PDPTAddress == 0)
+    {
+        Terminal->Serialprintf("pf_walk: %s pdpt=<invalid>\n", Label);
+        return;
+    }
+
+    PageTableEntry* PDPT = reinterpret_cast<PageTableEntry*>(PDPTAddress);
+    PageTableEntry  PDPTEntry = PDPT[Vaddr.fields.pdpt_index];
+
+    Terminal->Serialprintf("pf_walk: %s pdpte=%p p=%u rw=%u us=%u ps=%u nx=%u\n", Label, (void*) PDPTEntry.value, static_cast<unsigned int>(PDPTEntry.fields.present),
+                           static_cast<unsigned int>(PDPTEntry.fields.writeable), static_cast<unsigned int>(PDPTEntry.fields.user_access),
+                           static_cast<unsigned int>(PDPTEntry.fields.size), static_cast<unsigned int>(PDPTEntry.fields.execution_disabled));
+
+    if (!PDPTEntry.fields.present || PDPTEntry.fields.size)
+    {
+        return;
+    }
+
+    uint64_t PDAddress = PDPTEntry.value & PHYS_PAGE_ADDR_MASK;
+    if (PDAddress == 0)
+    {
+        Terminal->Serialprintf("pf_walk: %s pd=<invalid>\n", Label);
+        return;
+    }
+
+    PageTableEntry* PD = reinterpret_cast<PageTableEntry*>(PDAddress);
+    PageTableEntry  PDEntry = PD[Vaddr.fields.pd_index];
+
+    Terminal->Serialprintf("pf_walk: %s pde=%p p=%u rw=%u us=%u ps=%u nx=%u\n", Label, (void*) PDEntry.value, static_cast<unsigned int>(PDEntry.fields.present),
+                           static_cast<unsigned int>(PDEntry.fields.writeable), static_cast<unsigned int>(PDEntry.fields.user_access),
+                           static_cast<unsigned int>(PDEntry.fields.size), static_cast<unsigned int>(PDEntry.fields.execution_disabled));
+
+    if (!PDEntry.fields.present || PDEntry.fields.size)
+    {
+        return;
+    }
+
+    uint64_t PTAddress = PDEntry.value & PHYS_PAGE_ADDR_MASK;
+    if (PTAddress == 0)
+    {
+        Terminal->Serialprintf("pf_walk: %s pt=<invalid>\n", Label);
+        return;
+    }
+
+    PageTableEntry* PT = reinterpret_cast<PageTableEntry*>(PTAddress);
+    PageTableEntry  PTEntry = PT[Vaddr.fields.pt_index];
+
+    Terminal->Serialprintf("pf_walk: %s pte=%p p=%u rw=%u us=%u nx=%u\n", Label, (void*) PTEntry.value, static_cast<unsigned int>(PTEntry.fields.present),
+                           static_cast<unsigned int>(PTEntry.fields.writeable), static_cast<unsigned int>(PTEntry.fields.user_access),
+                           static_cast<unsigned int>(PTEntry.fields.execution_disabled));
+}
 
 const char* ExceptionName(uint64_t ExceptionVector)
 {

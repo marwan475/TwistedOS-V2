@@ -9,6 +9,86 @@
 
 namespace
 {
+constexpr uint64_t PAGE_TABLE_ADDR_MASK          = PHYS_PAGE_ADDR_MASK;
+constexpr uint64_t VALID_PHYSICAL_ADDR_MASK      = 0x00000000FFFFF000ULL;
+constexpr uint64_t MAX_SUPPORTED_PHYSICAL_ADDR   = 0x0000000100000000ULL;
+constexpr uint64_t ENTRY_FLAG_PRESENT            = (1ULL << 0);
+constexpr uint64_t ENTRY_FLAG_WRITEABLE          = (1ULL << 1);
+constexpr uint64_t ENTRY_FLAG_USER               = (1ULL << 2);
+constexpr uint64_t ENTRY_FLAG_WRITE_THROUGH      = (1ULL << 3);
+constexpr uint64_t ENTRY_FLAG_CACHE_DISABLED     = (1ULL << 4);
+constexpr uint64_t ENTRY_FLAG_ACCESSED           = (1ULL << 5);
+constexpr uint64_t ENTRY_FLAG_DIRTY              = (1ULL << 6);
+constexpr uint64_t ENTRY_FLAG_PAT                = (1ULL << 7);
+constexpr uint64_t ENTRY_FLAG_GLOBAL             = (1ULL << 8);
+constexpr uint64_t ENTRY_FLAG_AVL_MASK           = (0x7ULL << 9);
+constexpr uint64_t ENTRY_FLAG_EXECUTION_DISABLED = (1ULL << 63);
+constexpr uint64_t LEAF_ALLOWED_FLAG_MASK        = ENTRY_FLAG_PRESENT | ENTRY_FLAG_WRITEABLE | ENTRY_FLAG_USER | ENTRY_FLAG_WRITE_THROUGH | ENTRY_FLAG_CACHE_DISABLED |
+                                                ENTRY_FLAG_ACCESSED | ENTRY_FLAG_DIRTY | ENTRY_FLAG_PAT | ENTRY_FLAG_GLOBAL | ENTRY_FLAG_AVL_MASK;
+constexpr uint64_t NON_LEAF_ALLOWED_FLAG_MASK    = ENTRY_FLAG_PRESENT | ENTRY_FLAG_WRITEABLE | ENTRY_FLAG_USER | ENTRY_FLAG_WRITE_THROUGH | ENTRY_FLAG_CACHE_DISABLED |
+                                                 ENTRY_FLAG_ACCESSED | ENTRY_FLAG_AVL_MASK;
+constexpr uint64_t NON_PRESENT_COPY_FLAG_MASK    = LEAF_ALLOWED_FLAG_MASK & ~ENTRY_FLAG_PRESENT;
+
+inline uint64_t BuildNonLeafEntryValue(uint64_t PhysicalAddress, uint64_t ExistingFlags, bool UserAccess)
+{
+    uint64_t SanitizedFlags = ExistingFlags & NON_LEAF_ALLOWED_FLAG_MASK;
+    SanitizedFlags |= (ENTRY_FLAG_PRESENT | ENTRY_FLAG_WRITEABLE);
+    if (UserAccess)
+    {
+        SanitizedFlags |= ENTRY_FLAG_USER;
+    }
+
+    return (PhysicalAddress & VALID_PHYSICAL_ADDR_MASK) | SanitizedFlags;
+}
+
+inline uint64_t BuildLeafEntryValue(uint64_t PhysicalAddress, uint64_t ExistingFlags, bool UserAccess, bool Writeable)
+{
+    uint64_t SanitizedFlags = ExistingFlags & LEAF_ALLOWED_FLAG_MASK;
+    SanitizedFlags &= ~ENTRY_FLAG_EXECUTION_DISABLED;
+    SanitizedFlags |= ENTRY_FLAG_PRESENT;
+    if (UserAccess)
+    {
+        SanitizedFlags |= ENTRY_FLAG_USER;
+    }
+    else
+    {
+        SanitizedFlags &= ~ENTRY_FLAG_USER;
+    }
+
+    if (Writeable)
+    {
+        SanitizedFlags |= ENTRY_FLAG_WRITEABLE;
+    }
+    else
+    {
+        SanitizedFlags &= ~ENTRY_FLAG_WRITEABLE;
+    }
+
+    return (PhysicalAddress & VALID_PHYSICAL_ADDR_MASK) | SanitizedFlags;
+}
+
+inline bool IsValidLeafPhysicalAddress(uint64_t PhysicalAddress)
+{
+    if (PhysicalAddress == 0)
+    {
+        return false;
+    }
+
+    if ((PhysicalAddress & (PAGE_SIZE - 1)) != 0)
+    {
+        return false;
+    }
+
+    return PhysicalAddress < MAX_SUPPORTED_PHYSICAL_ADDR;
+}
+
+inline uint64_t SanitizeNonPresentCopiedEntry(uint64_t EntryValue)
+{
+    uint64_t SanitizedAddress = EntryValue & VALID_PHYSICAL_ADDR_MASK;
+    uint64_t SanitizedFlags   = EntryValue & NON_PRESENT_COPY_FLAG_MASK;
+    return SanitizedAddress | SanitizedFlags;
+}
+
 void FreeClonedUserPagingHierarchy(PageTableEntry* NewPML4, PhysicalMemoryManager& PMM)
 {
     if (NewPML4 == NULL)
@@ -79,7 +159,7 @@ void FreeClonedUserPagingHierarchy(PageTableEntry* NewPML4, PhysicalMemoryManage
  *   VirtualMemoryManager - Constructed virtual memory manager instance.
  */
 VirtualMemoryManager::VirtualMemoryManager(UINTN PageMapL4TableAddr, PhysicalMemoryManager& PMM) : PageMapL4Table((PageTableEntry*) PageMapL4TableAddr), PMM(PMM),
-                                                                                                        LastCopyPageMapL4DebugInfo{COPY_PML4_FAIL_NONE, 0xFFFF, 0xFFFF, 0xFFFF, 0, 0, 0, 0},
+                                                                                                        LastCopyPageMapL4DebugInfo{COPY_PML4_FAIL_NONE, 0xFFFF, 0xFFFF, 0xFFFF, 0, 0, 0, 0, 0},
                                                                                                         LastPageTableMutationDebugInfo{PAGE_TABLE_MUTATION_NONE, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0, 0}
 {
 }
@@ -130,13 +210,9 @@ bool VirtualMemoryManager::MapPage(UINTN PhysicalAddr, UINTN VirtualAddr, const 
             return false;
 
         PageTableEntry PageDirectoryPointerTable = {0};
-        PageDirectoryPointerTable.value          = (UINTN) PageDirectoryPointerTableAddr;
+        PageDirectoryPointerTable.value          = BuildNonLeafEntryValue((UINTN) PageDirectoryPointerTableAddr, 0, Flags.UserAccess);
 
         kmemset(PageDirectoryPointerTableAddr, 0, PAGE_SIZE);
-
-        PageDirectoryPointerTable.fields.present     = 1;
-        PageDirectoryPointerTable.fields.writeable   = 1;
-        PageDirectoryPointerTable.fields.user_access = Flags.UserAccess;
 
         PageMapL4Table[PageMapL4TableIndex] = PageDirectoryPointerTable;
         RecordMutation(PAGE_TABLE_MUTATION_WRITE_PML4, PageDirectoryPointerTable.value, PageDirectoryPointerTable.value & PHYS_PAGE_ADDR_MASK);
@@ -144,7 +220,7 @@ bool VirtualMemoryManager::MapPage(UINTN PhysicalAddr, UINTN VirtualAddr, const 
     }
     else if (Flags.UserAccess && !PmL4Entry.fields.user_access)
     {
-        PmL4Entry.fields.user_access        = 1;
+        PmL4Entry.value                     = BuildNonLeafEntryValue(PmL4Entry.value, PmL4Entry.value, true);
         PageMapL4Table[PageMapL4TableIndex] = PmL4Entry;
     }
 
@@ -158,28 +234,49 @@ bool VirtualMemoryManager::MapPage(UINTN PhysicalAddr, UINTN VirtualAddr, const 
             return false;
 
         PageTableEntry PageDirectoryTable = {0};
-        PageDirectoryTable.value          = (UINTN) PageDirectoryTableAddr;
+        PageDirectoryTable.value          = BuildNonLeafEntryValue((UINTN) PageDirectoryTableAddr, 0, Flags.UserAccess);
 
         kmemset(PageDirectoryTableAddr, 0, PAGE_SIZE);
-
-        PageDirectoryTable.fields.present     = 1;
-        PageDirectoryTable.fields.writeable   = 1;
-        PageDirectoryTable.fields.user_access = Flags.UserAccess;
 
         PageDirectoryPointerTable[PageDirectoryPointerTableIndex] = PageDirectoryTable;
         RecordMutation(PAGE_TABLE_MUTATION_WRITE_PDPT, PageDirectoryTable.value, PageDirectoryTable.value & PHYS_PAGE_ADDR_MASK);
         PDPTEntry                                                 = PageDirectoryPointerTable[PageDirectoryPointerTableIndex];
     }
-    else if (Flags.UserAccess && !PDPTEntry.fields.user_access)
+    if (PDPTEntry.fields.present && PDPTEntry.fields.size)
     {
-        PDPTEntry.fields.user_access                              = 1;
+        void* SplitPDAddr = PMM.AllocatePagesFromDescriptor(1);
+        if (SplitPDAddr == NULL)
+            return false;
+
+        kmemset(SplitPDAddr, 0, PAGE_SIZE);
+
+        uint64_t GigaPagePhysBase = (PDPTEntry.value & PHYS_PAGE_ADDR_MASK) & VALID_PHYSICAL_ADDR_MASK;
+        GigaPagePhysBase &= ~(0x40000000ULL - 1);
+
+        bool GigaPageUser     = (PDPTEntry.fields.user_access != 0);
+        bool GigaPageWritable = (PDPTEntry.fields.writeable != 0);
+
+        PageTableEntry* SplitPD = (PageTableEntry*) SplitPDAddr;
+        for (UINTN SubIndex = 0; SubIndex < 512; SubIndex++)
+        {
+            uint64_t SubPhys    = GigaPagePhysBase + (SubIndex * 0x200000ULL);
+            uint64_t EntryValue = (SubPhys & VALID_PHYSICAL_ADDR_MASK);
+            EntryValue |= ENTRY_FLAG_PRESENT | (1ULL << 7);
+            if (GigaPageWritable)
+                EntryValue |= ENTRY_FLAG_WRITEABLE;
+            if (GigaPageUser)
+                EntryValue |= ENTRY_FLAG_USER;
+            SplitPD[SubIndex].value = EntryValue;
+        }
+
+        bool NewUserAccess = GigaPageUser || Flags.UserAccess;
+        PDPTEntry.value    = BuildNonLeafEntryValue((UINTN) SplitPDAddr, 0, NewUserAccess);
         PageDirectoryPointerTable[PageDirectoryPointerTableIndex] = PDPTEntry;
     }
-
-    if (PDPTEntry.fields.size)
+    else if (Flags.UserAccess && !PDPTEntry.fields.user_access)
     {
-        RecordMutation(PAGE_TABLE_MUTATION_PDPT_LARGE_PAGE_CONFLICT, PDPTEntry.value, PDPTEntry.value & PHYS_PAGE_ADDR_MASK);
-        return false;
+        PDPTEntry.value                                           = BuildNonLeafEntryValue(PDPTEntry.value, PDPTEntry.value, true);
+        PageDirectoryPointerTable[PageDirectoryPointerTableIndex] = PDPTEntry;
     }
 
     PageTableEntry* PageDirectoryTable = (PageTableEntry*) (PDPTEntry.value & PHYS_PAGE_ADDR_MASK);
@@ -192,28 +289,43 @@ bool VirtualMemoryManager::MapPage(UINTN PhysicalAddr, UINTN VirtualAddr, const 
             return false;
 
         PageTableEntry PageTable = {0};
-        PageTable.value          = (UINTN) PageTableAddr;
+        PageTable.value          = BuildNonLeafEntryValue((UINTN) PageTableAddr, 0, Flags.UserAccess);
 
         kmemset(PageTableAddr, 0, PAGE_SIZE);
-
-        PageTable.fields.present     = 1;
-        PageTable.fields.writeable   = 1;
-        PageTable.fields.user_access = Flags.UserAccess;
 
         PageDirectoryTable[PageDirectoryTableIndex] = PageTable;
         RecordMutation(PAGE_TABLE_MUTATION_WRITE_PD, PageTable.value, PageTable.value & PHYS_PAGE_ADDR_MASK);
         PDTEntry                                    = PageDirectoryTable[PageDirectoryTableIndex];
     }
-    else if (Flags.UserAccess && !PDTEntry.fields.user_access)
+    if (PDTEntry.fields.present && PDTEntry.fields.size)
     {
-        PDTEntry.fields.user_access                 = 1;
+        void* SplitPTAddr = PMM.AllocatePagesFromDescriptor(1);
+        if (SplitPTAddr == NULL)
+            return false;
+
+        kmemset(SplitPTAddr, 0, PAGE_SIZE);
+
+        uint64_t MegaPagePhysBase = (PDTEntry.value & PHYS_PAGE_ADDR_MASK) & VALID_PHYSICAL_ADDR_MASK;
+        MegaPagePhysBase &= ~(0x200000ULL - 1);
+
+        bool MegaPageUser     = (PDTEntry.fields.user_access != 0);
+        bool MegaPageWritable = (PDTEntry.fields.writeable != 0);
+
+        PageTableEntry* SplitPT = (PageTableEntry*) SplitPTAddr;
+        for (UINTN SubIndex = 0; SubIndex < 512; SubIndex++)
+        {
+            uint64_t PagePhys = MegaPagePhysBase + (SubIndex * PAGE_SIZE);
+            SplitPT[SubIndex].value = BuildLeafEntryValue(PagePhys, 0, MegaPageUser, MegaPageWritable);
+        }
+
+        bool NewUserAccess = MegaPageUser || Flags.UserAccess;
+        PDTEntry.value     = BuildNonLeafEntryValue((UINTN) SplitPTAddr, 0, NewUserAccess);
         PageDirectoryTable[PageDirectoryTableIndex] = PDTEntry;
     }
-
-    if (PDTEntry.fields.size)
+    else if (Flags.UserAccess && !PDTEntry.fields.user_access)
     {
-        RecordMutation(PAGE_TABLE_MUTATION_PD_LARGE_PAGE_CONFLICT, PDTEntry.value, PDTEntry.value & PHYS_PAGE_ADDR_MASK);
-        return false;
+        PDTEntry.value                              = BuildNonLeafEntryValue(PDTEntry.value, PDTEntry.value, true);
+        PageDirectoryTable[PageDirectoryTableIndex] = PDTEntry;
     }
 
     if (TrackSuspiciousSlot)
@@ -227,11 +339,7 @@ bool VirtualMemoryManager::MapPage(UINTN PhysicalAddr, UINTN VirtualAddr, const 
 
     PageTableEntry* PageTable  = (PageTableEntry*) (PDTEntry.value & PHYS_PAGE_ADDR_MASK);
     PageTableEntry  NewPTEntry = {0};
-    NewPTEntry.value           = PhysicalAddr & PHYS_PAGE_ADDR_MASK;
-
-    NewPTEntry.fields.present     = 1;
-    NewPTEntry.fields.writeable   = Flags.Writeable;
-    NewPTEntry.fields.user_access = Flags.UserAccess;
+    NewPTEntry.value           = BuildLeafEntryValue(PhysicalAddr, 0, Flags.UserAccess, Flags.Writeable);
 
     PageTable[PageTableIndex] = NewPTEntry;
     RecordMutation(PAGE_TABLE_MUTATION_WRITE_PT, NewPTEntry.value, NewPTEntry.value & PHYS_PAGE_ADDR_MASK);
@@ -241,6 +349,8 @@ bool VirtualMemoryManager::MapPage(UINTN PhysicalAddr, UINTN VirtualAddr, const 
 
 bool VirtualMemoryManager::ProtectPage(UINTN VirtualAddr, bool UserAccess, bool Writeable, bool Executable)
 {
+    (void) Executable;
+
     VirtualAddress Vaddr;
     Vaddr.value = VirtualAddr;
 
@@ -286,9 +396,7 @@ bool VirtualMemoryManager::ProtectPage(UINTN VirtualAddr, bool UserAccess, bool 
         return false;
     }
 
-    PTEntry.fields.user_access        = UserAccess ? 1U : 0U;
-    PTEntry.fields.writeable          = Writeable ? 1U : 0U;
-    PTEntry.fields.execution_disabled = Executable ? 0U : 1U;
+    PTEntry.value = BuildLeafEntryValue(PTEntry.value, PTEntry.value, UserAccess, Writeable);
     PageTable[PageTableIndex]         = PTEntry;
 
     __asm__("invlpg (%0)\n" : : "r"(VirtualAddr) : "memory");
@@ -438,9 +546,10 @@ UINTN VirtualMemoryManager::UnmapRange(UINTN VirtualAddr, UINTN Pages)
  */
 PageTableEntry* VirtualMemoryManager::CopyPageMapL4Table()
 {
-    LastCopyPageMapL4DebugInfo = {COPY_PML4_FAIL_NONE, 0xFFFF, 0xFFFF, 0xFFFF, 0, 0, 0, 0};
+    LastCopyPageMapL4DebugInfo = {COPY_PML4_FAIL_NONE, 0xFFFF, 0xFFFF, 0xFFFF, 0, 0, 0, 0, 0};
 
     uint64_t AllocationAttempts = 0;
+    uint64_t SanitizedEntryCount = 0;
 
     auto RecordFailure = [&](CopyPageMapL4FailureStage FailureStage, uint16_t PML4Index, uint16_t PDPTIndex, uint16_t PDIndex, uint64_t SourceEntryValue,
                              uint64_t DerivedAddress) {
@@ -451,6 +560,14 @@ PageTableEntry* VirtualMemoryManager::CopyPageMapL4Table()
         LastCopyPageMapL4DebugInfo.SourceEntryValue  = SourceEntryValue;
         LastCopyPageMapL4DebugInfo.DerivedAddress    = DerivedAddress;
         LastCopyPageMapL4DebugInfo.AllocationAttempts = AllocationAttempts;
+        LastCopyPageMapL4DebugInfo.SanitizedEntryCount = SanitizedEntryCount;
+    };
+
+    auto RecordSanitizedValue = [&](uint64_t OriginalValue, uint64_t SanitizedValue) {
+        if (OriginalValue != SanitizedValue)
+        {
+            ++SanitizedEntryCount;
+        }
     };
 
     auto IsValidTablePhysicalAddress = [&](UINTN Address) -> bool {
@@ -473,7 +590,6 @@ PageTableEntry* VirtualMemoryManager::CopyPageMapL4Table()
     };
 
     constexpr UINTN TABLE_ADDRESS_SOFTWARE_BITS_MASK = 0x000FF00000000000ULL;
-    constexpr UINTN TABLE_ENTRY_FLAG_MASK            = ~PHYS_PAGE_ADDR_MASK & ~TABLE_ADDRESS_SOFTWARE_BITS_MASK;
 
     auto NormalizeTablePhysicalAddress = [&](UINTN Address) -> UINTN {
         if (IsValidTablePhysicalAddress(Address))
@@ -551,7 +667,24 @@ PageTableEntry* VirtualMemoryManager::CopyPageMapL4Table()
 
             if (PDPTEntry.fields.size)
             {
-                NewPDPT[PDPTIndex] = PDPTEntry;
+                uint64_t LargePageAddress = static_cast<uint64_t>(PDPTEntry.value & PHYS_PAGE_ADDR_MASK);
+                LargePageAddress          = (LargePageAddress & VALID_PHYSICAL_ADDR_MASK);
+
+                if (IsValidLeafPhysicalAddress(LargePageAddress))
+                {
+                    bool UserAccess           = (PDPTEntry.fields.user_access != 0);
+                    bool Writeable            = (PDPTEntry.fields.writeable != 0);
+                    PageTableEntry Sanitized  = PDPTEntry;
+                    Sanitized.value           = BuildLeafEntryValue(LargePageAddress, PDPTEntry.value, UserAccess, Writeable);
+                    NewPDPT[PDPTIndex]        = Sanitized;
+                    RecordSanitizedValue(PDPTEntry.value, Sanitized.value);
+                }
+                else
+                {
+                    uint64_t SanitizedValue = SanitizeNonPresentCopiedEntry(PDPTEntry.value);
+                    NewPDPT[PDPTIndex].value = SanitizedValue;
+                    RecordSanitizedValue(PDPTEntry.value, SanitizedValue);
+                }
                 continue;
             }
 
@@ -586,7 +719,24 @@ PageTableEntry* VirtualMemoryManager::CopyPageMapL4Table()
 
                 if (PDEntry.fields.size)
                 {
-                    NewPD[PDIndex] = PDEntry;
+                    uint64_t LargePageAddress = static_cast<uint64_t>(PDEntry.value & PHYS_PAGE_ADDR_MASK);
+                    LargePageAddress          = (LargePageAddress & VALID_PHYSICAL_ADDR_MASK);
+
+                    if (IsValidLeafPhysicalAddress(LargePageAddress))
+                    {
+                        bool UserAccess          = (PDEntry.fields.user_access != 0);
+                        bool Writeable           = (PDEntry.fields.writeable != 0);
+                        PageTableEntry Sanitized = PDEntry;
+                        Sanitized.value          = BuildLeafEntryValue(LargePageAddress, PDEntry.value, UserAccess, Writeable);
+                        NewPD[PDIndex]           = Sanitized;
+                        RecordSanitizedValue(PDEntry.value, Sanitized.value);
+                    }
+                    else
+                    {
+                        uint64_t SanitizedValue = SanitizeNonPresentCopiedEntry(PDEntry.value);
+                        NewPD[PDIndex].value = SanitizedValue;
+                        RecordSanitizedValue(PDEntry.value, SanitizedValue);
+                    }
                     continue;
                 }
 
@@ -614,23 +764,51 @@ PageTableEntry* VirtualMemoryManager::CopyPageMapL4Table()
 
                 for (UINTN PTIndex = 0; PTIndex < 512; PTIndex++)
                 {
-                    NewPT[PTIndex] = OldPT[PTIndex];
+                    PageTableEntry OldPTEntry = OldPT[PTIndex];
+                    if (!OldPTEntry.fields.present)
+                    {
+                        uint64_t SanitizedValue = SanitizeNonPresentCopiedEntry(OldPTEntry.value);
+                        NewPT[PTIndex].value = SanitizedValue;
+                        RecordSanitizedValue(OldPTEntry.value, SanitizedValue);
+                        continue;
+                    }
+
+                    bool UserAccess = (OldPTEntry.fields.user_access != 0);
+                    bool Writeable  = (OldPTEntry.fields.writeable != 0);
+
+                    uint64_t OldPhysicalAddress = static_cast<uint64_t>(OldPTEntry.value & PHYS_PAGE_ADDR_MASK);
+                    OldPhysicalAddress          = (OldPhysicalAddress & VALID_PHYSICAL_ADDR_MASK);
+                    if (!IsValidLeafPhysicalAddress(OldPhysicalAddress))
+                    {
+                        uint64_t SanitizedValue = SanitizeNonPresentCopiedEntry(OldPTEntry.value);
+                        NewPT[PTIndex].value = SanitizedValue;
+                        RecordSanitizedValue(OldPTEntry.value, SanitizedValue);
+                        continue;
+                    }
+
+                    PageTableEntry SanitizedPTEntry = OldPTEntry;
+                    SanitizedPTEntry.value          = BuildLeafEntryValue(OldPTEntry.value, OldPTEntry.value, UserAccess, Writeable);
+                    NewPT[PTIndex]                 = SanitizedPTEntry;
+                    RecordSanitizedValue(OldPTEntry.value, SanitizedPTEntry.value);
                 }
 
                 PageTableEntry NewPDEntry = PDEntry;
-                NewPDEntry.value          = ((UINTN) NewPTAddr & PHYS_PAGE_ADDR_MASK) | (PDEntry.value & TABLE_ENTRY_FLAG_MASK);
+                NewPDEntry.value          = BuildNonLeafEntryValue((UINTN) NewPTAddr, PDEntry.value, PDEntry.fields.user_access != 0);
                 NewPD[PDIndex]            = NewPDEntry;
             }
 
             PageTableEntry NewPDPTEntry = PDPTEntry;
-            NewPDPTEntry.value          = ((UINTN) NewPDAddr & PHYS_PAGE_ADDR_MASK) | (PDPTEntry.value & TABLE_ENTRY_FLAG_MASK);
+            NewPDPTEntry.value          = BuildNonLeafEntryValue((UINTN) NewPDAddr, PDPTEntry.value, PDPTEntry.fields.user_access != 0);
             NewPDPT[PDPTIndex]          = NewPDPTEntry;
         }
 
         PageTableEntry NewPML4Entry = PML4Entry;
-        NewPML4Entry.value          = ((UINTN) NewPDPTAddr & PHYS_PAGE_ADDR_MASK) | (PML4Entry.value & TABLE_ENTRY_FLAG_MASK);
+        NewPML4Entry.value          = BuildNonLeafEntryValue((UINTN) NewPDPTAddr, PML4Entry.value, PML4Entry.fields.user_access != 0);
         NewPML4[PML4Index]          = NewPML4Entry;
     }
+
+    LastCopyPageMapL4DebugInfo.AllocationAttempts = AllocationAttempts;
+    LastCopyPageMapL4DebugInfo.SanitizedEntryCount = SanitizedEntryCount;
 
     return NewPML4;
 }

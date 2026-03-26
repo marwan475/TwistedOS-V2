@@ -1359,6 +1359,11 @@ bool IsVirtualAddressMapped(uint64_t PageMapL4TableAddr, uint64_t Address)
         return false;
     }
 
+    if (PDPTEntry.fields.size)
+    {
+        return true;
+    }
+
     uint64_t PDAddress = NormalizeTablePhysicalAddress(PDPTEntry.value & PHYS_PAGE_ADDR_MASK);
     if (PDAddress == 0)
     {

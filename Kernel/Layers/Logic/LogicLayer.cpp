@@ -199,6 +199,26 @@ bool IsValidTablePhysicalAddress(uint64_t Address)
     return Address < 0xC0000000ULL;
 }
 
+bool IsValidMappedPhysicalAddress(uint64_t Address)
+{
+    if (Address == 0)
+    {
+        return false;
+    }
+
+    if ((Address & (PAGE_SIZE - 1)) != 0)
+    {
+        return false;
+    }
+
+    if ((Address & 0xFFFF000000000000ULL) != 0)
+    {
+        return false;
+    }
+
+    return Address < 0x100000000ULL;
+}
+
 uint64_t NormalizeTablePhysicalAddress(uint64_t Address)
 {
     constexpr uint64_t TABLE_ADDRESS_SOFTWARE_BITS_MASK = 0x000FF00000000000ULL;
@@ -210,6 +230,24 @@ uint64_t NormalizeTablePhysicalAddress(uint64_t Address)
 
     uint64_t SanitizedAddress = Address & ~TABLE_ADDRESS_SOFTWARE_BITS_MASK;
     if (IsValidTablePhysicalAddress(SanitizedAddress))
+    {
+        return SanitizedAddress;
+    }
+
+    return 0;
+}
+
+uint64_t NormalizeMappedPhysicalAddress(uint64_t Address)
+{
+    constexpr uint64_t MAPPED_ADDRESS_SOFTWARE_BITS_MASK = 0x000FF00000000000ULL;
+
+    if (IsValidMappedPhysicalAddress(Address))
+    {
+        return Address;
+    }
+
+    uint64_t SanitizedAddress = Address & ~MAPPED_ADDRESS_SOFTWARE_BITS_MASK;
+    if (IsValidMappedPhysicalAddress(SanitizedAddress))
     {
         return SanitizedAddress;
     }
@@ -409,7 +447,7 @@ bool EnsureLazyLoadedINodeData(ResourceLayer* Resource, INode* Node)
         return true;
     }
 
-    if (Resource == nullptr || Resource->GetPMM() == nullptr || Node->LazyLoadContext == nullptr || Node->BackingInodeNumber == 0 || Node->NodeSize == 0)
+    if (Resource == nullptr || Node->LazyLoadContext == nullptr || Node->BackingInodeNumber == 0 || Node->NodeSize == 0)
     {
 #ifdef DEBUG_BUILD
         TTY* Terminal = (Resource != nullptr) ? Resource->GetTTY() : nullptr;
@@ -429,22 +467,31 @@ bool EnsureLazyLoadedINodeData(ResourceLayer* Resource, INode* Node)
         return false;
     }
 
+    uint64_t PreviousPageTable = Resource->ReadCurrentPageTable();
+    if (PreviousPageTable == 0)
+    {
+        return false;
+    }
+
+    Resource->LoadKernelPageTable();
+
     uint64_t PageCount = (Node->NodeSize + PAGE_SIZE - 1) / PAGE_SIZE;
-    void*    FileData  = Resource->GetPMM()->AllocatePagesFromDescriptor(PageCount);
+    void*    FileData  = Resource->kmalloc(Node->NodeSize);
     if (FileData == nullptr)
     {
+        Resource->LoadPageTable(PreviousPageTable);
 #ifdef DEBUG_BUILD
         TTY* Terminal = Resource->GetTTY();
         if (Terminal != nullptr)
         {
-            Terminal->Serialprintf("lazy_inode_fail: pmm_alloc inode=%u size=%llu pages=%llu\n", Node->BackingInodeNumber, static_cast<unsigned long long>(Node->NodeSize),
+                Terminal->Serialprintf("lazy_inode_fail: kmalloc inode=%u size=%llu pages=%llu\n", Node->BackingInodeNumber, static_cast<unsigned long long>(Node->NodeSize),
                                    static_cast<unsigned long long>(PageCount));
         }
 #endif
         return false;
     }
 
-    kmemset(FileData, 0, static_cast<size_t>(PageCount * PAGE_SIZE));
+    kmemset(FileData, 0, static_cast<size_t>(Node->NodeSize));
 
     if (!FileSystemManager->LoadInodeData(Node->BackingInodeNumber, FileData, Node->NodeSize))
     {
@@ -456,13 +503,14 @@ bool EnsureLazyLoadedINodeData(ResourceLayer* Resource, INode* Node)
                                    static_cast<unsigned long long>(Node->NodeSize), static_cast<unsigned long long>(PageCount), FileData);
         }
 #endif
-        Resource->GetPMM()->FreePagesFromDescriptor(FileData, PageCount);
+        Resource->kfree(FileData);
+    Resource->LoadPageTable(PreviousPageTable);
         return false;
     }
 
     Node->NodeData            = FileData;
-    Node->LazyDataBackedByPMM = true;
-    Node->LazyDataPageCount   = PageCount;
+    Node->LazyDataBackedByPMM = false;
+    Node->LazyDataPageCount   = 0;
 
 #ifdef DEBUG_BUILD
     TTY* Terminal = Resource->GetTTY();
@@ -472,6 +520,8 @@ bool EnsureLazyLoadedINodeData(ResourceLayer* Resource, INode* Node)
                                static_cast<unsigned long long>(PageCount), FileData);
     }
 #endif
+
+    Resource->LoadPageTable(PreviousPageTable);
 
     return true;
 }
@@ -496,6 +546,30 @@ bool CopyPhysicalBackedBuffer(ResourceLayer* Resource, void* Destination, const 
 
     Resource->LoadKernelPageTable();
     memcpy(Destination, Source, static_cast<size_t>(Size));
+    Resource->LoadPageTable(PreviousPageTable);
+    return true;
+}
+
+bool ZeroPhysicalBackedBuffer(ResourceLayer* Resource, void* Destination, uint64_t Size)
+{
+    if (Resource == nullptr || Destination == nullptr)
+    {
+        return false;
+    }
+
+    if (Size == 0)
+    {
+        return true;
+    }
+
+    uint64_t PreviousPageTable = Resource->ReadCurrentPageTable();
+    if (PreviousPageTable == 0)
+    {
+        return false;
+    }
+
+    Resource->LoadKernelPageTable();
+    kmemset(Destination, 0, static_cast<size_t>(Size));
     Resource->LoadPageTable(PreviousPageTable);
     return true;
 }
@@ -579,7 +653,10 @@ bool AppendELFLoadSegmentsToAddressSpace(ResourceLayer* Resource, ELFManager* EL
                 {
                     uint64_t BssTailVirtual  = BssVirtualStart;
                     uint64_t BssTailPhysical = ImageAddress + ProgramHeader.Offset + ProgramHeader.FileSize;
-                    kmemset(reinterpret_cast<void*>(BssTailPhysical), 0, static_cast<size_t>(BssTailBytes));
+                    if (!ZeroPhysicalBackedBuffer(Resource, reinterpret_cast<void*>(BssTailPhysical), BssTailBytes))
+                    {
+                        return false;
+                    }
 
                     ELFMemoryRegion BssTailRegion = {};
                     BssTailRegion.PhysicalAddress = BssTailPhysical;
@@ -606,7 +683,11 @@ bool AppendELFLoadSegmentsToAddressSpace(ResourceLayer* Resource, ELFManager* EL
                     return false;
                 }
 
-                kmemset(BssPhysical, 0, static_cast<size_t>(BssPages * PAGE_SIZE));
+                if (!ZeroPhysicalBackedBuffer(Resource, BssPhysical, static_cast<uint64_t>(BssPages * PAGE_SIZE)))
+                {
+                    Resource->GetPMM()->FreePagesFromDescriptor(BssPhysical, BssPages);
+                    return false;
+                }
 
                 ELFMemoryRegion BssRegion = {};
                 BssRegion.PhysicalAddress = reinterpret_cast<uint64_t>(BssPhysical);
@@ -769,11 +850,21 @@ void ReleaseRunningExecutable(ResourceLayer* Resource, Process* TargetProcess)
         --ExecutableNode->LazyLoadRefCount;
     }
 
-    if (ExecutableNode->LazyLoadRefCount == 0 && ExecutableNode->NodeData != nullptr && ExecutableNode->LazyDataBackedByPMM)
+    if (ExecutableNode->LazyLoadRefCount == 0 && ExecutableNode->NodeData != nullptr)
     {
-        if (Resource != nullptr && Resource->GetPMM() != nullptr && ExecutableNode->LazyDataPageCount != 0)
+        if (ExecutableNode->LazyDataBackedByPMM)
         {
-            Resource->GetPMM()->FreePagesFromDescriptor(ExecutableNode->NodeData, ExecutableNode->LazyDataPageCount);
+            if (Resource != nullptr && Resource->GetPMM() != nullptr && ExecutableNode->LazyDataPageCount != 0)
+            {
+                Resource->GetPMM()->FreePagesFromDescriptor(ExecutableNode->NodeData, ExecutableNode->LazyDataPageCount);
+            }
+        }
+        else
+        {
+            if (Resource != nullptr)
+            {
+                Resource->kfree(ExecutableNode->NodeData);
+            }
         }
 
         ExecutableNode->NodeData            = nullptr;
@@ -1239,7 +1330,13 @@ bool IsUserAccessiblePageMapped(uint64_t PageMapL4TableAddr, uint64_t Address)
     VirtualAddress Vaddr;
     Vaddr.value = Address;
 
-    PageTableEntry* PML4 = reinterpret_cast<PageTableEntry*>(PageMapL4TableAddr);
+    uint64_t PML4Address = NormalizeTablePhysicalAddress(PageMapL4TableAddr);
+    if (PML4Address == 0)
+    {
+        return false;
+    }
+
+    PageTableEntry* PML4 = reinterpret_cast<PageTableEntry*>(PML4Address);
     if (PML4 == nullptr)
     {
         return false;
@@ -1265,6 +1362,17 @@ bool IsUserAccessiblePageMapped(uint64_t PageMapL4TableAddr, uint64_t Address)
         return false;
     }
 
+    if (PDPTEntry.fields.size)
+    {
+        uint64_t LargePageAddress = NormalizeMappedPhysicalAddress(PDPTEntry.value & PHYS_PAGE_ADDR_MASK);
+        if (LargePageAddress == 0 || (LargePageAddress & ((1ULL << 30) - 1)) != 0)
+        {
+            return false;
+        }
+
+        return true;
+    }
+
     uint64_t PDAddress = NormalizeTablePhysicalAddress(PDPTEntry.value & PHYS_PAGE_ADDR_MASK);
     if (PDAddress == 0)
     {
@@ -1281,6 +1389,12 @@ bool IsUserAccessiblePageMapped(uint64_t PageMapL4TableAddr, uint64_t Address)
 
     if (PDEntry.fields.size)
     {
+        uint64_t LargePageAddress = NormalizeMappedPhysicalAddress(PDEntry.value & PHYS_PAGE_ADDR_MASK);
+        if (LargePageAddress == 0 || (LargePageAddress & ((1ULL << 21) - 1)) != 0)
+        {
+            return false;
+        }
+
         return true;
     }
 
@@ -1298,10 +1412,16 @@ bool IsUserAccessiblePageMapped(uint64_t PageMapL4TableAddr, uint64_t Address)
         return false;
     }
 
+    uint64_t PageAddress = NormalizeMappedPhysicalAddress(PTEntry.value & PHYS_PAGE_ADDR_MASK);
+    if (PageAddress == 0 || (PageAddress & (PAGE_SIZE - 1)) != 0)
+    {
+        return false;
+    }
+
     return true;
 }
 
-bool IsUserAddressRangeMappedByPageTables(const Process* CurrentProcess, uint64_t Address, uint64_t Count)
+bool IsUserAddressRangeMappedByPageTables(ResourceLayer* Resource, const Process* CurrentProcess, uint64_t Address, uint64_t Count)
 {
     if (CurrentProcess == nullptr || CurrentProcess->AddressSpace == nullptr)
     {
@@ -1319,6 +1439,15 @@ bool IsUserAddressRangeMappedByPageTables(const Process* CurrentProcess, uint64_
         return false;
     }
 
+    uint64_t OriginalPageTableAddr = 0;
+    bool     RestorePageTable      = false;
+    if (Resource != nullptr)
+    {
+        OriginalPageTableAddr = Resource->ReadCurrentPageTable();
+        Resource->LoadKernelPageTable();
+        RestorePageTable = (OriginalPageTableAddr != 0);
+    }
+
     uint64_t StartPage = AlignDownToPage(Address);
     uint64_t EndPage   = AlignDownToPage(Address + (Count - 1));
 
@@ -1326,6 +1455,25 @@ bool IsUserAddressRangeMappedByPageTables(const Process* CurrentProcess, uint64_
     {
         if (!IsUserAccessiblePageMapped(PageMapL4TableAddr, PageAddress))
         {
+#ifdef DEBUG_BUILD
+            if (Resource != nullptr)
+            {
+                TTY* Terminal = Resource->GetTTY();
+                if (Terminal != nullptr)
+                {
+                    Terminal->Serialprintf(
+                        "user_copy_map_dbg: pid=%u map_fail page=%p addr=%p count=%llu start=%p end=%p cr3=%p proc_cr3=%p\n", CurrentProcess->Id,
+                        reinterpret_cast<void*>(PageAddress), reinterpret_cast<void*>(Address), static_cast<unsigned long long>(Count),
+                        reinterpret_cast<void*>(StartPage), reinterpret_cast<void*>(EndPage), reinterpret_cast<void*>(Resource->ReadCurrentPageTable()),
+                        reinterpret_cast<void*>(PageMapL4TableAddr));
+                }
+            }
+#endif
+            if (RestorePageTable)
+            {
+                Resource->LoadPageTable(OriginalPageTableAddr);
+            }
+
             return false;
         }
 
@@ -1333,6 +1481,11 @@ bool IsUserAddressRangeMappedByPageTables(const Process* CurrentProcess, uint64_
         {
             break;
         }
+    }
+
+    if (RestorePageTable)
+    {
+        Resource->LoadPageTable(OriginalPageTableAddr);
     }
 
     return true;
@@ -1448,7 +1601,7 @@ bool CloneAnonymousProcessMappings(ResourceLayer* Resource, const Process* Sourc
     return true;
 }
 
-bool IsUserAddressRangeAccessible(const Process* CurrentProcess, uint64_t Address, uint64_t Count)
+bool IsUserAddressRangeAccessible(ResourceLayer* Resource, const Process* CurrentProcess, uint64_t Address, uint64_t Count)
 {
     if (CurrentProcess == nullptr)
     {
@@ -1500,7 +1653,7 @@ bool IsUserAddressRangeAccessible(const Process* CurrentProcess, uint64_t Addres
         return true;
     }
 
-    return IsUserAddressRangeMappedByPageTables(CurrentProcess, Address, Count);
+    return IsUserAddressRangeMappedByPageTables(Resource, CurrentProcess, Address, Count);
 }
 
 bool SetProcessSignalState(ResourceLayer* Resource, Process* TargetProcess, int64_t Signal, uint64_t HandlerAddress, uint64_t Restorer)
@@ -1526,12 +1679,12 @@ bool SetProcessSignalState(ResourceLayer* Resource, Process* TargetProcess, int6
         OriginalRSP = TargetProcess->State.rsp;
     }
 
-    if (!IsLowerCanonicalUserAddress(HandlerAddress) || !IsUserAddressRangeAccessible(TargetProcess, HandlerAddress, sizeof(uint8_t)))
+    if (!IsLowerCanonicalUserAddress(HandlerAddress) || !IsUserAddressRangeAccessible(Resource, TargetProcess, HandlerAddress, sizeof(uint8_t)))
     {
         return false;
     }
 
-    if (!IsLowerCanonicalUserAddress(OriginalRIP) || !IsUserAddressRangeAccessible(TargetProcess, OriginalRIP, sizeof(uint8_t)))
+    if (!IsLowerCanonicalUserAddress(OriginalRIP) || !IsUserAddressRangeAccessible(Resource, TargetProcess, OriginalRIP, sizeof(uint8_t)))
     {
         return false;
     }
@@ -1542,7 +1695,7 @@ bool SetProcessSignalState(ResourceLayer* Resource, Process* TargetProcess, int6
     }
 
     uint64_t NewUserRSP = OriginalRSP - sizeof(uint64_t);
-    if (!IsUserAddressRangeAccessible(TargetProcess, NewUserRSP, sizeof(uint64_t)))
+    if (!IsUserAddressRangeAccessible(Resource, TargetProcess, NewUserRSP, sizeof(uint64_t)))
     {
         return false;
     }
@@ -2511,6 +2664,14 @@ uint8_t LogicLayer::ChangeProcessExecution(uint8_t Id, const char* FilePath, con
     }
 #endif
 
+#ifdef DEBUG_BUILD
+    TTY* ExecTraceTTY = (Resource != nullptr) ? Resource->GetTTY() : nullptr;
+    if (ExecTraceTTY != nullptr)
+    {
+        ExecTraceTTY->Serialprintf("exec_trace: pid=%u path='%s' stage=before_lookup cr3=%p\n", Id, FilePath, (void*)Resource->ReadCurrentPageTable());
+    }
+#endif
+
     Dentry* Entry = VFS->Lookup(FilePath);
     if (Entry == nullptr || Entry->inode == nullptr)
     {
@@ -2522,10 +2683,27 @@ uint8_t LogicLayer::ChangeProcessExecution(uint8_t Id, const char* FilePath, con
         return PROCESS_ID_INVALID;
     }
 
+#ifdef DEBUG_BUILD
+    if (ExecTraceTTY != nullptr)
+    {
+        ExecTraceTTY->Serialprintf("exec_trace: pid=%u path='%s' stage=after_lookup inode_data=%p pmm_backed=%u cr3=%p\n",
+            Id, FilePath, Entry->inode->NodeData, (unsigned)Entry->inode->LazyDataBackedByPMM, (void*)Resource->ReadCurrentPageTable());
+    }
+#endif
+
     if (Entry->inode->NodeSize == 0 || !EnsureLazyLoadedINodeData(Resource, Entry->inode))
     {
         return PROCESS_ID_INVALID;
     }
+
+#ifdef DEBUG_BUILD
+    if (ExecTraceTTY != nullptr)
+    {
+        ExecTraceTTY->Serialprintf("exec_trace: pid=%u path='%s' stage=after_lazy_load inode_data=%p pmm_backed=%u size=%llu cr3=%p\n",
+            Id, FilePath, Entry->inode->NodeData, (unsigned)Entry->inode->LazyDataBackedByPMM, 
+            static_cast<unsigned long long>(Entry->inode->NodeSize), (void*)Resource->ReadCurrentPageTable());
+    }
+#endif
 
 #ifdef DEBUG_BUILD
     if (IsXorgExecPath && ExecDebugTTY != nullptr)
@@ -2646,18 +2824,68 @@ uint8_t LogicLayer::ChangeProcessExecution(uint8_t Id, const char* FilePath, con
     uint64_t CodeSize = Entry->inode->NodeSize;
     uint64_t Pages    = (CodeSize + PAGE_SIZE - 1) / PAGE_SIZE;
 
+#ifdef DEBUG_BUILD
+    if (ExecTraceTTY != nullptr)
+    {
+        ExecTraceTTY->Serialprintf("exec_trace: pid=%u path='%s' stage=before_alloc_copiedimage pages=%llu cr3=%p\n",
+            Id, FilePath, static_cast<unsigned long long>(Pages), (void*)Resource->ReadCurrentPageTable());
+    }
+#endif
+
     void* CopiedImage = PMM->AllocatePagesFromDescriptor(Pages);
     if (CopiedImage == nullptr)
     {
         return PROCESS_ID_INVALID;
     }
 
-    kmemset(CopiedImage, 0, Pages * PAGE_SIZE);
+#ifdef DEBUG_BUILD
+    if (ExecTraceTTY != nullptr)
+    {
+        ExecTraceTTY->Serialprintf("exec_trace: pid=%u path='%s' stage=after_alloc_copiedimage ptr=%p cr3=%p\n",
+            Id, FilePath, CopiedImage, (void*)Resource->ReadCurrentPageTable());
+    }
+#endif
+
+#ifdef DEBUG_BUILD
+    if (ExecTraceTTY != nullptr)
+    {
+        ExecTraceTTY->Serialprintf("exec_trace: pid=%u path='%s' stage=before_kmemset_copiedimage\n", Id, FilePath);
+    }
+#endif
+
+    if (!ZeroPhysicalBackedBuffer(Resource, CopiedImage, static_cast<uint64_t>(Pages * PAGE_SIZE)))
+    {
+        PMM->FreePagesFromDescriptor(CopiedImage, Pages);
+        return PROCESS_ID_INVALID;
+    }
+
+#ifdef DEBUG_BUILD
+    if (ExecTraceTTY != nullptr)
+    {
+        ExecTraceTTY->Serialprintf("exec_trace: pid=%u path='%s' stage=after_kmemset_copiedimage\n", Id, FilePath);
+    }
+#endif
+
+#ifdef DEBUG_BUILD
+    if (ExecTraceTTY != nullptr)
+    {
+        ExecTraceTTY->Serialprintf("exec_trace: pid=%u path='%s' stage=before_copy_buffer src=%p dst=%p size=%llu\n",
+            Id, FilePath, Entry->inode->NodeData, CopiedImage, static_cast<unsigned long long>(CodeSize));
+    }
+#endif
+
     if (!CopyPhysicalBackedBuffer(Resource, CopiedImage, Entry->inode->NodeData, CodeSize))
     {
         PMM->FreePagesFromDescriptor(CopiedImage, Pages);
         return PROCESS_ID_INVALID;
     }
+
+#ifdef DEBUG_BUILD
+    if (ExecTraceTTY != nullptr)
+    {
+        ExecTraceTTY->Serialprintf("exec_trace: pid=%u path='%s' stage=after_copy_buffer\n", Id, FilePath);
+    }
+#endif
 
     ELFHeader            Header                    = {};
     VirtualAddressSpace* NewAddressSpace           = nullptr;
@@ -2677,6 +2905,14 @@ uint8_t LogicLayer::ChangeProcessExecution(uint8_t Id, const char* FilePath, con
         Header = ELF->ParseELF(reinterpret_cast<uint64_t>(CopiedImage));
         IsELF  = ELF->ValidateELF(Header);
     }
+
+#ifdef DEBUG_BUILD
+    if (ExecTraceTTY != nullptr)
+    {
+        ExecTraceTTY->Serialprintf("exec_trace: pid=%u path='%s' stage=elf_parsed is_elf=%u cr3=%p\n",
+            Id, FilePath, (unsigned)IsELF, (void*)Resource->ReadCurrentPageTable());
+    }
+#endif
 
     if (IsELF)
     {
@@ -2702,7 +2938,23 @@ uint8_t LogicLayer::ChangeProcessExecution(uint8_t Id, const char* FilePath, con
         AuxProgramHeaderCount     = Header.ProgramHeaderEntryCount;
         AuxEntryPoint             = Header.Entry + ProgramLoadBias;
 
+#ifdef DEBUG_BUILD
+        if (ExecTraceTTY != nullptr)
+        {
+            ExecTraceTTY->Serialprintf("exec_trace: pid=%u path='%s' stage=before_map_elf copiedimage=%p codesize=%llu cr3=%p\n",
+                Id, FilePath, CopiedImage, static_cast<unsigned long long>(CodeSize), (void*)Resource->ReadCurrentPageTable());
+        }
+#endif
+
         NewAddressSpace   = MapELF(reinterpret_cast<uint64_t>(CopiedImage), CodeSize, Header, nullptr, &ProgramLoadBias, &InterpreterBase, &InterpreterEntry);
+
+#ifdef DEBUG_BUILD
+        if (ExecTraceTTY != nullptr)
+        {
+            ExecTraceTTY->Serialprintf("exec_trace: pid=%u path='%s' stage=after_map_elf addrspace=%p interp_base=%p interp_entry=%p cr3=%p\n",
+                Id, FilePath, NewAddressSpace, (void*)InterpreterBase, (void*)InterpreterEntry, (void*)Resource->ReadCurrentPageTable());
+        }
+#endif
         NewUserEntryPoint = (InterpreterEntry != 0) ? InterpreterEntry : (Header.Entry + ProgramLoadBias);
         AuxBaseAddress    = InterpreterBase;
 
@@ -2901,7 +3153,11 @@ uint8_t LogicLayer::CopyProcess(uint8_t Id)
         return PROCESS_ID_INVALID;
     }
 
-    kmemset(CopiedImage, 0, SourceCodePages * PAGE_SIZE);
+    if (!ZeroPhysicalBackedBuffer(Resource, CopiedImage, static_cast<uint64_t>(SourceCodePages * PAGE_SIZE)))
+    {
+        PMM->FreePagesFromDescriptor(CopiedImage, SourceCodePages);
+        return PROCESS_ID_INVALID;
+    }
     if (!CopyPhysicalBackedBuffer(Resource, CopiedImage, reinterpret_cast<void*>(SourceCodePhysAddr), SourceCodeSize))
     {
         PMM->FreePagesFromDescriptor(CopiedImage, SourceCodePages);
@@ -3156,7 +3412,11 @@ uint8_t LogicLayer::CreateUserProcessFromVFS(const char* FilePath)
         return PROCESS_ID_INVALID;
     }
 
-    kmemset(CopiedImage, 0, Pages * PAGE_SIZE);
+    if (!ZeroPhysicalBackedBuffer(Resource, CopiedImage, static_cast<uint64_t>(Pages * PAGE_SIZE)))
+    {
+        Resource->GetPMM()->FreePagesFromDescriptor(CopiedImage, Pages);
+        return PROCESS_ID_INVALID;
+    }
     if (!CopyPhysicalBackedBuffer(Resource, CopiedImage, Entry->inode->NodeData, CodeSize))
     {
         Resource->GetPMM()->FreePagesFromDescriptor(CopiedImage, Pages);
@@ -3214,7 +3474,11 @@ uint8_t LogicLayer::CreateInitProcess()
         return PROCESS_ID_INVALID;
     }
 
-    kmemset(CopiedImage, 0, Pages * PAGE_SIZE);
+    if (!ZeroPhysicalBackedBuffer(Resource, CopiedImage, static_cast<uint64_t>(Pages * PAGE_SIZE)))
+    {
+        Resource->GetPMM()->FreePagesFromDescriptor(CopiedImage, Pages);
+        return PROCESS_ID_INVALID;
+    }
     if (!CopyPhysicalBackedBuffer(Resource, CopiedImage, Entry->inode->NodeData, CodeSize))
     {
         Resource->GetPMM()->FreePagesFromDescriptor(CopiedImage, Pages);
@@ -3410,6 +3674,21 @@ VirtualAddressSpace* LogicLayer::MapRawBinary(uint64_t CodeAddr, uint64_t CodeSi
         delete AddressSpace;
         return nullptr;
     }
+
+#ifdef DEBUG_BUILD
+    {
+        const CopyPageMapL4DebugInfo& CopyDebugInfo = Resource->GetVMM()->GetLastCopyPageMapL4DebugInfo();
+        if (CopyDebugInfo.SanitizedEntryCount > 0)
+        {
+            TTY* DebugTTY = Resource->GetTTY();
+            if (DebugTTY != nullptr)
+            {
+                DebugTTY->Serialprintf("copy_pml4_sanitize_dbg: path=raw sanitized=%llu alloc_attempts=%llu\n", static_cast<unsigned long long>(CopyDebugInfo.SanitizedEntryCount),
+                                       static_cast<unsigned long long>(CopyDebugInfo.AllocationAttempts));
+            }
+        }
+    }
+#endif
 
     if (!AddressSpace->Init(ProcessPageMapL4TableAddr, *Resource->GetPMM()))
     {
@@ -3675,7 +3954,11 @@ VirtualAddressSpace* LogicLayer::MapELF(uint64_t CodeAddr, uint64_t CodeSize, co
             return FailMapELFAddressSpace(0);
         }
 
-        kmemset(InterpreterImage, 0, static_cast<size_t>(InterpreterPages * PAGE_SIZE));
+        if (!ZeroPhysicalBackedBuffer(Resource, InterpreterImage, static_cast<uint64_t>(InterpreterPages * PAGE_SIZE)))
+        {
+            Resource->GetPMM()->FreePagesFromDescriptor(InterpreterImage, InterpreterPages);
+            return nullptr;
+        }
         if (!CopyPhysicalBackedBuffer(Resource, InterpreterImage, InterpreterDentry->inode->NodeData, InterpreterSize))
         {
             Resource->GetPMM()->FreePagesFromDescriptor(InterpreterImage, InterpreterPages);
@@ -3727,11 +4010,12 @@ VirtualAddressSpace* LogicLayer::MapELF(uint64_t CodeAddr, uint64_t CodeSize, co
             const CopyPageMapL4DebugInfo& CopyDebugInfo = Resource->GetVMM()->GetLastCopyPageMapL4DebugInfo();
             const PageTableMutationDebugInfo& MutationDebugInfo = Resource->GetVMM()->GetLastPageTableMutationDebugInfo();
             MapELFDebugTTY->Serialprintf(
-                "fork_mapelf_dbg: fail=copy_pml4 stage=%u pml4=%u pdpt=%u pd=%u entry=%p addr=%p alloc_attempts=%llu last_evt=%u last_idx=%u/%u/%u/%u last_entry=%p last_addr=%p\n",
+                "fork_mapelf_dbg: fail=copy_pml4 stage=%u pml4=%u pdpt=%u pd=%u entry=%p addr=%p alloc_attempts=%llu sanitized=%llu last_evt=%u last_idx=%u/%u/%u/%u last_entry=%p last_addr=%p\n",
                 static_cast<unsigned int>(CopyDebugInfo.FailureStage), static_cast<unsigned int>(CopyDebugInfo.PML4Index),
                 static_cast<unsigned int>(CopyDebugInfo.PDPTIndex), static_cast<unsigned int>(CopyDebugInfo.PDIndex),
                 reinterpret_cast<void*>(CopyDebugInfo.SourceEntryValue), reinterpret_cast<void*>(CopyDebugInfo.DerivedAddress),
-                static_cast<unsigned long long>(CopyDebugInfo.AllocationAttempts), static_cast<unsigned int>(MutationDebugInfo.Event),
+                static_cast<unsigned long long>(CopyDebugInfo.AllocationAttempts), static_cast<unsigned long long>(CopyDebugInfo.SanitizedEntryCount),
+                static_cast<unsigned int>(MutationDebugInfo.Event),
                 static_cast<unsigned int>(MutationDebugInfo.PML4Index), static_cast<unsigned int>(MutationDebugInfo.PDPTIndex),
                 static_cast<unsigned int>(MutationDebugInfo.PDIndex), static_cast<unsigned int>(MutationDebugInfo.PTIndex),
                 reinterpret_cast<void*>(MutationDebugInfo.EntryValue), reinterpret_cast<void*>(MutationDebugInfo.DerivedAddress));
@@ -3754,6 +4038,19 @@ VirtualAddressSpace* LogicLayer::MapELF(uint64_t CodeAddr, uint64_t CodeSize, co
 #endif
         return FailMapELFAddressSpace(ProcessPageMapL4TableAddr);
     }
+
+#ifdef DEBUG_BUILD
+    if (MapELFDebugTTY != nullptr)
+    {
+        const CopyPageMapL4DebugInfo& CopyDebugInfo = Resource->GetVMM()->GetLastCopyPageMapL4DebugInfo();
+        if (CopyDebugInfo.SanitizedEntryCount > 0)
+        {
+            MapELFDebugTTY->Serialprintf("copy_pml4_sanitize_dbg: path=elf sanitized=%llu alloc_attempts=%llu\n",
+                                         static_cast<unsigned long long>(CopyDebugInfo.SanitizedEntryCount),
+                                         static_cast<unsigned long long>(CopyDebugInfo.AllocationAttempts));
+        }
+    }
+#endif
 
     if (SourceRuntimeELFAddressSpace != nullptr)
     {
@@ -4375,7 +4672,7 @@ bool LogicLayer::CopyFromUserToKernel(const void* UserSource, void* KernelDestin
     }
 
     Process* CurrentProcess = PM->GetRunningProcess();
-    if (!IsUserAddressRangeAccessible(CurrentProcess, reinterpret_cast<uint64_t>(UserSource), Count))
+    if (!IsUserAddressRangeAccessible(Resource, CurrentProcess, reinterpret_cast<uint64_t>(UserSource), Count))
     {
         return false;
     }
@@ -4391,6 +4688,23 @@ bool LogicLayer::CopyFromUserToKernel(const void* UserSource, void* KernelDestin
         return false;
     }
 
+    if (!IsUserAddressRangeMappedByPageTables(Resource, CurrentProcess, reinterpret_cast<uint64_t>(UserSource), Count))
+    {
+#ifdef DEBUG_BUILD
+        if (Resource != nullptr)
+        {
+            TTY* Terminal = Resource->GetTTY();
+            if (Terminal != nullptr)
+            {
+                Terminal->Serialprintf("user_copy_dbg: copy_in_map_check_failed pid=%u src=%p dst=%p count=%llu proc_cr3=%p\n", CurrentProcess->Id,
+                                       UserSource, KernelDestination, static_cast<unsigned long long>(Count),
+                                       reinterpret_cast<void*>(UserPageTable));
+            }
+        }
+#endif
+        return false;
+    }
+
     uint64_t PreviousPageTable = Resource->ReadCurrentPageTable();
     if (PreviousPageTable == 0)
     {
@@ -4400,17 +4714,19 @@ bool LogicLayer::CopyFromUserToKernel(const void* UserSource, void* KernelDestin
     bool NeedsPageTableSwitch = (PreviousPageTable != UserPageTable);
     if (NeedsPageTableSwitch)
     {
-        Resource->LoadPageTable(UserPageTable);
-    }
-
-    if (!IsUserAddressRangeMappedByPageTables(CurrentProcess, reinterpret_cast<uint64_t>(UserSource), Count))
-    {
-        if (NeedsPageTableSwitch)
+#ifdef DEBUG_BUILD
+        if (Resource != nullptr && CurrentProcess->DebugIsXorgProcess)
         {
-            Resource->LoadPageTable(PreviousPageTable);
+            TTY* Terminal = Resource->GetTTY();
+            if (Terminal != nullptr)
+            {
+                Terminal->Serialprintf("user_copy_dbg: copy_in_switch pid=%u src=%p dst=%p count=%llu from=%p to=%p\n", CurrentProcess->Id, UserSource,
+                                       KernelDestination, static_cast<unsigned long long>(Count), reinterpret_cast<void*>(PreviousPageTable),
+                                       reinterpret_cast<void*>(UserPageTable));
+            }
         }
-
-        return false;
+#endif
+        Resource->LoadPageTable(UserPageTable);
     }
 
     memcpy(KernelDestination, UserSource, static_cast<size_t>(Count));
@@ -4441,7 +4757,7 @@ bool LogicLayer::CopyFromKernelToUser(const void* KernelSource, void* UserDestin
     }
 
     Process* CurrentProcess = PM->GetRunningProcess();
-    if (!IsUserAddressRangeAccessible(CurrentProcess, reinterpret_cast<uint64_t>(UserDestination), Count))
+    if (!IsUserAddressRangeAccessible(Resource, CurrentProcess, reinterpret_cast<uint64_t>(UserDestination), Count))
     {
         return false;
     }
@@ -4457,6 +4773,23 @@ bool LogicLayer::CopyFromKernelToUser(const void* KernelSource, void* UserDestin
         return false;
     }
 
+    if (!IsUserAddressRangeMappedByPageTables(Resource, CurrentProcess, reinterpret_cast<uint64_t>(UserDestination), Count))
+    {
+#ifdef DEBUG_BUILD
+        if (Resource != nullptr)
+        {
+            TTY* Terminal = Resource->GetTTY();
+            if (Terminal != nullptr)
+            {
+                Terminal->Serialprintf("user_copy_dbg: copy_out_map_check_failed pid=%u src=%p dst=%p count=%llu proc_cr3=%p\n", CurrentProcess->Id,
+                                       KernelSource, UserDestination, static_cast<unsigned long long>(Count),
+                                       reinterpret_cast<void*>(UserPageTable));
+            }
+        }
+#endif
+        return false;
+    }
+
     uint64_t PreviousPageTable = Resource->ReadCurrentPageTable();
     if (PreviousPageTable == 0)
     {
@@ -4467,16 +4800,6 @@ bool LogicLayer::CopyFromKernelToUser(const void* KernelSource, void* UserDestin
     if (NeedsPageTableSwitch)
     {
         Resource->LoadPageTable(UserPageTable);
-    }
-
-    if (!IsUserAddressRangeMappedByPageTables(CurrentProcess, reinterpret_cast<uint64_t>(UserDestination), Count))
-    {
-        if (NeedsPageTableSwitch)
-        {
-            Resource->LoadPageTable(PreviousPageTable);
-        }
-
-        return false;
     }
 
     memcpy(UserDestination, KernelSource, static_cast<size_t>(Count));

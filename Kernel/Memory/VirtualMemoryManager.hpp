@@ -78,6 +78,7 @@ struct CopyPageMapL4DebugInfo
     uint64_t                  SourceEntryValue;
     uint64_t                  DerivedAddress;
     uint64_t                  AllocationAttempts;
+    uint64_t                  SanitizedEntryCount;
 };
 
 enum PageTableMutationEvent : uint8_t

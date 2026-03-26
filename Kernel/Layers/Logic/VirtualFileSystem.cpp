@@ -96,24 +96,23 @@ bool EnsureLazyLoadedINodeData(INode* Node)
         return false;
     }
 
-    uint64_t PageCount = (Node->NodeSize + PAGE_SIZE - 1) / PAGE_SIZE;
-    void*    FileData  = Resource->GetPMM()->AllocatePagesFromDescriptor(PageCount);
+    void* FileData = Resource->kmalloc(Node->NodeSize);
     if (FileData == nullptr)
     {
         return false;
     }
 
-    kmemset(FileData, 0, static_cast<size_t>(PageCount * PAGE_SIZE));
+    kmemset(FileData, 0, static_cast<size_t>(Node->NodeSize));
 
     if (!FileSystemManager->LoadInodeData(Node->BackingInodeNumber, FileData, Node->NodeSize))
     {
-        Resource->GetPMM()->FreePagesFromDescriptor(FileData, PageCount);
+        Resource->kfree(FileData);
         return false;
     }
 
     Node->NodeData            = FileData;
-    Node->LazyDataBackedByPMM = true;
-    Node->LazyDataPageCount   = PageCount;
+    Node->LazyDataBackedByPMM = false;
+    Node->LazyDataPageCount   = 0;
     return true;
 }
 
@@ -161,14 +160,13 @@ bool EnsureWritableINodeCapacity(INode* Node, uint64_t RequiredSize)
 
     uint64_t ExistingSize = Node->NodeSize;
     uint64_t TargetSize   = (RequiredSize > ExistingSize) ? RequiredSize : ExistingSize;
-    uint64_t PageCount    = (TargetSize + PAGE_SIZE - 1) / PAGE_SIZE;
-    void*    NewData      = Resource->GetPMM()->AllocatePagesFromDescriptor(PageCount);
+    void*    NewData      = Resource->kmalloc(TargetSize);
     if (NewData == nullptr)
     {
         return false;
     }
 
-    kmemset(NewData, 0, static_cast<size_t>(PageCount * PAGE_SIZE));
+    kmemset(NewData, 0, static_cast<size_t>(TargetSize));
 
     if (Node->NodeData != nullptr && ExistingSize > 0)
     {
@@ -179,12 +177,16 @@ bool EnsureWritableINodeCapacity(INode* Node, uint64_t RequiredSize)
     {
         Resource->GetPMM()->FreePagesFromDescriptor(Node->NodeData, Node->LazyDataPageCount);
     }
+    else if (Node->NodeData != nullptr)
+    {
+        Resource->kfree(Node->NodeData);
+    }
 
     Node->NodeData            = NewData;
     Node->NodeSize            = TargetSize;
     Node->IsLazyLoad          = false;
-    Node->LazyDataBackedByPMM = true;
-    Node->LazyDataPageCount   = PageCount;
+    Node->LazyDataBackedByPMM = false;
+    Node->LazyDataPageCount   = 0;
     Node->BackingInodeNumber  = 0;
     Node->LazyLoadRefCount    = 0;
     Node->LazyLoadContext     = nullptr;
