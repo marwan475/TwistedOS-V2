@@ -424,13 +424,67 @@ bool VirtualAddressSpaceELF::Init(uint64_t PageMapL4TableAddr, PhysicalMemoryMan
 
     VirtualMemoryManager VMM(PageMapL4TableAddr, PMM);
 
+    auto RegionEndAddress = [](const ELFMemoryRegion& Region) -> uint64_t {
+        if (Region.Size == 0)
+        {
+            return Region.VirtualAddress;
+        }
+
+        if (Region.VirtualAddress > (UINT64_MAX - Region.Size))
+        {
+            return UINT64_MAX;
+        }
+
+        return Region.VirtualAddress + Region.Size;
+    };
+
+    auto IsPageWritableInAnyRegion = [&](uint64_t VirtualPageBase) -> bool {
+        uint64_t VirtualPageEnd = (VirtualPageBase > (UINT64_MAX - PAGE_SIZE)) ? UINT64_MAX : (VirtualPageBase + PAGE_SIZE);
+
+        for (size_t WritableRegionIndex = 0; WritableRegionIndex < MemoryRegionCount; ++WritableRegionIndex)
+        {
+            const ELFMemoryRegion& WritableRegion = MemoryRegions[WritableRegionIndex];
+            if (!WritableRegion.Writable || WritableRegion.Size == 0)
+            {
+                continue;
+            }
+
+            uint64_t WritableRegionStart = WritableRegion.VirtualAddress;
+            uint64_t WritableRegionEnd   = RegionEndAddress(WritableRegion);
+            if (WritableRegionStart < VirtualPageEnd && WritableRegionEnd > VirtualPageBase)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    };
+
     for (size_t RegionIndex = 0; RegionIndex < MemoryRegionCount; ++RegionIndex)
     {
         const ELFMemoryRegion& Region = MemoryRegions[RegionIndex];
-        if (!MapUserRange(VMM, Region.PhysicalAddress, Region.VirtualAddress, Region.Size, Region.Writable))
+
+        uint64_t Pages = GetRequiredPageCount(Region.VirtualAddress, Region.Size);
+        if (Pages == 0)
         {
-            return false;
+            continue;
         }
+
+        uint64_t MappedPhysicalAddress = Region.PhysicalAddress & PHYS_PAGE_ADDR_MASK;
+        uint64_t MappedVirtualAddress  = Region.VirtualAddress & PHYS_PAGE_ADDR_MASK;
+
+        for (uint64_t PageIndex = 0; PageIndex < Pages; ++PageIndex)
+        {
+            uint64_t PhysicalPage = MappedPhysicalAddress + (PageIndex * PAGE_SIZE);
+            uint64_t VirtualPage  = MappedVirtualAddress + (PageIndex * PAGE_SIZE);
+            bool     Writable     = Region.Writable || IsPageWritableInAnyRegion(VirtualPage);
+
+            if (!VMM.MapPage(PhysicalPage, VirtualPage, PageMappingFlags(true, Writable)))
+            {
+                return false;
+            }
+        }
+
     }
 
     if (!MapUserRange(VMM, GetHeapPhysicalAddress(), GetHeapVirtualAddressStart(), GetHeapSize(), true)

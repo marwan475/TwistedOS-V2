@@ -3565,26 +3565,30 @@ int64_t TranslationLayer::HandleRecvmsgSystemCall(uint64_t FileDescriptor, void*
         return LINUX_ERR_EINVAL;
     }
 
-    LinuxMsgHdr KernelMessageHeader = {};
-    if (!Logic->CopyFromUserToKernel(MessageHeader, &KernelMessageHeader, sizeof(KernelMessageHeader)))
+    constexpr uint64_t LINUX_MSGHDR_COMPACT_SIZE = 48;
+    uint8_t            CompactHeader[LINUX_MSGHDR_COMPACT_SIZE] = {};
+    if (!Logic->CopyFromUserToKernel(MessageHeader, CompactHeader, sizeof(CompactHeader)))
     {
         return LINUX_ERR_EFAULT;
     }
 
-    int64_t ReadResult = HandleReadvSystemCall(FileDescriptor, reinterpret_cast<const void*>(KernelMessageHeader.Iov), KernelMessageHeader.IovLength);
+    uint64_t IovPointer = 0;
+    uint32_t IovLength  = 0;
+    memcpy(&IovPointer, CompactHeader + 16, sizeof(IovPointer));
+    memcpy(&IovLength, CompactHeader + 24, sizeof(IovLength));
+
+    int64_t ReadResult = HandleReadvSystemCall(FileDescriptor, reinterpret_cast<const void*>(IovPointer), static_cast<uint64_t>(IovLength));
     if (ReadResult < 0)
     {
         return ReadResult;
     }
 
-    if (KernelMessageHeader.Name != 0 && KernelMessageHeader.NameLength > 0)
-    {
-        KernelMessageHeader.NameLength = 0;
-    }
+    uint32_t NameLength = 0;
+    int32_t  MessageFlags = 0;
+    memcpy(CompactHeader + 8, &NameLength, sizeof(NameLength));
+    memcpy(CompactHeader + 44, &MessageFlags, sizeof(MessageFlags));
 
-    KernelMessageHeader.Flags = 0;
-
-    if (!Logic->CopyFromKernelToUser(&KernelMessageHeader, MessageHeader, sizeof(KernelMessageHeader)))
+    if (!Logic->CopyFromKernelToUser(CompactHeader, MessageHeader, sizeof(CompactHeader)))
     {
         return LINUX_ERR_EFAULT;
     }
@@ -8012,9 +8016,6 @@ int64_t TranslationLayer::HandleClockGetresSystemCall(int64_t ClockId, void* Tim
 
 int64_t TranslationLayer::HandleCloneSystemCall(uint64_t Flags, void* ChildStack, int* ParentTid, int* ChildTid, uint64_t NewTls)
 {
-    (void) ChildStack;
-    (void) NewTls;
-
     if (Logic == nullptr)
     {
         return LINUX_ERR_EFAULT;
@@ -8083,6 +8084,106 @@ int64_t TranslationLayer::HandleCloneSystemCall(uint64_t Flags, void* ChildStack
     {
         ChildPid = HandleVforkSystemCall();
     }
+    else if ((Flags & LINUX_CLONE_VM) != 0)
+    {
+        Process* ParentProcess = PM->GetRunningProcess();
+        if (ParentProcess == nullptr || !ParentProcess->HasSavedSystemCallFrame || ParentProcess->AddressSpace == nullptr)
+        {
+            return LINUX_ERR_EFAULT;
+        }
+
+        ParentProcess->UserFSBase = GetUserFSBase();
+
+        const ProcessSavedSystemCallFrame& SavedFrame = ParentProcess->SavedSystemCallFrame;
+
+        CpuState ChildState = {};
+        ChildState.rax    = 0;
+        ChildState.rcx    = 0;
+        ChildState.rdx    = SavedFrame.UserRDX;
+        ChildState.rbx    = SavedFrame.UserRBX;
+        ChildState.rbp    = SavedFrame.UserRBP;
+        ChildState.rsi    = SavedFrame.UserRSI;
+        ChildState.rdi    = SavedFrame.UserRDI;
+        ChildState.r8     = SavedFrame.UserR8;
+        ChildState.r9     = SavedFrame.UserR9;
+        ChildState.r10    = SavedFrame.UserR10;
+        ChildState.r11    = 0;
+        ChildState.r12    = SavedFrame.UserR12;
+        ChildState.r13    = SavedFrame.UserR13;
+        ChildState.r14    = SavedFrame.UserR14;
+        ChildState.r15    = SavedFrame.UserR15;
+        ChildState.rip    = SavedFrame.UserRIP;
+        ChildState.rflags = SavedFrame.UserRFLAGS;
+        ChildState.cs     = USER_CS;
+        ChildState.ss     = USER_SS;
+        ChildState.rsp    = (ChildStack != nullptr) ? reinterpret_cast<uint64_t>(ChildStack) : SavedFrame.UserRSP;
+
+        uint8_t ChildId = PM->CreateUserProcess(
+            reinterpret_cast<void*>(ParentProcess->AddressSpace->GetStackVirtualAddressStart()),
+            ChildState, ParentProcess->AddressSpace, ParentProcess->FileType);
+        if (ChildId == PROCESS_ID_INVALID)
+        {
+            return LINUX_ERR_EAGAIN;
+        }
+
+        Process* Child = PM->GetProcessById(ChildId);
+        if (Child == nullptr)
+        {
+            PM->KillProcess(ChildId);
+            return LINUX_ERR_EFAULT;
+        }
+
+        Child->ParrentId                 = ParentProcess->Id;
+        Child->UserFSBase                = ((Flags & LINUX_CLONE_SETTLS) != 0) ? NewTls : ParentProcess->UserFSBase;
+        Child->ProcessGroupId            = ParentProcess->ProcessGroupId;
+        Child->SessionId                 = ParentProcess->SessionId;
+        Child->BlockedSignalMask         = ParentProcess->BlockedSignalMask;
+        Child->ClearChildTidAddress      = ParentProcess->ClearChildTidAddress;
+        Child->ProgramBreak              = ParentProcess->ProgramBreak;
+        Child->CurrentFileSystemLocation = ParentProcess->CurrentFileSystemLocation;
+
+        for (size_t SignalIndex = 0; SignalIndex < MAX_POSIX_SIGNALS_PER_PROCESS; ++SignalIndex)
+        {
+            Child->SignalActions[SignalIndex] = ParentProcess->SignalActions[SignalIndex];
+        }
+
+        for (size_t MappingIndex = 0; MappingIndex < MAX_MEMORY_MAPPINGS_PER_PROCESS; ++MappingIndex)
+        {
+            Child->MemoryMappings[MappingIndex] = ParentProcess->MemoryMappings[MappingIndex];
+        }
+
+        for (size_t FileIndex = 0; FileIndex < MAX_OPEN_FILES_PER_PROCESS; ++FileIndex)
+        {
+            if (ParentProcess->FileTable[FileIndex] == nullptr)
+            {
+                continue;
+            }
+
+            File* CopiedFile = new File;
+            if (CopiedFile == nullptr)
+            {
+                PM->KillProcess(ChildId);
+                return LINUX_ERR_ENOMEM;
+            }
+
+            *CopiedFile                  = *ParentProcess->FileTable[FileIndex];
+            Child->FileTable[FileIndex]  = CopiedFile;
+
+            InterProcessComunicationManager* IPC = Logic->GetInterProcessComunicationManager();
+            if (IPC != nullptr)
+            {
+                int64_t DuplicatePipeResult = IPC->DuplicatePipeDescriptor(Child, static_cast<int64_t>(FileIndex), ParentProcess->FileTable[FileIndex]);
+                if (DuplicatePipeResult < 0)
+                {
+                    PM->KillProcess(ChildId);
+                    return DuplicatePipeResult;
+                }
+            }
+        }
+
+        Logic->AddProcessToReadyQueue(ChildId);
+        ChildPid = static_cast<int64_t>(ChildId);
+    }
     else
     {
         ChildPid = HandleForkSystemCall();
@@ -8097,6 +8198,11 @@ int64_t TranslationLayer::HandleCloneSystemCall(uint64_t Flags, void* ChildStack
     if (ChildProcess == nullptr)
     {
         return LINUX_ERR_EFAULT;
+    }
+
+    if ((Flags & LINUX_CLONE_SETTLS) != 0)
+    {
+        ChildProcess->UserFSBase = NewTls;
     }
 
     if ((Flags & LINUX_CLONE_PARENT_SETTID) != 0)
