@@ -274,15 +274,63 @@ int64_t SocketMemoryMap(File* OpenFile, uint64_t Length, uint64_t Offset, Virtua
 
 int64_t SocketPoll(File* OpenFile, uint32_t RequestedEvents, uint32_t* ReturnedEvents, LogicLayer* Logic, Process* RunningProcess)
 {
-	(void) OpenFile;
 	(void) Logic;
 	(void) RunningProcess;
 
-	if (ReturnedEvents != nullptr)
+	if (ReturnedEvents == nullptr)
 	{
-		*ReturnedEvents = RequestedEvents;
+		return 0;
 	}
 
+	*ReturnedEvents = 0;
+
+	Socket* SocketEntry = GetSocketFromOpenFile(OpenFile);
+	if (SocketEntry == nullptr)
+	{
+		*ReturnedEvents = LINUX_POLLERR;
+		return 0;
+	}
+
+	if (SocketEntry->Domain == LINUX_AF_UNIX)
+	{
+		UnixSocket* SocketImplementation = reinterpret_cast<UnixSocket*>(SocketEntry->Implementation);
+		if (SocketImplementation == nullptr)
+		{
+			*ReturnedEvents = LINUX_POLLERR;
+			return 0;
+		}
+
+		if ((RequestedEvents & LINUX_POLLIN) != 0)
+		{
+			if (SocketImplementation->IsListening)
+			{
+				if (SocketImplementation->PendingConnectionCount > 0)
+				{
+					*ReturnedEvents |= LINUX_POLLIN;
+				}
+			}
+			else if (SocketImplementation->IsShutdownRead)
+			{
+				*ReturnedEvents |= LINUX_POLLHUP;
+			}
+		}
+
+		if ((RequestedEvents & LINUX_POLLOUT) != 0)
+		{
+			if (!SocketImplementation->IsShutdownWrite && SocketImplementation->ConnectedPeer != nullptr)
+			{
+				*ReturnedEvents |= LINUX_POLLOUT;
+			}
+			else if (SocketImplementation->IsShutdownWrite)
+			{
+				*ReturnedEvents |= LINUX_POLLERR;
+			}
+		}
+
+		return 0;
+	}
+
+	*ReturnedEvents = RequestedEvents;
 	return 0;
 }
 
