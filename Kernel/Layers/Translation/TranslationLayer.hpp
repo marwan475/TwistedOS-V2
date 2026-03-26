@@ -40,6 +40,8 @@ public:
     int64_t HandleListenSystemCall(uint64_t FileDescriptor, int64_t Backlog);
     int64_t HandleGetsocknameSystemCall(uint64_t FileDescriptor, void* SocketAddress, void* SocketAddressLength);
     int64_t HandleGetpeernameSystemCall(uint64_t FileDescriptor, void* SocketAddress, void* SocketAddressLength);
+    int64_t HandleSendtoSystemCall(uint64_t FileDescriptor, const void* Buffer, uint64_t Length, int64_t Flags, const void* DestinationAddress, uint64_t DestinationAddressLength);
+    int64_t HandleRecvfromSystemCall(uint64_t FileDescriptor, void* Buffer, uint64_t Length, int64_t Flags, void* SourceAddress, void* SourceAddressLength);
     int64_t HandleRecvmsgSystemCall(uint64_t FileDescriptor, void* MessageHeader, int64_t Flags);
     int64_t HandleSetsockoptSystemCall(uint64_t FileDescriptor, int64_t Level, int64_t OptionName, const void* OptionValue, uint64_t OptionLength);
     int64_t HandleGetsockoptSystemCall(uint64_t FileDescriptor, int64_t Level, int64_t OptionName, void* OptionValue, void* OptionLength);

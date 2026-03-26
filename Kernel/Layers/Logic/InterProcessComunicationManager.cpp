@@ -334,6 +334,11 @@ int64_t SocketRead(File* OpenFile, void* Buffer, uint64_t Count)
 			return 0;
 		}
 
+		if (SocketImplementation->IsListening)
+		{
+			return LINUX_SOCKET_ERR_EAGAIN;
+		}
+
 		if (!SocketImplementation->IsListening && (SocketEntry->Type == LINUX_SOCK_STREAM || SocketEntry->Type == LINUX_SOCK_SEQPACKET))
 		{
 			int64_t ReadResult = ReadFromUnixReceiveBuffer(SocketImplementation, Buffer, Count);
@@ -356,6 +361,8 @@ int64_t SocketRead(File* OpenFile, void* Buffer, uint64_t Count)
 
 			return LINUX_SOCKET_ERR_EAGAIN;
 		}
+
+		return LINUX_SOCKET_ERR_ENOTCONN;
 	}
 	else if (SocketEntry->Domain == LINUX_AF_INET)
 	{
@@ -1750,6 +1757,33 @@ bool InterProcessComunicationManager::CloseSocket(Process* Owner, int64_t FileDe
 		if (SocketEntry->Owner != Owner || SocketEntry->FileDescriptor != FileDescriptor)
 		{
 			continue;
+		}
+
+		int64_t AlternateDescriptor = -1;
+		for (uint64_t DescriptorIndex = 0; DescriptorIndex < MAX_OPEN_FILES_PER_PROCESS; ++DescriptorIndex)
+		{
+			if (static_cast<int64_t>(DescriptorIndex) == FileDescriptor)
+			{
+				continue;
+			}
+
+			File* CandidateFile = Owner->FileTable[DescriptorIndex];
+			if (CandidateFile == nullptr || CandidateFile->Node == nullptr)
+			{
+				continue;
+			}
+
+			if (reinterpret_cast<Socket*>(CandidateFile->Node->NodeData) == SocketEntry)
+			{
+				AlternateDescriptor = static_cast<int64_t>(DescriptorIndex);
+				break;
+			}
+		}
+
+		if (AlternateDescriptor >= 0)
+		{
+			SocketEntry->FileDescriptor = AlternateDescriptor;
+			return false;
 		}
 
 		for (uint64_t OtherIndex = 0; OtherIndex < SocketCount; ++OtherIndex)

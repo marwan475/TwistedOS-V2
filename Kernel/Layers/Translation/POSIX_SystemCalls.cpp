@@ -117,6 +117,22 @@ int64_t TranslationLayer::HandlePosixSystemCallNumber(uint64_t SystemCallNumber,
         case 43: // accept
             return HandleAcceptSystemCall(Arg1, reinterpret_cast<void*>(Arg2), reinterpret_cast<void*>(Arg3));
             break;
+        case 44: // sendto
+            return HandleSendtoSystemCall(Arg1,
+                                          reinterpret_cast<const void*>(Arg2),
+                                          Arg3,
+                                          static_cast<int64_t>(Arg4),
+                                          reinterpret_cast<const void*>(Arg5),
+                                          Arg6);
+            break;
+        case 45: // recvfrom
+            return HandleRecvfromSystemCall(Arg1,
+                                            reinterpret_cast<void*>(Arg2),
+                                            Arg3,
+                                            static_cast<int64_t>(Arg4),
+                                            reinterpret_cast<void*>(Arg5),
+                                            reinterpret_cast<void*>(Arg6));
+            break;
         case 47: // recvmsg
             return HandleRecvmsgSystemCall(Arg1, reinterpret_cast<void*>(Arg2), static_cast<int64_t>(Arg3));
             break;

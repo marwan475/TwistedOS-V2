@@ -44,6 +44,7 @@ constexpr int64_t LINUX_ERR_ENOTSOCK  = -88;
 constexpr int64_t LINUX_ERR_ENOTCONN  = -107;
 constexpr int64_t LINUX_ERR_EAFNOSUPPORT = -97;
 constexpr int64_t LINUX_ERR_ESOCKTNOSUPPORT = -94;
+constexpr int64_t LINUX_ERR_EOPNOTSUPP = -95;
 constexpr int64_t LINUX_ERR_ENOPROTOOPT = -92;
 
 constexpr uint64_t SYSCALL_COPY_CHUNK_SIZE   = 4096;
@@ -286,8 +287,16 @@ constexpr int64_t LINUX_SIGNAL_SIGSTOP = 19;
 
 constexpr uint64_t LINUX_CLONE_SIGNAL_MASK       = 0xFFULL;
 constexpr uint64_t LINUX_CLONE_VM                = 0x00000100ULL;
+constexpr uint64_t LINUX_CLONE_FS                = 0x00000200ULL;
+constexpr uint64_t LINUX_CLONE_FILES             = 0x00000400ULL;
+constexpr uint64_t LINUX_CLONE_SIGHAND           = 0x00000800ULL;
+constexpr uint64_t LINUX_CLONE_PIDFD             = 0x00001000ULL;
+constexpr uint64_t LINUX_CLONE_PTRACE            = 0x00002000ULL;
 constexpr uint64_t LINUX_CLONE_VFORK             = 0x00004000ULL;
+constexpr uint64_t LINUX_CLONE_PARENT            = 0x00008000ULL;
 constexpr uint64_t LINUX_CLONE_THREAD            = 0x00010000ULL;
+constexpr uint64_t LINUX_CLONE_NEWNS             = 0x00020000ULL;
+constexpr uint64_t LINUX_CLONE_SYSVSEM           = 0x00040000ULL;
 constexpr uint64_t LINUX_CLONE_SETTLS            = 0x00080000ULL;
 constexpr uint64_t LINUX_CLONE_PARENT_SETTID     = 0x00100000ULL;
 constexpr uint64_t LINUX_CLONE_CHILD_CLEARTID    = 0x00200000ULL;
@@ -302,8 +311,8 @@ constexpr uint64_t LINUX_CLONE_NEWPID            = 0x20000000ULL;
 constexpr uint64_t LINUX_CLONE_NEWNET            = 0x40000000ULL;
 constexpr uint64_t LINUX_CLONE_IO                = 0x80000000ULL;
 
-constexpr uint64_t LINUX_CLONE_UNSUPPORTED_FLAGS = (LINUX_CLONE_VM | LINUX_CLONE_THREAD | LINUX_CLONE_SETTLS | LINUX_CLONE_NEWCGROUP | LINUX_CLONE_NEWUTS
-                                                    | LINUX_CLONE_NEWIPC | LINUX_CLONE_NEWUSER | LINUX_CLONE_NEWPID | LINUX_CLONE_NEWNET | LINUX_CLONE_IO);
+constexpr uint64_t LINUX_CLONE_UNSUPPORTED_FLAGS = (LINUX_CLONE_PIDFD | LINUX_CLONE_NEWNS | LINUX_CLONE_NEWCGROUP | LINUX_CLONE_NEWUTS | LINUX_CLONE_NEWIPC
+                                                    | LINUX_CLONE_NEWUSER | LINUX_CLONE_NEWPID | LINUX_CLONE_NEWNET | LINUX_CLONE_IO);
 
 constexpr int64_t LINUX_ITIMER_REAL    = 0;
 constexpr int64_t LINUX_ITIMER_VIRTUAL = 1;
@@ -3578,6 +3587,68 @@ int64_t TranslationLayer::HandleRecvmsgSystemCall(uint64_t FileDescriptor, void*
     if (!Logic->CopyFromKernelToUser(&KernelMessageHeader, MessageHeader, sizeof(KernelMessageHeader)))
     {
         return LINUX_ERR_EFAULT;
+    }
+
+    return ReadResult;
+}
+
+int64_t TranslationLayer::HandleSendtoSystemCall(uint64_t FileDescriptor,
+                                                 const void* Buffer,
+                                                 uint64_t    Length,
+                                                 int64_t     Flags,
+                                                 const void* DestinationAddress,
+                                                 uint64_t    DestinationAddressLength)
+{
+    if (Flags != 0)
+    {
+        return LINUX_ERR_EINVAL;
+    }
+
+    if (DestinationAddress != nullptr && DestinationAddressLength > 0)
+    {
+        return LINUX_ERR_EOPNOTSUPP;
+    }
+
+    return HandleWriteSystemCall(FileDescriptor, Buffer, Length);
+}
+
+int64_t TranslationLayer::HandleRecvfromSystemCall(uint64_t FileDescriptor,
+                                                   void*    Buffer,
+                                                   uint64_t Length,
+                                                   int64_t  Flags,
+                                                   void*    SourceAddress,
+                                                   void*    SourceAddressLength)
+{
+    if (Flags != 0)
+    {
+        return LINUX_ERR_EINVAL;
+    }
+
+    if ((SourceAddress == nullptr) != (SourceAddressLength == nullptr))
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    int64_t ReadResult = HandleReadSystemCall(FileDescriptor, Buffer, Length);
+    if (ReadResult < 0)
+    {
+        return ReadResult;
+    }
+
+    if (SourceAddress != nullptr && SourceAddressLength != nullptr)
+    {
+        int64_t PeerResult = HandleGetpeernameSystemCall(FileDescriptor, SourceAddress, SourceAddressLength);
+        if (PeerResult < 0)
+        {
+            uint32_t ZeroLength = 0;
+            if (Logic != nullptr)
+            {
+                if (!Logic->CopyFromKernelToUser(&ZeroLength, SourceAddressLength, sizeof(ZeroLength)))
+                {
+                    return LINUX_ERR_EFAULT;
+                }
+            }
+        }
     }
 
     return ReadResult;
@@ -7960,11 +8031,30 @@ int64_t TranslationLayer::HandleCloneSystemCall(uint64_t Flags, void* ChildStack
         return LINUX_ERR_EINVAL;
     }
 
-    uint64_t AllowedFlags = (LINUX_CLONE_SIGNAL_MASK | LINUX_CLONE_VFORK | LINUX_CLONE_PARENT_SETTID | LINUX_CLONE_CHILD_SETTID | LINUX_CLONE_CHILD_CLEARTID
-                             | LINUX_CLONE_DETACHED | LINUX_CLONE_UNTRACED);
+    uint64_t AllowedFlags = (LINUX_CLONE_SIGNAL_MASK | LINUX_CLONE_VM | LINUX_CLONE_FS | LINUX_CLONE_FILES | LINUX_CLONE_SIGHAND | LINUX_CLONE_PTRACE
+                             | LINUX_CLONE_VFORK | LINUX_CLONE_PARENT | LINUX_CLONE_THREAD | LINUX_CLONE_SYSVSEM | LINUX_CLONE_SETTLS
+                             | LINUX_CLONE_PARENT_SETTID | LINUX_CLONE_CHILD_SETTID | LINUX_CLONE_CHILD_CLEARTID | LINUX_CLONE_DETACHED | LINUX_CLONE_UNTRACED);
     if ((Flags & ~AllowedFlags) != 0)
     {
         return LINUX_ERR_EINVAL;
+    }
+
+    if ((Flags & LINUX_CLONE_SIGHAND) != 0 && (Flags & LINUX_CLONE_VM) == 0)
+    {
+        return LINUX_ERR_EINVAL;
+    }
+
+    if ((Flags & LINUX_CLONE_THREAD) != 0)
+    {
+        if ((Flags & (LINUX_CLONE_VM | LINUX_CLONE_SIGHAND)) != (LINUX_CLONE_VM | LINUX_CLONE_SIGHAND))
+        {
+            return LINUX_ERR_EINVAL;
+        }
+
+        if ((Flags & LINUX_CLONE_VFORK) != 0)
+        {
+            return LINUX_ERR_EINVAL;
+        }
     }
 
     uint64_t SignalNumber = (Flags & LINUX_CLONE_SIGNAL_MASK);
