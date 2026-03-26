@@ -79,6 +79,7 @@ public:
     bool    HasEventQueue(uint8_t ProcessId, uint64_t FileDescriptor) const;
     EventQueueKernelObject* GetEventQueue(uint8_t ProcessId, uint64_t FileDescriptor);
     int64_t ControlEventQueue(uint8_t ProcessId, uint64_t EpollFileDescriptor, int32_t Operation, uint64_t TargetFileDescriptor, uint32_t Events, uint64_t UserData);
+    bool    DuplicateEventQueuesForProcess(uint8_t SourceProcessId, uint8_t DestProcessId);
     void    Tick();
     uint8_t GetNextProcessToWake();
     uint8_t GetNextTTYInputWaiter();

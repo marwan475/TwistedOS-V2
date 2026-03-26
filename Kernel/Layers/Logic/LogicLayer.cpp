@@ -3389,6 +3389,15 @@ uint8_t LogicLayer::CopyProcess(uint8_t Id)
         }
     }
 
+    if (Sync != nullptr)
+    {
+        if (!Sync->DuplicateEventQueuesForProcess(Id, ChildId))
+        {
+            KillProcess(ChildId);
+            return PROCESS_ID_INVALID;
+        }
+    }
+
     Sched->AddToReadyQueue(ChildId);
     return ChildId;
 }

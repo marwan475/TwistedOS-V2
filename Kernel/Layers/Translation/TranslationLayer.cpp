@@ -8181,6 +8181,16 @@ int64_t TranslationLayer::HandleCloneSystemCall(uint64_t Flags, void* ChildStack
             }
         }
 
+        SynchronizationManager* Sync = Logic->GetSynchronizationManager();
+        if (Sync != nullptr)
+        {
+            if (!Sync->DuplicateEventQueuesForProcess(ParentProcess->Id, ChildId))
+            {
+                PM->KillProcess(ChildId);
+                return LINUX_ERR_ENOMEM;
+            }
+        }
+
         Logic->AddProcessToReadyQueue(ChildId);
         ChildPid = static_cast<int64_t>(ChildId);
     }

@@ -411,6 +411,70 @@ int64_t SynchronizationManager::ControlEventQueue(
     }
 }
 
+bool SynchronizationManager::DuplicateEventQueuesForProcess(uint8_t SourceProcessId, uint8_t DestProcessId)
+{
+    EventQueueKernelObject* Queue = EventQueueStore.Head();
+    while (Queue != nullptr)
+    {
+        EventQueueKernelObject* NextQueue = EventQueueStore.Next(Queue);
+
+        if (Queue->Queue.ProcessId != SourceProcessId)
+        {
+            Queue = NextQueue;
+            continue;
+        }
+
+        EventQueueKernelObject* NewQueue = new EventQueueKernelObject;
+        if (NewQueue == nullptr)
+        {
+            return false;
+        }
+
+        INode* Node = new INode;
+        if (Node == nullptr)
+        {
+            delete NewQueue;
+            return false;
+        }
+
+        *Node             = {};
+        Node->NodeType    = INODE_FILE;
+        Node->NodeData    = NewQueue;
+        Node->FileOps     = &EventQueueFileOperations;
+        NewQueue->Node    = Node;
+
+        NewQueue->Queue.ProcessId      = DestProcessId;
+        NewQueue->Queue.FileDescriptor = Queue->Queue.FileDescriptor;
+        NewQueue->Queue.Flags          = Queue->Queue.Flags;
+        NewQueue->Next                 = nullptr;
+
+        EpollWatchTag* Watch = Queue->Watches.Head();
+        while (Watch != nullptr)
+        {
+            EpollWatchTag* NewWatch = new EpollWatchTag;
+            if (NewWatch == nullptr)
+            {
+                ClearEventQueue(NewQueue);
+                delete NewQueue;
+                return false;
+            }
+
+            NewWatch->FileDescriptor = Watch->FileDescriptor;
+            NewWatch->Events         = Watch->Events;
+            NewWatch->UserData       = Watch->UserData;
+            NewWatch->Next           = nullptr;
+            NewQueue->Watches.PushBack(NewWatch);
+
+            Watch = Queue->Watches.Next(Watch);
+        }
+
+        EventQueueStore.PushBack(NewQueue);
+        Queue = NextQueue;
+    }
+
+    return true;
+}
+
 /**
  * Function: SynchronizationManager::Tick
  * Description: Decrements remaining wait ticks for all sleeping processes.
