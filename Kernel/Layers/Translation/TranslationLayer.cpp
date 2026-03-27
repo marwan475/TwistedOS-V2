@@ -266,6 +266,9 @@ constexpr uint8_t LINUX_DT_LNK     = 10;
 constexpr uint64_t LINUX_ARCH_SET_FS = 0x1002;
 constexpr uint64_t LINUX_ARCH_GET_FS = 0x1003;
 
+constexpr int64_t LINUX_PR_SET_NAME = 15;
+constexpr int64_t LINUX_PR_GET_NAME = 16;
+
 constexpr int64_t LINUX_SIG_BLOCK   = 0;
 constexpr int64_t LINUX_SIG_UNBLOCK = 1;
 constexpr int64_t LINUX_SIG_SETMASK = 2;
@@ -2589,6 +2592,8 @@ int64_t TranslationLayer::HandleEpollWaitSystemCall(uint64_t EpollFileDescriptor
         EpollWatchTag* Watch = EventQueue->Watches.Head();
         while (Watch != nullptr)
         {
+            EpollWatchTag* NextWatch = EventQueue->Watches.Next(Watch);
+
             if (ReadyCount >= MaxEvents)
             {
                 break;
@@ -2598,14 +2603,20 @@ int64_t TranslationLayer::HandleEpollWaitSystemCall(uint64_t EpollFileDescriptor
 
             if (Watch->FileDescriptor >= MAX_OPEN_FILES_PER_PROCESS)
             {
-                Revents = LINUX_EPOLLERR;
+                EventQueue->Watches.Remove(Watch);
+                delete Watch;
+                Watch = NextWatch;
+                continue;
             }
             else
             {
                 File* WatchedFile = CurrentProcess->FileTable[Watch->FileDescriptor];
                 if (WatchedFile == nullptr || WatchedFile->Node == nullptr)
                 {
-                    Revents = LINUX_EPOLLERR;
+                    EventQueue->Watches.Remove(Watch);
+                    delete Watch;
+                    Watch = NextWatch;
+                    continue;
                 }
                 else
                 {
@@ -2689,7 +2700,7 @@ int64_t TranslationLayer::HandleEpollWaitSystemCall(uint64_t EpollFileDescriptor
                 ++ReadyCount;
             }
 
-            Watch = EventQueue->Watches.Next(Watch);
+            Watch = NextWatch;
         }
 
         if (HasTTYReadableWait != nullptr)
@@ -4928,6 +4939,7 @@ int64_t TranslationLayer::HandleCloseSystemCall(uint64_t FileDescriptor)
     if (Sync != nullptr)
     {
         Sync->RemoveEventQueue(CurrentProcess->Id, FileDescriptor);
+        Sync->RemoveWatchesForFile(CurrentProcess->Id, FileDescriptor);
     }
 
     InterProcessComunicationManager* IPC = Logic->GetInterProcessComunicationManager();
@@ -8141,6 +8153,10 @@ int64_t TranslationLayer::HandleCloneSystemCall(uint64_t Flags, void* ChildStack
         Child->ClearChildTidAddress      = ParentProcess->ClearChildTidAddress;
         Child->ProgramBreak              = ParentProcess->ProgramBreak;
         Child->CurrentFileSystemLocation = ParentProcess->CurrentFileSystemLocation;
+        for (size_t NameIndex = 0; NameIndex < MAX_PROCESS_NAME_LENGTH; ++NameIndex)
+        {
+            Child->Name[NameIndex] = ParentProcess->Name[NameIndex];
+        }
 
         for (size_t SignalIndex = 0; SignalIndex < MAX_POSIX_SIGNALS_PER_PROCESS; ++SignalIndex)
         {
@@ -8409,6 +8425,10 @@ int64_t TranslationLayer::HandleVforkSystemCall()
     ChildProcess->ClearChildTidAddress      = ParentProcess->ClearChildTidAddress;
     ChildProcess->ProgramBreak              = ParentProcess->ProgramBreak;
     ChildProcess->CurrentFileSystemLocation = ParentProcess->CurrentFileSystemLocation;
+    for (size_t NameIndex = 0; NameIndex < MAX_PROCESS_NAME_LENGTH; ++NameIndex)
+    {
+        ChildProcess->Name[NameIndex] = ParentProcess->Name[NameIndex];
+    }
 
     for (size_t SignalIndex = 0; SignalIndex < MAX_POSIX_SIGNALS_PER_PROCESS; ++SignalIndex)
     {
@@ -9358,6 +9378,81 @@ int64_t TranslationLayer::HandleArchPrctlSystemCall(uint64_t Code, uint64_t Addr
         return 0;
     }
 
+    return LINUX_ERR_EINVAL;
+}
+
+int64_t TranslationLayer::HandlePrctlSystemCall(int64_t Option, uint64_t Argument2, uint64_t Argument3, uint64_t Argument4, uint64_t Argument5)
+{
+    if (Logic == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    ProcessManager* PM = Logic->GetProcessManager();
+    if (PM == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    Process* CurrentProcess = PM->GetRunningProcess();
+    if (CurrentProcess == nullptr || CurrentProcess->Level != PROCESS_LEVEL_USER)
+    {
+        return LINUX_ERR_EINVAL;
+    }
+
+    switch (Option)
+    {
+        case LINUX_PR_SET_NAME:
+        {
+            if (Argument2 == 0)
+            {
+                return LINUX_ERR_EFAULT;
+            }
+
+            char UserName[MAX_PROCESS_NAME_LENGTH] = {};
+            if (!Logic->CopyFromUserToKernel(reinterpret_cast<const void*>(Argument2), UserName, sizeof(UserName)))
+            {
+                return LINUX_ERR_EFAULT;
+            }
+
+            for (size_t NameIndex = 0; NameIndex < MAX_PROCESS_NAME_LENGTH; ++NameIndex)
+            {
+                CurrentProcess->Name[NameIndex] = UserName[NameIndex];
+            }
+            CurrentProcess->Name[MAX_PROCESS_NAME_LENGTH - 1] = '\0';
+            return 0;
+        }
+        case LINUX_PR_GET_NAME:
+        {
+            if (Argument2 == 0)
+            {
+                return LINUX_ERR_EFAULT;
+            }
+
+            char KernelName[MAX_PROCESS_NAME_LENGTH] = {};
+            for (size_t NameIndex = 0; NameIndex < (MAX_PROCESS_NAME_LENGTH - 1); ++NameIndex)
+            {
+                KernelName[NameIndex] = CurrentProcess->Name[NameIndex];
+                if (KernelName[NameIndex] == '\0')
+                {
+                    break;
+                }
+            }
+
+            if (!Logic->CopyFromKernelToUser(KernelName, reinterpret_cast<void*>(Argument2), sizeof(KernelName)))
+            {
+                return LINUX_ERR_EFAULT;
+            }
+
+            return 0;
+        }
+        default:
+            break;
+    }
+
+    (void) Argument3;
+    (void) Argument4;
+    (void) Argument5;
     return LINUX_ERR_EINVAL;
 }
 

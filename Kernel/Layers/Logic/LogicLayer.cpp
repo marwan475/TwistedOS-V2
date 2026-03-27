@@ -2291,6 +2291,89 @@ bool LogicLayer::InitializeProcFileSystem(const char* MountLocation)
         return false;
     }
 
+    auto BuildUnsignedDecimal = [](uint64_t Value, char* Output, uint64_t OutputSize) -> bool
+    {
+        if (Output == nullptr || OutputSize < 2)
+        {
+            return false;
+        }
+
+        char     ReverseDigits[32] = {};
+        uint64_t ReverseCount      = 0;
+
+        do
+        {
+            if (ReverseCount >= sizeof(ReverseDigits))
+            {
+                return false;
+            }
+
+            ReverseDigits[ReverseCount++] = static_cast<char>('0' + (Value % 10));
+            Value /= 10;
+        } while (Value != 0);
+
+        if (ReverseCount + 1 > OutputSize)
+        {
+            return false;
+        }
+
+        for (uint64_t Index = 0; Index < ReverseCount; ++Index)
+        {
+            Output[Index] = ReverseDigits[ReverseCount - 1 - Index];
+        }
+
+        Output[ReverseCount] = '\0';
+        return true;
+    };
+
+    for (uint64_t ProcessId = 0; ProcessId < MAX_PROCESSES; ++ProcessId)
+    {
+        char ProcessIdText[16] = {};
+        if (!BuildUnsignedDecimal(ProcessId, ProcessIdText, sizeof(ProcessIdText)))
+        {
+            if (Terminal != nullptr)
+            {
+                Terminal->printf_("proc filesystem mount failed: pid stringify for %llu\n", static_cast<unsigned long long>(ProcessId));
+            }
+            return false;
+        }
+
+        char ProcPidPath[256] = {};
+        if (!BuildPath(MountLocation, ProcessIdText, ProcPidPath, sizeof(ProcPidPath)) || !EnsureDirectory(ProcPidPath))
+        {
+            if (Terminal != nullptr)
+            {
+                Terminal->printf_("proc filesystem mount failed: pid directory %s\n", ProcPidPath);
+            }
+            return false;
+        }
+
+        char ProcPidCmdlineSuffix[32] = {};
+        uint64_t ProcessIdLength       = LocalCStringLength(ProcessIdText);
+        if (ProcessIdLength + 9 > sizeof(ProcPidCmdlineSuffix))
+        {
+            if (Terminal != nullptr)
+            {
+                Terminal->printf_("proc filesystem mount failed: pid cmdline suffix overflow for %s\n", ProcessIdText);
+            }
+            return false;
+        }
+
+        memcpy(ProcPidCmdlineSuffix, ProcessIdText, static_cast<size_t>(ProcessIdLength));
+        ProcPidCmdlineSuffix[ProcessIdLength] = '/';
+        memcpy(ProcPidCmdlineSuffix + ProcessIdLength + 1, "cmdline", 8);
+
+        char ProcPidCmdlinePath[256] = {};
+        if (!BuildPath(MountLocation, ProcPidCmdlineSuffix, ProcPidCmdlinePath, sizeof(ProcPidCmdlinePath)) || !EnsureTextFile(ProcPidCmdlinePath, ""))
+        {
+            if (Terminal != nullptr)
+            {
+                Terminal->printf_("proc filesystem mount failed: pid cmdline file %s\n", ProcPidCmdlinePath);
+            }
+            return false;
+        }
+    }
+
     char ProcCmdlinePath[256] = {};
     if (!BuildPath(MountLocation, "cmdline", ProcCmdlinePath, sizeof(ProcCmdlinePath)) || !EnsureTextFile(ProcCmdlinePath, ""))
     {
@@ -3322,6 +3405,10 @@ uint8_t LogicLayer::CopyProcess(uint8_t Id)
     {
         ChildProcess->ResourceLimitCurrent[ResourceLimitIndex] = SourceProcess->ResourceLimitCurrent[ResourceLimitIndex];
         ChildProcess->ResourceLimitMaximum[ResourceLimitIndex] = SourceProcess->ResourceLimitMaximum[ResourceLimitIndex];
+    }
+    for (size_t NameIndex = 0; NameIndex < MAX_PROCESS_NAME_LENGTH; ++NameIndex)
+    {
+        ChildProcess->Name[NameIndex] = SourceProcess->Name[NameIndex];
     }
     ChildProcess->CurrentFileSystemLocation = SourceProcess->CurrentFileSystemLocation;
     if (SourceProcess->RunningExecutableINode != nullptr)

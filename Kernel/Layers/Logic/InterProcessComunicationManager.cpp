@@ -372,6 +372,10 @@ int64_t SocketRead(File* OpenFile, void* Buffer, uint64_t Count)
 			return 0;
 		}
 	}
+	else if (SocketEntry->Domain == LINUX_AF_NETLINK)
+	{
+		return LINUX_SOCKET_ERR_EAGAIN;
+	}
 
 	return LINUX_SOCKET_ERR_EBADF;
 }
@@ -523,6 +527,12 @@ int64_t SocketPoll(File* OpenFile, uint32_t RequestedEvents, uint32_t* ReturnedE
 			}
 		}
 
+		return 0;
+	}
+
+	if (SocketEntry->Domain == LINUX_AF_NETLINK)
+	{
+		*ReturnedEvents = 0;
 		return 0;
 	}
 

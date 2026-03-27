@@ -139,6 +139,10 @@ bool InitializeProcessEntry(Process& ProcessEntry, ProcessState Status, ProcessL
         ProcessEntry.ResourceLimitCurrent[ResourceLimitIndex] = 0;
         ProcessEntry.ResourceLimitMaximum[ResourceLimitIndex] = 0;
     }
+    for (size_t NameIndex = 0; NameIndex < MAX_PROCESS_NAME_LENGTH; ++NameIndex)
+    {
+        ProcessEntry.Name[NameIndex] = '\0';
+    }
     ProcessEntry.AddressSpace              = AddressSpace;
     ProcessEntry.CurrentFileSystemLocation = nullptr;
     ProcessEntry.RunningExecutableDentry   = nullptr;

@@ -76,6 +76,7 @@ public:
     void    RemoveFromTTYInputWaitQueue(uint8_t Id);
     bool    CreateEventQueue(uint8_t ProcessId, uint64_t FileDescriptor, uint64_t Flags);
     bool    RemoveEventQueue(uint8_t ProcessId, uint64_t FileDescriptor);
+    void    RemoveWatchesForFile(uint8_t ProcessId, uint64_t TargetFileDescriptor);
     bool    HasEventQueue(uint8_t ProcessId, uint64_t FileDescriptor) const;
     EventQueueKernelObject* GetEventQueue(uint8_t ProcessId, uint64_t FileDescriptor);
     int64_t ControlEventQueue(uint8_t ProcessId, uint64_t EpollFileDescriptor, int32_t Operation, uint64_t TargetFileDescriptor, uint32_t Events, uint64_t UserData);

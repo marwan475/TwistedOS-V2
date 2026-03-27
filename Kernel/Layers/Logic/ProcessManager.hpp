@@ -16,11 +16,12 @@
 
 static constexpr size_t  MAX_PROCESSES                     = 32;
 static constexpr uint8_t PROCESS_ID_INVALID                = 0xFF;
-static constexpr size_t  MAX_OPEN_FILES_PER_PROCESS        = 16;
+static constexpr size_t  MAX_OPEN_FILES_PER_PROCESS        = 256;
 static constexpr size_t  MAX_MEMORY_MAPPINGS_PER_PROCESS   = 1024;
 static constexpr size_t  MAX_POSIX_SIGNALS_PER_PROCESS     = 64;
 static constexpr size_t  PROCESS_KERNEL_SYSCALL_STACK_SIZE = 65536;
 static constexpr size_t  MAX_PROCESS_RESOURCE_LIMITS        = 16;
+static constexpr size_t  MAX_PROCESS_NAME_LENGTH            = 16;
 
 enum ProcessState
 {
@@ -125,6 +126,7 @@ struct Process
     bool                        ResourceLimitsInitialized  = false;
     uint64_t                    ResourceLimitCurrent[MAX_PROCESS_RESOURCE_LIMITS] = {};
     uint64_t                    ResourceLimitMaximum[MAX_PROCESS_RESOURCE_LIMITS] = {};
+    char                        Name[MAX_PROCESS_NAME_LENGTH] = {};
     VirtualAddressSpace*        AddressSpace              = nullptr;
     Dentry*                     CurrentFileSystemLocation = nullptr;
     Dentry*                     RunningExecutableDentry   = nullptr;

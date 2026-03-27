@@ -113,6 +113,7 @@ public:
     int64_t HandleRtSigprocmaskSystemCall(int64_t How, const void* Set, void* OldSet, uint64_t SigsetSize);
     int64_t HandleRtSigsuspendSystemCall(const void* Set, uint64_t SigsetSize);
     int64_t HandleMembarrierSystemCall(int64_t Command, uint32_t Flags, int32_t CpuId);
+    int64_t HandlePrctlSystemCall(int64_t Option, uint64_t Argument2, uint64_t Argument3, uint64_t Argument4, uint64_t Argument5);
     int64_t HandleArchPrctlSystemCall(uint64_t Code, uint64_t Address);
     int64_t HandleSetTidAddressSystemCall(int* TidPointer);
 

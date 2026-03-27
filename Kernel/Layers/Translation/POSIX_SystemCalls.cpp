@@ -271,6 +271,9 @@ int64_t TranslationLayer::HandlePosixSystemCallNumber(uint64_t SystemCallNumber,
         case 130: // rt_sigsuspend
             return HandleRtSigsuspendSystemCall(reinterpret_cast<const void*>(Arg1), Arg2);
             break;
+        case 157: // prctl
+            return HandlePrctlSystemCall(static_cast<int64_t>(Arg1), Arg2, Arg3, Arg4, Arg5);
+            break;
         case 158: // arch_prctl
             return HandleArchPrctlSystemCall(Arg1, Arg2);
             break;

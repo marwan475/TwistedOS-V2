@@ -331,6 +331,35 @@ bool SynchronizationManager::RemoveEventQueue(uint8_t ProcessId, uint64_t FileDe
     return true;
 }
 
+void SynchronizationManager::RemoveWatchesForFile(uint8_t ProcessId, uint64_t TargetFileDescriptor)
+{
+    EventQueueKernelObject* Queue = EventQueueStore.Head();
+    while (Queue != nullptr)
+    {
+        EventQueueKernelObject* NextQueue = EventQueueStore.Next(Queue);
+        if (Queue->Queue.ProcessId != ProcessId)
+        {
+            Queue = NextQueue;
+            continue;
+        }
+
+        EpollWatchTag* Watch = Queue->Watches.Head();
+        while (Watch != nullptr)
+        {
+            EpollWatchTag* NextWatch = Queue->Watches.Next(Watch);
+            if (Watch->FileDescriptor == TargetFileDescriptor)
+            {
+                Queue->Watches.Remove(Watch);
+                delete Watch;
+            }
+
+            Watch = NextWatch;
+        }
+
+        Queue = NextQueue;
+    }
+}
+
 bool SynchronizationManager::HasEventQueue(uint8_t ProcessId, uint64_t FileDescriptor) const
 {
     return FindEventQueue(ProcessId, FileDescriptor) != nullptr;
