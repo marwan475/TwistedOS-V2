@@ -2,20 +2,20 @@
 set -euo pipefail
 
 if [ "$#" -ne 2 ]; then
-	echo "Usage: $0 <ext2-image-path> <overlay-dir>" >&2
+	echo "Usage: $0 <ext2-image-path> <rootfs-config-dir>" >&2
 	exit 1
 fi
 
 EXT2_IMAGE_PATH="$1"
-OVERLAY_DIR="$2"
+ROOTFS_CONFIG_DIR="$2"
 
 if [ ! -f "${EXT2_IMAGE_PATH}" ]; then
 	echo "Error: ext2 image not found: ${EXT2_IMAGE_PATH}" >&2
 	exit 1
 fi
 
-if [ ! -d "${OVERLAY_DIR}" ]; then
-	echo "Error: overlay directory not found: ${OVERLAY_DIR}" >&2
+if [ ! -d "${ROOTFS_CONFIG_DIR}" ]; then
+	echo "Error: rootfs config directory not found: ${ROOTFS_CONFIG_DIR}" >&2
 	exit 1
 fi
 
@@ -24,23 +24,23 @@ if ! command -v debugfs >/dev/null 2>&1; then
 	exit 1
 fi
 
-OVERLAY_DIR="$(cd "${OVERLAY_DIR}" && pwd)"
-XORG_CONF_PATH="${OVERLAY_DIR}/20-twisted-fbdev.conf"
-XINITRC_PATH="${OVERLAY_DIR}/.xinitrc"
-INIT_SH_PATH="${OVERLAY_DIR}/init.sh"
+ROOTFS_CONFIG_DIR="$(cd "${ROOTFS_CONFIG_DIR}" && pwd)"
+XORG_CONF_PATH="${ROOTFS_CONFIG_DIR}/20-twisted-fbdev.conf"
+XINITRC_PATH="${ROOTFS_CONFIG_DIR}/.xinitrc"
+INIT_SH_PATH="${ROOTFS_CONFIG_DIR}/init.sh"
 
 if [ ! -f "${XORG_CONF_PATH}" ]; then
-	echo "Error: missing overlay file: ${XORG_CONF_PATH}" >&2
+	echo "Error: missing rootfs config file: ${XORG_CONF_PATH}" >&2
 	exit 1
 fi
 
 if [ ! -f "${XINITRC_PATH}" ]; then
-	echo "Error: missing overlay file: ${XINITRC_PATH}" >&2
+	echo "Error: missing rootfs config file: ${XINITRC_PATH}" >&2
 	exit 1
 fi
 
 if [ ! -f "${INIT_SH_PATH}" ]; then
-	echo "Error: missing overlay file: ${INIT_SH_PATH}" >&2
+	echo "Error: missing rootfs config file: ${INIT_SH_PATH}" >&2
 	exit 1
 fi
 
@@ -61,4 +61,4 @@ debugfs -w -R "set_inode_field /etc/X11/xorg.conf.d/20-twisted-fbdev.conf mode 0
 debugfs -w -R "set_inode_field /root/.xinitrc mode 0100755" "${EXT2_IMAGE_PATH}" >/dev/null 2>&1 || true
 debugfs -w -R "set_inode_field /init.sh mode 0100755" "${EXT2_IMAGE_PATH}" >/dev/null 2>&1 || true
 
-echo "Applied rootfs overlay to EXT2 image from ${OVERLAY_DIR}"
+echo "Applied rootfs mapped config files to EXT2 image from ${ROOTFS_CONFIG_DIR}"

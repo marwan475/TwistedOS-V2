@@ -89,7 +89,7 @@ ESP_SIZE = 64
 ROOTFS_SIZE ?= 256
 ROOTFS_HEADROOM_MB ?= 256
 EXT2_SOURCE_ROOTFS = RootFileSystem/alpine-rootfs
-EXT2_OVERLAY_DIR = RootFileSystem/overlay
+EXT2_OVERLAY_DIR = RootFileSystem
 ROOTFS_SOURCE_SIZE_MB := $(shell if [ -d "$(EXT2_SOURCE_ROOTFS)" ]; then size=$$(du -sm "$(EXT2_SOURCE_ROOTFS)" 2>/dev/null | awk 'NR==1{print $$1}'); echo $${size:-0}; else echo 0; fi)
 ROOTFS_REQUIRED_SIZE_MB := $(shell echo $$(( $(ROOTFS_SOURCE_SIZE_MB) + $(ROOTFS_HEADROOM_MB) )))
 ROOTFS_EFFECTIVE_SIZE_MB := $(shell req=$(ROOTFS_REQUIRED_SIZE_MB); min=$(ROOTFS_SIZE); if [ $$req -gt $$min ]; then echo $$req; else echo $$min; fi)

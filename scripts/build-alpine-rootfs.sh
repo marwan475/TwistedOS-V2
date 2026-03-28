@@ -8,9 +8,9 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 ROOTFS_PARENT_DIR="${REPO_ROOT}/RootFileSystem"
 ROOTFS_OUTPUT_DIR="${ROOTFS_PARENT_DIR}/alpine-rootfs"
 DOWNLOAD_DIR="${ROOTFS_PARENT_DIR}/downloads"
-ROOTFS_OVERLAY_DIR="${ROOTFS_PARENT_DIR}/overlay"
-ROOTFS_OVERLAY_XORG_CONF="${ROOTFS_OVERLAY_DIR}/20-twisted-fbdev.conf"
-ROOTFS_OVERLAY_XINITRC="${ROOTFS_OVERLAY_DIR}/.xinitrc"
+ROOTFS_CONFIG_DIR="${ROOTFS_PARENT_DIR}"
+ROOTFS_CONFIG_XORG_CONF="${ROOTFS_CONFIG_DIR}/20-twisted-fbdev.conf"
+ROOTFS_CONFIG_XINITRC="${ROOTFS_CONFIG_DIR}/.xinitrc"
 
 ALPINE_MIRROR="${ALPINE_MIRROR:-https://dl-cdn.alpinelinux.org/alpine}"
 ALPINE_ARCH="${ALPINE_ARCH:-x86_64}"
@@ -123,22 +123,22 @@ resolve_latest_minirootfs()
 	echo "${minirootfs_filename}|${minirootfs_sha256}"
 }
 
-write_rootfs_overlay_configs()
+write_rootfs_mapped_configs()
 {
-	if [ ! -f "${ROOTFS_OVERLAY_XORG_CONF}" ]; then
-		echo "Error: missing overlay config ${ROOTFS_OVERLAY_XORG_CONF}" >&2
+	if [ ! -f "${ROOTFS_CONFIG_XORG_CONF}" ]; then
+		echo "Error: missing rootfs config ${ROOTFS_CONFIG_XORG_CONF}" >&2
 		exit 1
 	fi
 
-	if [ ! -f "${ROOTFS_OVERLAY_XINITRC}" ]; then
-		echo "Error: missing overlay config ${ROOTFS_OVERLAY_XINITRC}" >&2
+	if [ ! -f "${ROOTFS_CONFIG_XINITRC}" ]; then
+		echo "Error: missing rootfs config ${ROOTFS_CONFIG_XINITRC}" >&2
 		exit 1
 	fi
 
 	run_as_root mkdir -p "${ROOTFS_OUTPUT_DIR}/etc/X11/xorg.conf.d"
 	run_as_root mkdir -p "${ROOTFS_OUTPUT_DIR}/root"
-	run_as_root cp "${ROOTFS_OVERLAY_XORG_CONF}" "${ROOTFS_OUTPUT_DIR}/etc/X11/xorg.conf.d/20-twisted-fbdev.conf"
-	run_as_root cp "${ROOTFS_OVERLAY_XINITRC}" "${ROOTFS_OUTPUT_DIR}/root/.xinitrc"
+	run_as_root cp "${ROOTFS_CONFIG_XORG_CONF}" "${ROOTFS_OUTPUT_DIR}/etc/X11/xorg.conf.d/20-twisted-fbdev.conf"
+	run_as_root cp "${ROOTFS_CONFIG_XINITRC}" "${ROOTFS_OUTPUT_DIR}/root/.xinitrc"
 
 	run_as_root chmod +x "${ROOTFS_OUTPUT_DIR}/root/.xinitrc"
 }
@@ -205,8 +205,8 @@ main()
 		--update-cache \
 		add --no-cache ${packages_to_install}
 
-	echo "Applying mapped overlay configs from ${ROOTFS_OVERLAY_DIR}"
-	write_rootfs_overlay_configs
+	echo "Applying mapped rootfs configs from ${ROOTFS_CONFIG_DIR}"
+	write_rootfs_mapped_configs
 
 	echo "Alpine root filesystem ready at: ${ROOTFS_OUTPUT_DIR}"
 }

@@ -166,12 +166,12 @@ Build Alpine root filesystem:
 ./scripts/build-alpine-rootfs.sh
 ```
 
-Overlay files used for X startup live in `RootFileSystem/overlay`:
+Mapped rootfs config files used for X startup live in `RootFileSystem`:
 
-- `RootFileSystem/overlay/20-twisted-fbdev.conf` → `/etc/X11/xorg.conf.d/20-twisted-fbdev.conf`
-- `RootFileSystem/overlay/.xinitrc` → `/root/.xinitrc`
+- `RootFileSystem/20-twisted-fbdev.conf` → `/etc/X11/xorg.conf.d/20-twisted-fbdev.conf`
+- `RootFileSystem/.xinitrc` → `/root/.xinitrc`
 
-These overlay files are also applied directly to the final EXT2 image during `make`.
+These rootfs config files are also applied directly to the final EXT2 image during `make`.
 
 ```sh
 make
