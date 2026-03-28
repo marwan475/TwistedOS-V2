@@ -489,11 +489,11 @@ extern "C" void ISRHANDLER(Registers* reg)
 
     if (reg->interrupt_number >= 32 && reg->interrupt_number <= 47)
     {
-        outb(PIC1_COMMAND_PORT, PIC_END_OF_INTERRUPT_COMMAND); // Send End of Interrupt (EOI) signal to master PIC
         if (reg->interrupt_number >= 40)
         {
             outb(PIC2_COMMAND_PORT, PIC_END_OF_INTERRUPT_COMMAND); // Send End of Interrupt (EOI) signal to slave PIC
         }
+        outb(PIC1_COMMAND_PORT, PIC_END_OF_INTERRUPT_COMMAND); // Send End of Interrupt (EOI) signal to master PIC
     }
 
     if (ActiveDispatcher != nullptr)

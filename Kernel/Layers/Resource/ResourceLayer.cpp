@@ -242,6 +242,9 @@ void ResourceLayer::InitializeMouse()
     InputMouse = new Mouse();
     InputMouse->Initialize();
     Console->printf_("Mouse Initialized\n");
+    Console->printf_("mouse_dbg: controller_initialized=%u init_code=%u\n", InputMouse->IsControllerInitialized() ? 1U : 0U, InputMouse->GetInitFailureCode());
+    Console->printf_("mouse_dbg: defaults_result=%u defaults_resp=0x%x streaming_result=%u streaming_resp=0x%x\n", InputMouse->GetDefaultsCommandResult(),
+                     InputMouse->GetDefaultsCommandResponse(), InputMouse->GetStreamingCommandResult(), InputMouse->GetStreamingCommandResponse());
 }
 
 void ResourceLayer::InitializeDeviceManager()

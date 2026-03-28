@@ -25,6 +25,7 @@ constexpr int64_t LINUX_ERR_EINTR  = -4;
 constexpr uint64_t LINUX_O_NONBLOCK = 0x800;
 
 constexpr uint16_t LINUX_POLLIN  = 0x0001;
+constexpr uint32_t EVENT_DEVICE_DEBUG_LOG_INTERVAL = 128;
 constexpr uint16_t LINUX_POLLOUT = 0x0004;
 
 constexpr uint64_t LINUX_IOCTL_FIONREAD      = 0x541B;
@@ -182,6 +183,28 @@ EventDeviceManager* GetGlobalEventDeviceManager()
     }
 
     return ActiveResourceLayer->GetEventDeviceManager();
+}
+
+TTY* GetEventDeviceLogTTY()
+{
+    Dispatcher* ActiveDispatcher = Dispatcher::GetActive();
+    if (ActiveDispatcher == nullptr)
+    {
+        return nullptr;
+    }
+
+    ResourceLayer* ActiveResourceLayer = ActiveDispatcher->GetResourceLayer();
+    if (ActiveResourceLayer == nullptr)
+    {
+        return nullptr;
+    }
+
+    return ActiveResourceLayer->GetTTY();
+}
+
+bool IsMouseEventDevice(const EventDevice* Device)
+{
+    return Device != nullptr && Device->Kind == EVENT_DEVICE_KIND_MOUSE;
 }
 
 bool ResolveRuntimeContext(LogicLayer** OutLogic, Process** OutRunningProcess)
@@ -393,8 +416,18 @@ bool EventDeviceManager::QueueInputEvent(const char* Path, uint16_t Type, uint16
 
 bool EventDeviceManager::QueueInputEvent(EventDevice* Device, uint16_t Type, uint16_t Code, int32_t Value)
 {
-    if (Device == nullptr || Device->PendingEventCount >= EventDevice::MAX_PENDING_EVENTS)
+    if (Device == nullptr)
     {
+        return false;
+    }
+
+    if (Device->PendingEventCount >= EventDevice::MAX_PENDING_EVENTS)
+    {
+        TTY* Terminal = GetEventDeviceLogTTY();
+        if (Terminal != nullptr)
+        {
+            Terminal->printf_("event_dbg: queue_full path=%s type=%u code=%u value=%d\n", Device->Path, static_cast<unsigned int>(Type), static_cast<unsigned int>(Code), static_cast<int>(Value));
+        }
         return false;
     }
 
@@ -575,6 +608,23 @@ int64_t EventDevice::ReadFileOperation(File* OpenFile, void* Buffer, uint64_t Co
 
     uint64_t BytesRead = EventsRead * sizeof(LinuxInputEvent);
     OpenFile->CurrentOffset += BytesRead;
+
+    if (IsMouseEventDevice(Device) && BytesRead > 0)
+    {
+        static uint32_t MouseReadLogCount = 0;
+        ++MouseReadLogCount;
+
+        if ((MouseReadLogCount % EVENT_DEVICE_DEBUG_LOG_INTERVAL) == 1)
+        {
+            TTY* Terminal = GetEventDeviceLogTTY();
+            if (Terminal != nullptr)
+            {
+                Terminal->printf_("event_dbg: mouse_read bytes=%lu events=%lu remaining=%u\n", static_cast<unsigned long>(BytesRead), static_cast<unsigned long>(EventsRead),
+                                  static_cast<unsigned int>(Device->PendingEventCount));
+            }
+        }
+    }
+
     return static_cast<int64_t>(BytesRead);
 }
 
@@ -707,7 +757,7 @@ int64_t EventDevice::IoctlFileOperation(File* OpenFile, uint64_t Request, uint64
         return Logic->CopyFromKernelToUser(&BytesAvailable, reinterpret_cast<void*>(Argument), sizeof(BytesAvailable)) ? 0 : LINUX_ERR_EFAULT;
     }
 
-    if (IsEventIoctlReadRequest(Request, 0x06))
+    if (IsEventIoctlReadRequest(Request, 0x06) || IsEventIoctlReadRequest(Request, 0x07) || IsEventIoctlReadRequest(Request, 0x08))
     {
         if (Argument == 0)
         {
@@ -721,7 +771,27 @@ int64_t EventDevice::IoctlFileOperation(File* OpenFile, uint64_t Request, uint64
         }
 
         char NameBuffer[EventDevice::MAX_EVENT_DEVICE_PATH] = {};
-        const char* DefaultName = ResolveEventDeviceDisplayName(Device);
+        const char* DefaultName = "";
+
+        if (IsEventIoctlReadRequest(Request, 0x06))
+        {
+            DefaultName = ResolveEventDeviceDisplayName(Device);
+        }
+        else if (IsEventIoctlReadRequest(Request, 0x07))
+        {
+            if (Device->Kind == EVENT_DEVICE_KIND_MOUSE)
+            {
+                DefaultName = "isa0060/serio1/input0";
+            }
+            else if (Device->Kind == EVENT_DEVICE_KIND_KEYBOARD)
+            {
+                DefaultName = "isa0060/serio0/input0";
+            }
+            else
+            {
+                DefaultName = "virtual/input0";
+            }
+        }
 
         CopyCStringBounded(NameBuffer, sizeof(NameBuffer), DefaultName);
 
@@ -806,6 +876,22 @@ int64_t EventDevice::IoctlFileOperation(File* OpenFile, uint64_t Request, uint64
         }
 
         return Logic->CopyFromKernelToUser(Bitmap, reinterpret_cast<void*>(Argument), BitmapSize) ? 0 : LINUX_ERR_EFAULT;
+    }
+
+    if (IsMouseEventDevice(Device))
+    {
+        static uint32_t UnsupportedMouseIoctlLogCount = 0;
+        ++UnsupportedMouseIoctlLogCount;
+
+        if ((UnsupportedMouseIoctlLogCount % EVENT_DEVICE_DEBUG_LOG_INTERVAL) == 1)
+        {
+            TTY* Terminal = GetEventDeviceLogTTY();
+            if (Terminal != nullptr)
+            {
+                Terminal->printf_("event_dbg: mouse_ioctl_unsupported req=0x%llx size=%u nr=%u dir=%u\n", static_cast<unsigned long long>(Request),
+                                  static_cast<unsigned int>(IoctlSize(Request)), static_cast<unsigned int>(IoctlNumber(Request)), static_cast<unsigned int>(IoctlDirection(Request)));
+            }
+        }
     }
 
     return LINUX_ERR_ENOTTY;
