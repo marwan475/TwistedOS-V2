@@ -413,6 +413,15 @@ int64_t SocketWrite(File* OpenFile, const void* Buffer, uint64_t Count)
 
 		if (!SocketImplementation->IsListening && (SocketEntry->Type == LINUX_SOCK_STREAM || SocketEntry->Type == LINUX_SOCK_SEQPACKET))
 		{
+			Socket* PeerSocket = SocketImplementation->ConnectedPeer;
+			if (PeerSocket != nullptr && PeerSocket->Domain == LINUX_AF_UNIX)
+			{
+				UnixSocket* PeerUnix = reinterpret_cast<UnixSocket*>(PeerSocket->Implementation);
+				if (PeerUnix != nullptr && PeerUnix->IsListening)
+				{
+					return LINUX_SOCKET_ERR_EAGAIN;
+				}
+			}
 			return WriteToUnixPeerBuffer(SocketEntry, SocketImplementation, Buffer, Count);
 		}
 	}
@@ -515,6 +524,10 @@ int64_t SocketPoll(File* OpenFile, uint32_t RequestedEvents, uint32_t* ReturnedE
 			if (SocketImplementation->IsShutdownWrite)
 			{
 				*ReturnedEvents |= LINUX_POLLERR;
+			}
+			else if (PeerImplementation != nullptr && PeerImplementation->IsListening)
+			{
+				/* Connection pending (not yet accepted), not writable */
 			}
 			else if (PeerImplementation != nullptr && !PeerImplementation->IsShutdownRead &&
 					 PeerImplementation->ReceiveBufferedBytes < PeerImplementation->ReceiveBufferCapacity)

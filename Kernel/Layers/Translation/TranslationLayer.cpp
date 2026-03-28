@@ -2337,25 +2337,18 @@ int64_t TranslationLayer::HandlePollSystemCall(void* PollFdArray, uint64_t PollF
         return 0;
     }
 
-    if (!HasTTYReadableWait)
-    {
-        if (TimeoutMilliseconds > 0)
-        {
-            uint64_t SleepTicks = static_cast<uint64_t>((TimeoutMilliseconds + 9) / 10);
-            if (SleepTicks == 0)
-            {
-                SleepTicks = 1;
-            }
-            Logic->SleepProcess(CurrentProcess->Id, SleepTicks);
-        }
-        return 0;
-    }
-
     if (TimeoutMilliseconds < 0)
     {
         while (true)
         {
-            Logic->BlockProcessForTTYInput(CurrentProcess->Id);
+            if (HasTTYReadableWait)
+            {
+                Logic->BlockProcessForTTYInput(CurrentProcess->Id);
+            }
+            else
+            {
+                Logic->SleepProcess(CurrentProcess->Id, 1);
+            }
 
             bool DummyTTYWaitFlag = false;
             ReadyCount            = EvaluatePollState(&DummyTTYWaitFlag);
@@ -2364,6 +2357,28 @@ int64_t TranslationLayer::HandlePollSystemCall(void* PollFdArray, uint64_t PollF
                 return ReadyCount;
             }
         }
+    }
+
+    if (!HasTTYReadableWait)
+    {
+        if (TimeoutMilliseconds > 0)
+        {
+            int64_t RemainingMilliseconds = TimeoutMilliseconds;
+            while (RemainingMilliseconds > 0)
+            {
+                Logic->SleepProcess(CurrentProcess->Id, 1);
+
+                bool DummyTTYWaitFlag = false;
+                ReadyCount            = EvaluatePollState(&DummyTTYWaitFlag);
+                if (ReadyCount != 0)
+                {
+                    return ReadyCount;
+                }
+
+                RemainingMilliseconds -= 10;
+            }
+        }
+        return 0;
     }
 
     int64_t RemainingMilliseconds = TimeoutMilliseconds;
@@ -2728,25 +2743,18 @@ int64_t TranslationLayer::HandleEpollWaitSystemCall(uint64_t EpollFileDescriptor
         return 0;
     }
 
-    if (!HasTTYReadableWait)
-    {
-        if (TimeoutMilliseconds > 0)
-        {
-            uint64_t SleepTicks = static_cast<uint64_t>((TimeoutMilliseconds + 9) / 10);
-            if (SleepTicks == 0)
-            {
-                SleepTicks = 1;
-            }
-            Logic->SleepProcess(CurrentProcess->Id, SleepTicks);
-        }
-        return 0;
-    }
-
     if (TimeoutMilliseconds < 0)
     {
         while (true)
         {
-            Logic->BlockProcessForTTYInput(CurrentProcess->Id);
+            if (HasTTYReadableWait)
+            {
+                Logic->BlockProcessForTTYInput(CurrentProcess->Id);
+            }
+            else
+            {
+                Logic->SleepProcess(CurrentProcess->Id, 1);
+            }
 
             bool DummyTTYWaitFlag = false;
             ReadyCount            = EvaluateReadyEvents(&DummyTTYWaitFlag);
@@ -2755,6 +2763,28 @@ int64_t TranslationLayer::HandleEpollWaitSystemCall(uint64_t EpollFileDescriptor
                 return ReadyCount;
             }
         }
+    }
+
+    if (!HasTTYReadableWait)
+    {
+        if (TimeoutMilliseconds > 0)
+        {
+            int64_t RemainingMilliseconds = TimeoutMilliseconds;
+            while (RemainingMilliseconds > 0)
+            {
+                Logic->SleepProcess(CurrentProcess->Id, 1);
+
+                bool DummyTTYWaitFlag = false;
+                ReadyCount            = EvaluateReadyEvents(&DummyTTYWaitFlag);
+                if (ReadyCount != 0)
+                {
+                    return ReadyCount;
+                }
+
+                RemainingMilliseconds -= 10;
+            }
+        }
+        return 0;
     }
 
     int64_t RemainingMilliseconds = TimeoutMilliseconds;
