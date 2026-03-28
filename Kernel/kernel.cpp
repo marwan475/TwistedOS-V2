@@ -150,6 +150,11 @@ extern "C"
             ActiveDispatcher->GetLogicLayer()->GetVirtualFileSystem()->RegisterDevice("/dev/fb0", FB, FB->GetFileOperations());
         }
 
+        if (!ActiveDispatcher->GetLogicLayer()->RegisterDevices())
+        {
+            ActiveDispatcher->GetResourceLayer()->GetTTY()->printf_("RegisterDevices failed\n");
+        }
+
         if (Input != nullptr)
         {
             ActiveDispatcher->GetLogicLayer()->CreateEventDevice(Input, "/dev/input/event0", &Keyboard::HandleEventInterrupt);

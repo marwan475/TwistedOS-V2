@@ -235,7 +235,13 @@ void ResourceLayer::InitializeDeviceManager()
     }
 
     DevManager = new DeviceManager();
-    DevManager->Initialize(Terminal);
+    DevManager->Initialize(Terminal, PMM);
+    if (Terminal != nullptr)
+    {
+        DevManager->RegisterDeviceNode("/dev/tty", Terminal, Terminal->GetFileOperations());
+    }
+
+    DevManager->RegisterDeviceNode("/dev/fb0", &FB, FB.GetFileOperations());
     DevManager->PrintPCI(Terminal);
 }
 

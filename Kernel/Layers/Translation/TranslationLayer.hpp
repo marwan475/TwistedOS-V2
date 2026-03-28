@@ -50,6 +50,7 @@ public:
     int64_t HandleStatSystemCall(const char* Path, void* Buffer);
     int64_t HandleFstatSystemCall(uint64_t FileDescriptor, void* Buffer);
     int64_t HandleLstatSystemCall(const char* Path, void* Buffer);
+    int64_t HandleFstatfsSystemCall(uint64_t FileDescriptor, void* Buffer);
     int64_t HandleNewFstatatSystemCall(int64_t DirectoryFileDescriptor, const char* Path, void* Buffer, int64_t Flags);
     int64_t HandleGetdents64SystemCall(uint64_t FileDescriptor, void* Buffer, uint64_t BufferSize);
     int64_t HandleFcntlSystemCall(uint64_t FileDescriptor, uint64_t Command, uint64_t Argument);
@@ -101,6 +102,7 @@ public:
     int64_t HandleGettimeofdaySystemCall(void* TimeValue, void* TimeZone);
     int64_t HandleClockGettimeSystemCall(int64_t ClockId, void* TimeSpec);
     int64_t HandleClockGetresSystemCall(int64_t ClockId, void* TimeSpec);
+    int64_t HandleGetrandomSystemCall(void* Buffer, uint64_t BufferSize, uint32_t Flags);
     int64_t HandleCloneSystemCall(uint64_t Flags, void* ChildStack, int* ParentTid, int* ChildTid, uint64_t NewTls);
     int64_t HandleForkSystemCall();
     int64_t HandleVforkSystemCall();

@@ -226,6 +226,8 @@ void          X86OutB(uint16_t Port, uint8_t Value);
 uint8_t       X86InB(uint16_t Port);
 void          X86OutW(uint16_t Port, uint16_t Value);
 uint16_t      X86InW(uint16_t Port);
+void          X86OutL(uint16_t Port, uint32_t Value);
+uint32_t      X86InL(uint16_t Port);
 bool          X86ReadPCIConfigDword(uint8_t Bus, uint8_t Device, uint8_t Function, uint8_t RegisterOffset, uint32_t* Value);
 void          RemapPIC();
 void          SetUserFSBase(uint64_t BaseAddress);

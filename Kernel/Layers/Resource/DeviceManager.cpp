@@ -7,12 +7,40 @@
 #include "DeviceManager.hpp"
 
 #include "Drivers/IDEController.hpp"
+#include "Drivers/VirtioRandom.hpp"
 #include "TTY.hpp"
 
 #include <Arch/x86.hpp>
+#include <CommonUtils.hpp>
+#include <Layers/Logic/VirtualFileSystem.hpp>
+#include <Memory/PhysicalMemoryManager.hpp>
 
 namespace
 {
+bool StringEquals(const char* Left, const char* Right)
+{
+    if (Left == nullptr || Right == nullptr)
+    {
+        return false;
+    }
+
+    uint64_t Index = 0;
+    while (true)
+    {
+        if (Left[Index] != Right[Index])
+        {
+            return false;
+        }
+
+        if (Left[Index] == '\0')
+        {
+            return true;
+        }
+
+        ++Index;
+    }
+}
+
 bool ReadPciConfigDword(uint8_t Bus, uint8_t Device, uint8_t Function, uint8_t RegisterOffset, uint32_t* Value)
 {
     return X86ReadPCIConfigDword(Bus, Device, Function, RegisterOffset, Value);
@@ -61,12 +89,19 @@ bool ReadPciConfigByte(uint8_t Bus, uint8_t Device, uint8_t Function, uint8_t Re
  * Returns:
  *   DeviceManager - Constructed device manager instance.
  */
-DeviceManager::DeviceManager() : PciDevices{}, PciDeviceCount(0), PrimaryIDEController(nullptr), LogTerminal(nullptr)
+DeviceManager::DeviceManager()
+    : PciDevices{}, PciDeviceCount(0), DeviceNodes{}, DeviceNodeCount(0), PrimaryIDEController(nullptr), PrimaryVirtioRandom(nullptr), PhysicalMemory(nullptr), LogTerminal(nullptr)
 {
 }
 
 DeviceManager::~DeviceManager()
 {
+    if (PrimaryVirtioRandom != nullptr)
+    {
+        delete PrimaryVirtioRandom;
+        PrimaryVirtioRandom = nullptr;
+    }
+
     if (PrimaryIDEController != nullptr)
     {
         delete PrimaryIDEController;
@@ -82,20 +117,28 @@ DeviceManager::~DeviceManager()
  * Returns:
  *   void - No return value.
  */
-void DeviceManager::Initialize(TTY* Terminal)
+void DeviceManager::Initialize(TTY* Terminal, PhysicalMemoryManager* PMM)
 {
-    LogTerminal = Terminal;
+    LogTerminal     = Terminal;
+    PhysicalMemory  = PMM;
     EnumeratePCI();
 }
 
 void DeviceManager::EnumeratePCI()
 {
     PciDeviceCount = 0;
+    DeviceNodeCount = 0;
 
     if (PrimaryIDEController != nullptr)
     {
         delete PrimaryIDEController;
         PrimaryIDEController = nullptr;
+    }
+
+    if (PrimaryVirtioRandom != nullptr)
+    {
+        delete PrimaryVirtioRandom;
+        PrimaryVirtioRandom = nullptr;
     }
 
     for (uint16_t Bus = 0; Bus < 256; ++Bus)
@@ -150,6 +193,16 @@ void DeviceManager::EnumeratePCI()
                     }
                     InitializeIDEControllerForDevice(Info);
                 }
+
+                if (Info.VendorId == VIRTIO_VENDOR_ID && (Info.DeviceId == VIRTIO_RNG_DEVICE_ID_LEGACY || Info.DeviceId == VIRTIO_RNG_DEVICE_ID_MODERN))
+                {
+                    if (LogTerminal != nullptr)
+                    {
+                        LogTerminal->printf_("Driver match: PCI %u:%u.%u vendor=0x%x device=0x%x (virtio-rng)\n", Info.Bus, Info.Device, Info.Function, Info.VendorId,
+                                             Info.DeviceId);
+                    }
+                    InitializeVirtioRandomForDevice(Info);
+                }
             }
         }
     }
@@ -203,6 +256,57 @@ void DeviceManager::InitializeIDEControllerForDevice(const PciDeviceInfo& Device
     }
 }
 
+void DeviceManager::InitializeVirtioRandomForDevice(const PciDeviceInfo& Device)
+{
+    if (PrimaryVirtioRandom != nullptr || PhysicalMemory == nullptr)
+    {
+        return;
+    }
+
+    uint32_t Bar0 = 0;
+    if (!ReadPciConfigDword(Device.Bus, Device.Device, Device.Function, 0x10, &Bar0) || (Bar0 & 0x1u) == 0)
+    {
+        if (LogTerminal != nullptr)
+        {
+            LogTerminal->printf_("device driver init failed: virtio-rng (missing I/O BAR)\n");
+        }
+        return;
+    }
+
+    uint16_t IoBase = static_cast<uint16_t>(Bar0 & 0xFFFCu);
+    if (IoBase == 0)
+    {
+        if (LogTerminal != nullptr)
+        {
+            LogTerminal->printf_("device driver init failed: virtio-rng (invalid I/O BAR)\n");
+        }
+        return;
+    }
+
+    PrimaryVirtioRandom = new VirtioRandom(IoBase, PhysicalMemory);
+    if (PrimaryVirtioRandom == nullptr || !PrimaryVirtioRandom->Initialize())
+    {
+        if (LogTerminal != nullptr)
+        {
+            LogTerminal->printf_("device driver init failed: virtio-rng\n");
+        }
+
+        if (PrimaryVirtioRandom != nullptr)
+        {
+            delete PrimaryVirtioRandom;
+            PrimaryVirtioRandom = nullptr;
+        }
+        return;
+    }
+
+    if (LogTerminal != nullptr)
+    {
+        LogTerminal->printf_("device driver inited: virtio-rng\n");
+    }
+
+    RegisterDeviceNode(PrimaryVirtioRandom->GetDeviceFileName(), PrimaryVirtioRandom, PrimaryVirtioRandom->GetFileOperations());
+}
+
 /**
  * Function: DeviceManager::PrintPCI
  * Description: Enumerates PCI devices and prints each discovered function to the provided terminal.
@@ -244,6 +348,51 @@ bool DeviceManager::GetPCIDeviceInfo(uint32_t Index, PciDeviceInfo* Info) const
     return true;
 }
 
+bool DeviceManager::RegisterDeviceNode(const char* FileName, void* DeviceData, FileOperations* FileOps)
+{
+    if (FileName == nullptr || FileName[0] == '\0' || DeviceData == nullptr || FileOps == nullptr)
+    {
+        return false;
+    }
+
+    if (DeviceNodeCount >= MAX_DEVICE_NODES)
+    {
+        return false;
+    }
+
+    for (uint32_t Index = 0; Index < DeviceNodeCount; ++Index)
+    {
+        if (DeviceNodes[Index].FileName != nullptr && StringEquals(DeviceNodes[Index].FileName, FileName))
+        {
+            DeviceNodes[Index].DeviceData = DeviceData;
+            DeviceNodes[Index].FileOps    = FileOps;
+            return true;
+        }
+    }
+
+    DeviceNodes[DeviceNodeCount].FileName   = FileName;
+    DeviceNodes[DeviceNodeCount].DeviceData = DeviceData;
+    DeviceNodes[DeviceNodeCount].FileOps    = FileOps;
+    ++DeviceNodeCount;
+    return true;
+}
+
+uint32_t DeviceManager::GetRegisteredDeviceCount() const
+{
+    return DeviceNodeCount;
+}
+
+bool DeviceManager::GetRegisteredDevice(uint32_t Index, DeviceNodeRegistration* Registration) const
+{
+    if (Registration == nullptr || Index >= DeviceNodeCount)
+    {
+        return false;
+    }
+
+    *Registration = DeviceNodes[Index];
+    return true;
+}
+
 IDEController* DeviceManager::GetDiskController() const
 {
     return PrimaryIDEController;
@@ -277,4 +426,9 @@ bool DeviceManager::WriteBlock(uint32_t LBA, const void* Buffer) const
 IDEController* DeviceManager::GetPrimaryIDEController() const
 {
     return PrimaryIDEController;
+}
+
+VirtioRandom* DeviceManager::GetVirtioRandom() const
+{
+    return PrimaryVirtioRandom;
 }

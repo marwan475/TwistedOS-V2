@@ -8,6 +8,7 @@
 
 #include <Arch/x86.hpp>
 #include <Layers/Resource/Drivers/IDEController.hpp>
+#include <Layers/Resource/Drivers/VirtioRandom.hpp>
 #include <Memory/VirtualMemoryManager.hpp>
 #include <Memory/KernelHeapAllocations.hpp>
 #include <Testing/KernelSelfTests.hpp>
@@ -16,6 +17,7 @@ namespace
 {
 constexpr uint64_t TIMER_INTERRUPT_VECTOR       = 32;
 constexpr uint64_t KEYBOARD_INTERRUPT_VECTOR    = 33;
+constexpr uint64_t VIRTIO_RNG_INTERRUPT_VECTOR  = 43;
 constexpr uint64_t IDE_PRIMARY_INTERRUPT_VECTOR = 46;
 constexpr uint64_t SYSCALL_INTERRUPT_VECTOR     = 128;
 constexpr uint64_t SCHEDULER_TICK_INTERVAL      = 5;
@@ -383,6 +385,16 @@ void Dispatcher::InterruptHandler(uint64_t InterruptNumber)
             if (DiskController == nullptr || !DiskController->HandleInterrupt())
             {
                 Resource.GetTTY()->printf_("IDE interrupt with no active IDE driver\n");
+            }
+        }
+        break;
+        case VIRTIO_RNG_INTERRUPT_VECTOR:
+        {
+            DeviceManager* DeviceManagerInstance = Resource.GetDeviceManager();
+            VirtioRandom*  RandomDevice          = (DeviceManagerInstance == nullptr) ? nullptr : DeviceManagerInstance->GetVirtioRandom();
+            if (RandomDevice != nullptr)
+            {
+                (void) RandomDevice->HandleInterrupt();
             }
         }
         break;

@@ -8,6 +8,7 @@
 
 #include "Layers/Logic/LogicLayer.hpp"
 #include "Layers/Resource/ExtendedFileSystemManager.hpp"
+#include "Layers/Resource/Drivers/VirtioRandom.hpp"
 
 #include <Arch/x86.hpp>
 #include <CommonUtils.hpp>
@@ -94,6 +95,27 @@ struct LinuxStat
     uint64_t ChangeTimeSeconds;
     uint64_t ChangeTimeNanoseconds;
     int64_t  Reserved[3];
+};
+
+struct LinuxFileSystemId
+{
+    int32_t Value[2];
+};
+
+struct LinuxStatFs
+{
+    int64_t          Type;
+    int64_t          BlockSize;
+    uint64_t         Blocks;
+    uint64_t         BlocksFree;
+    uint64_t         BlocksAvailable;
+    uint64_t         Files;
+    uint64_t         FilesFree;
+    LinuxFileSystemId FileSystemId;
+    int64_t          NameLength;
+    int64_t          FragmentSize;
+    int64_t          MountFlags;
+    int64_t          Spare[4];
 };
 
 struct LinuxTimeVal
@@ -257,6 +279,12 @@ constexpr int64_t LINUX_AT_SYMLINK_NOFOLLOW = 0x100;
 constexpr int64_t LINUX_AT_NO_AUTOMOUNT     = 0x800;
 constexpr int64_t LINUX_AT_EMPTY_PATH       = 0x1000;
 
+constexpr int64_t LINUX_EXT2_SUPER_MAGIC = 0xEF53;
+constexpr int64_t LINUX_PROC_SUPER_MAGIC = 0x9FA0;
+constexpr int64_t LINUX_SYSFS_MAGIC      = 0x62656572;
+constexpr int64_t LINUX_RAMFS_MAGIC      = 0x858458F6;
+constexpr int64_t LINUX_STATFS_NAMELEN   = 255;
+
 constexpr uint8_t LINUX_DT_UNKNOWN = 0;
 constexpr uint8_t LINUX_DT_CHR     = 2;
 constexpr uint8_t LINUX_DT_DIR     = 4;
@@ -377,6 +405,10 @@ constexpr uint32_t LINUX_MEMBARRIER_CMD_FLAG_CPU = (1u << 0);
 constexpr int64_t LINUX_MEMBARRIER_SUPPORTED_COMMANDS =
     (LINUX_MEMBARRIER_CMD_GLOBAL | LINUX_MEMBARRIER_CMD_PRIVATE_EXPEDITED | LINUX_MEMBARRIER_CMD_REGISTER_PRIVATE_EXPEDITED
      | LINUX_MEMBARRIER_CMD_PRIVATE_EXPEDITED_SYNC_CORE | LINUX_MEMBARRIER_CMD_REGISTER_PRIVATE_EXPEDITED_SYNC_CORE);
+
+constexpr uint32_t LINUX_GRND_NONBLOCK = 0x0001u;
+constexpr uint32_t LINUX_GRND_RANDOM   = 0x0002u;
+constexpr uint32_t LINUX_GRND_INSECURE = 0x0004u;
 
 bool IsSupportedLinuxClockId(int64_t ClockId)
 {
@@ -812,6 +844,111 @@ void PopulateLinuxStatFromNode(const INode* Node, LinuxStat* KernelStat)
     KernelStat->ModifyTimeNanoseconds = 0;
     KernelStat->ChangeTimeSeconds     = 0;
     KernelStat->ChangeTimeNanoseconds = 0;
+}
+
+bool PathHasPrefix(const char* Path, const char* Prefix)
+{
+    if (Path == nullptr || Prefix == nullptr)
+    {
+        return false;
+    }
+
+    uint64_t Index = 0;
+    while (Prefix[Index] != '\0')
+    {
+        if (Path[Index] != Prefix[Index])
+        {
+            return false;
+        }
+
+        ++Index;
+    }
+
+    return true;
+}
+
+int64_t ResolveLinuxFileSystemMagic(const INode* Node, VirtualFileSystem* VFS)
+{
+    if (Node == nullptr)
+    {
+        return LINUX_RAMFS_MAGIC;
+    }
+
+    if (VFS != nullptr)
+    {
+        char AbsolutePath[SYSCALL_PATH_MAX] = {};
+        if (BuildAbsolutePathFromINode(VFS, Node, AbsolutePath, sizeof(AbsolutePath)))
+        {
+            if (PathHasPrefix(AbsolutePath, "/proc"))
+            {
+                return LINUX_PROC_SUPER_MAGIC;
+            }
+
+            if (PathHasPrefix(AbsolutePath, "/sys"))
+            {
+                return LINUX_SYSFS_MAGIC;
+            }
+        }
+    }
+
+    if (Node->LazyLoadContext != nullptr)
+    {
+        return LINUX_EXT2_SUPER_MAGIC;
+    }
+
+    return LINUX_RAMFS_MAGIC;
+}
+
+void PopulateLinuxStatFsFromNode(LogicLayer* Logic, VirtualFileSystem* VFS, const INode* Node, LinuxStatFs* KernelStatFs)
+{
+    if (Node == nullptr || KernelStatFs == nullptr)
+    {
+        return;
+    }
+
+    *KernelStatFs                   = {};
+    KernelStatFs->Type              = ResolveLinuxFileSystemMagic(Node, VFS);
+    KernelStatFs->BlockSize         = static_cast<int64_t>(PAGE_SIZE);
+    KernelStatFs->Blocks            = static_cast<uint64_t>((Node->NodeSize + PAGE_SIZE - 1) / PAGE_SIZE);
+    KernelStatFs->BlocksFree        = 0;
+    KernelStatFs->BlocksAvailable   = 0;
+    KernelStatFs->Files             = 0;
+    KernelStatFs->FilesFree         = 0;
+    KernelStatFs->NameLength        = LINUX_STATFS_NAMELEN;
+    KernelStatFs->FragmentSize      = static_cast<int64_t>(PAGE_SIZE);
+    KernelStatFs->MountFlags        = 0;
+    KernelStatFs->FileSystemId.Value[0] = static_cast<int32_t>(reinterpret_cast<uint64_t>(Node) & 0xFFFFFFFFu);
+    KernelStatFs->FileSystemId.Value[1] = static_cast<int32_t>((reinterpret_cast<uint64_t>(Node) >> 32) & 0xFFFFFFFFu);
+
+    ExtendedFileSystemManager* FileSystemManager = nullptr;
+    if (Node->LazyLoadContext != nullptr)
+    {
+        FileSystemManager = reinterpret_cast<ExtendedFileSystemManager*>(Node->LazyLoadContext);
+    }
+    else if (Logic != nullptr && Logic->GetResourceLayer() != nullptr)
+    {
+        FileSystemManager = Logic->GetResourceLayer()->GetExtendedFileSystemManager();
+    }
+
+    if (FileSystemManager != nullptr && FileSystemManager->IsInitialized())
+    {
+        uint32_t FileSystemBlockSize = FileSystemManager->GetBlockSizeBytes();
+        if (FileSystemBlockSize != 0)
+        {
+            KernelStatFs->BlockSize    = static_cast<int64_t>(FileSystemBlockSize);
+            KernelStatFs->FragmentSize = static_cast<int64_t>(FileSystemBlockSize);
+        }
+
+        KernelStatFs->Blocks          = static_cast<uint64_t>(FileSystemManager->GetBlocksCount());
+        KernelStatFs->BlocksFree      = static_cast<uint64_t>(FileSystemManager->GetFreeBlocksCount());
+        KernelStatFs->BlocksAvailable = static_cast<uint64_t>(FileSystemManager->GetFreeBlocksCount());
+        KernelStatFs->Files           = static_cast<uint64_t>(FileSystemManager->GetInodesCount());
+        KernelStatFs->FilesFree       = static_cast<uint64_t>(FileSystemManager->GetFreeInodesCount());
+
+        uint64_t PartitionStartLBA = FileSystemManager->GetPartitionStartLBA();
+        KernelStatFs->FileSystemId.Value[0] = static_cast<int32_t>(PartitionStartLBA & 0xFFFFFFFFu);
+        KernelStatFs->FileSystemId.Value[1] = static_cast<int32_t>((PartitionStartLBA >> 32) & 0xFFFFFFFFu);
+    }
 }
 
 int64_t AllocateProcessFileDescriptor(Process* CurrentProcess, Dentry* NodeDentry, uint64_t Flags)
@@ -4366,6 +4503,47 @@ int64_t TranslationLayer::HandleFstatSystemCall(uint64_t FileDescriptor, void* B
     PopulateLinuxStatFromNode(OpenFile->Node, &KernelStat);
 
     if (!Logic->CopyFromKernelToUser(&KernelStat, Buffer, sizeof(KernelStat)))
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    return 0;
+}
+
+int64_t TranslationLayer::HandleFstatfsSystemCall(uint64_t FileDescriptor, void* Buffer)
+{
+    if (Logic == nullptr || Buffer == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    ProcessManager* PM = Logic->GetProcessManager();
+    if (PM == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    Process* CurrentProcess = PM->GetRunningProcess();
+    if (CurrentProcess == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    if (FileDescriptor >= MAX_OPEN_FILES_PER_PROCESS)
+    {
+        return LINUX_ERR_EBADF;
+    }
+
+    File* OpenFile = CurrentProcess->FileTable[FileDescriptor];
+    if (OpenFile == nullptr || OpenFile->Node == nullptr)
+    {
+        return LINUX_ERR_EBADF;
+    }
+
+    LinuxStatFs KernelStatFs = {};
+    PopulateLinuxStatFsFromNode(Logic, Logic->GetVirtualFileSystem(), OpenFile->Node, &KernelStatFs);
+
+    if (!Logic->CopyFromKernelToUser(&KernelStatFs, Buffer, sizeof(KernelStatFs)))
     {
         return LINUX_ERR_EFAULT;
     }
@@ -9852,6 +10030,62 @@ int64_t TranslationLayer::HandleMembarrierSystemCall(int64_t Command, uint32_t F
     }
 
     return LINUX_ERR_EINVAL;
+}
+
+int64_t TranslationLayer::HandleGetrandomSystemCall(void* Buffer, uint64_t BufferSize, uint32_t Flags)
+{
+    if (Logic == nullptr || (Buffer == nullptr && BufferSize != 0))
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    uint32_t SupportedFlags = (LINUX_GRND_NONBLOCK | LINUX_GRND_RANDOM | LINUX_GRND_INSECURE);
+    if ((Flags & ~SupportedFlags) != 0)
+    {
+        return LINUX_ERR_EINVAL;
+    }
+
+    if (BufferSize == 0)
+    {
+        return 0;
+    }
+
+    uint8_t* KernelBuffer = static_cast<uint8_t*>(Logic->kmalloc(BufferSize));
+    if (KernelBuffer == nullptr)
+    {
+        return LINUX_ERR_ENOMEM;
+    }
+
+    uint64_t CopiedBytes = 0;
+    while (CopiedBytes < BufferSize)
+    {
+        uint64_t RandomValue = 0;
+        if (!Logic->GetRandomNumber(&RandomValue))
+        {
+            Logic->kfree(KernelBuffer);
+            if ((Flags & LINUX_GRND_NONBLOCK) != 0)
+            {
+                return LINUX_ERR_EAGAIN;
+            }
+
+            return LINUX_ERR_ENODEV;
+        }
+
+        uint64_t RemainingBytes = BufferSize - CopiedBytes;
+        uint64_t ChunkSize      = (RemainingBytes < sizeof(RandomValue)) ? RemainingBytes : sizeof(RandomValue);
+        memcpy(KernelBuffer + CopiedBytes, &RandomValue, static_cast<size_t>(ChunkSize));
+        CopiedBytes += ChunkSize;
+    }
+
+    bool CopyResult = Logic->CopyFromKernelToUser(KernelBuffer, Buffer, BufferSize);
+    Logic->kfree(KernelBuffer);
+
+    if (!CopyResult)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    return static_cast<int64_t>(BufferSize);
 }
 
 int64_t TranslationLayer::HandleSetTidAddressSystemCall(int* TidPointer)

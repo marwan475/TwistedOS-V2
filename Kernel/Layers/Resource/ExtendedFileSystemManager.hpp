@@ -72,6 +72,8 @@ public:
     uint32_t GetBlockSizeBytes() const;
     uint32_t GetInodesCount() const;
     uint32_t GetBlocksCount() const;
+    uint32_t GetFreeBlocksCount() const;
+    uint32_t GetFreeInodesCount() const;
     bool     CreateFile(const char* Path, ExtendedFileSystemEntryType Type);
     bool     DeleteFile(const char* Path, ExtendedFileSystemEntryType Type);
     bool     RenameFile(const char* OldPath, const char* NewPath, ExtendedFileSystemEntryType Type);

@@ -11,6 +11,8 @@
 #include "Layers/Resource/PartitionManager.hpp"
 #include "Layers/Resource/ResourceLayer.hpp"
 #include "Layers/Resource/TTY.hpp"
+#include "Layers/Resource/DeviceManager.hpp"
+#include "Layers/Resource/Drivers/VirtioRandom.hpp"
 
 #include <Arch/x86.hpp>
 #include <CommonUtils.hpp>
@@ -2005,6 +2007,28 @@ void LogicLayer::kfree(void* Pointer)
     Resource->kfree(Pointer);
 }
 
+bool LogicLayer::GetRandomNumber(uint64_t* RandomNumber)
+{
+    if (Resource == nullptr || RandomNumber == nullptr)
+    {
+        return false;
+    }
+
+    DeviceManager* DeviceManagerInstance = Resource->GetDeviceManager();
+    if (DeviceManagerInstance == nullptr)
+    {
+        return false;
+    }
+
+    VirtioRandom* RandomDevice = DeviceManagerInstance->GetVirtioRandom();
+    if (RandomDevice == nullptr || !RandomDevice->IsInitialized())
+    {
+        return false;
+    }
+
+    return RandomDevice->GetRandomBytes(RandomNumber, sizeof(*RandomNumber));
+}
+
 /**
  * Function: LogicLayer::InitializeProcessManager
  * Description: Creates process manager if it has not been initialized.
@@ -2109,6 +2133,46 @@ void LogicLayer::InitializeVirtualFileSystem()
 
     VFS = new VirtualFileSystem();
     Resource->GetTTY()->printf_("Virtual File System Initialized\n");
+}
+
+bool LogicLayer::RegisterDevices()
+{
+    if (Resource == nullptr || VFS == nullptr)
+    {
+        return false;
+    }
+
+    DeviceManager* DeviceManagerInstance = Resource->GetDeviceManager();
+    if (DeviceManagerInstance == nullptr)
+    {
+        return false;
+    }
+
+    uint32_t DeviceCount = DeviceManagerInstance->GetRegisteredDeviceCount();
+    for (uint32_t Index = 0; Index < DeviceCount; ++Index)
+    {
+        DeviceNodeRegistration Registration = {};
+        if (!DeviceManagerInstance->GetRegisteredDevice(Index, &Registration))
+        {
+            return false;
+        }
+
+        if (Registration.FileName == nullptr || Registration.DeviceData == nullptr || Registration.FileOps == nullptr)
+        {
+            return false;
+        }
+
+        if (!VFS->RegisterDevice(Registration.FileName, Registration.DeviceData, Registration.FileOps))
+        {
+            Dentry* ExistingDevice = VFS->Lookup(Registration.FileName);
+            if (ExistingDevice == nullptr || ExistingDevice->inode == nullptr)
+            {
+                return false;
+            }
+        }
+    }
+
+    return true;
 }
 
 bool LogicLayer::RegisterPartitionDevices()

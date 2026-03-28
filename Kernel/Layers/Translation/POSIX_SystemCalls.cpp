@@ -259,6 +259,9 @@ int64_t TranslationLayer::HandlePosixSystemCallNumber(uint64_t SystemCallNumber,
         case 132: // utime
             return HandleUtimeSystemCall(reinterpret_cast<const char*>(Arg1), reinterpret_cast<const void*>(Arg2));
             break;
+        case 138: // fstatfs
+            return HandleFstatfsSystemCall(Arg1, reinterpret_cast<void*>(Arg2));
+            break;
         case 140: // getpriority
             return HandleGetprioritySystemCall(static_cast<int64_t>(Arg1), static_cast<int64_t>(Arg2));
             break;
@@ -330,6 +333,9 @@ int64_t TranslationLayer::HandlePosixSystemCallNumber(uint64_t SystemCallNumber,
             break;
         case 302: // prlimit64
             return HandlePrlimit64SystemCall(static_cast<int64_t>(Arg1), static_cast<int64_t>(Arg2), reinterpret_cast<const void*>(Arg3), reinterpret_cast<void*>(Arg4));
+            break;
+        case 318: // getrandom
+            return HandleGetrandomSystemCall(reinterpret_cast<void*>(Arg1), Arg2, static_cast<uint32_t>(Arg3));
             break;
         case 324: // membarrier
             return HandleMembarrierSystemCall(static_cast<int64_t>(Arg1), static_cast<uint32_t>(Arg2), static_cast<int32_t>(Arg3));

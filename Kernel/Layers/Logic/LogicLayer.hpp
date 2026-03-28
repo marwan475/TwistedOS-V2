@@ -52,12 +52,14 @@ public:
     VirtualFileSystem* GetVirtualFileSystem() const;
     void*              kmalloc(uint64_t Size);
     void               kfree(void* Pointer);
+    bool               GetRandomNumber(uint64_t* RandomNumber);
     void               InitializeProcessManager();
     void               InitializeScheduler();
     void               InitializeSynchronizationManager();
     void               InitializeInterProcessComunicationManager();
     void               InitializeELFManager();
     void               InitializeVirtualFileSystem();
+    bool               RegisterDevices();
     bool               RegisterPartitionDevices();
     bool               CreateEventDevice(void* DeviceDriver, const char* EventPathName, EventDeviceInterruptHandler InterruptHandler);
     bool               AddWaitingProcessToEventDevice(const char* EventPathName, uint8_t ProcessId);

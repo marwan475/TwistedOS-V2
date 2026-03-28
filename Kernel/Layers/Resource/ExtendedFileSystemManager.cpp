@@ -827,6 +827,16 @@ uint32_t ExtendedFileSystemManager::GetBlocksCount() const
     return BlocksCount;
 }
 
+uint32_t ExtendedFileSystemManager::GetFreeBlocksCount() const
+{
+    return FreeBlocksCount;
+}
+
+uint32_t ExtendedFileSystemManager::GetFreeInodesCount() const
+{
+    return FreeInodesCount;
+}
+
 bool ExtendedFileSystemManager::LoadInodeData(uint32_t InodeNumber, void* DestinationBuffer, uint64_t SizeBytes) const
 {
     if (!Initialized || DestinationBuffer == nullptr || SizeBytes == 0)
