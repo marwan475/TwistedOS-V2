@@ -3642,7 +3642,7 @@ int64_t TranslationLayer::HandleRecvmsgSystemCall(uint64_t FileDescriptor, void*
         return LINUX_ERR_EINVAL;
     }
 
-    constexpr uint64_t LINUX_MSGHDR_COMPACT_SIZE = 48;
+    constexpr uint64_t LINUX_MSGHDR_COMPACT_SIZE = 56;
     uint8_t            CompactHeader[LINUX_MSGHDR_COMPACT_SIZE] = {};
     if (!Logic->CopyFromUserToKernel(MessageHeader, CompactHeader, sizeof(CompactHeader)))
     {
@@ -3660,10 +3660,12 @@ int64_t TranslationLayer::HandleRecvmsgSystemCall(uint64_t FileDescriptor, void*
         return ReadResult;
     }
 
-    uint32_t NameLength = 0;
-    int32_t  MessageFlags = 0;
+    uint32_t NameLength    = 0;
+    uint64_t ControlLength = 0;
+    int32_t  MessageFlags  = 0;
     memcpy(CompactHeader + 8, &NameLength, sizeof(NameLength));
-    memcpy(CompactHeader + 44, &MessageFlags, sizeof(MessageFlags));
+    memcpy(CompactHeader + 40, &ControlLength, sizeof(ControlLength));
+    memcpy(CompactHeader + 48, &MessageFlags, sizeof(MessageFlags));
 
     if (!Logic->CopyFromKernelToUser(CompactHeader, MessageHeader, sizeof(CompactHeader)))
     {
