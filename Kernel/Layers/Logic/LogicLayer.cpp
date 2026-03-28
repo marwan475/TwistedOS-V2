@@ -2128,7 +2128,7 @@ bool LogicLayer::RegisterPartitionDevices()
     return PartitionManagerInstance->RegisterPartitionDevices(DeviceManagerInstance, VFS);
 }
 
-bool LogicLayer::CreateEventDevice(void* DeviceDriver, const char* EventPathName)
+bool LogicLayer::CreateEventDevice(void* DeviceDriver, const char* EventPathName, EventDeviceInterruptHandler InterruptHandler)
 {
     if (Resource == nullptr || VFS == nullptr || DeviceDriver == nullptr || EventPathName == nullptr || EventPathName[0] == '\0')
     {
@@ -2141,13 +2141,35 @@ bool LogicLayer::CreateEventDevice(void* DeviceDriver, const char* EventPathName
         return false;
     }
 
-    EventDevice* Event = EventManager->CreateEventDevice(DeviceDriver, EventPathName);
+    EventDevice* Event = EventManager->CreateEventDevice(DeviceDriver, EventPathName, InterruptHandler);
     if (Event == nullptr)
     {
         return false;
     }
 
     return VFS->RegisterDevice(EventPathName, Event, Event->GetFileOperations());
+}
+
+bool LogicLayer::AddWaitingProcessToEventDevice(const char* EventPathName, uint8_t ProcessId)
+{
+    if (Resource == nullptr || EventPathName == nullptr || EventPathName[0] == '\0')
+    {
+        return false;
+    }
+
+    EventDeviceManager* EventManager = Resource->GetEventDeviceManager();
+    if (EventManager == nullptr)
+    {
+        return false;
+    }
+
+    EventDevice* Event = EventManager->GetEventDevice(EventPathName);
+    if (Event == nullptr)
+    {
+        return false;
+    }
+
+    return EventManager->AddWaitingProcess(Event, ProcessId);
 }
 
 bool LogicLayer::InitializeExtendedFileSystem(const char* DevicePath, const char* MountLocation)

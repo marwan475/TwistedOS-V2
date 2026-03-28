@@ -9,6 +9,7 @@
 #include "ELFManager.hpp"
 #include "InterProcessComunicationManager.hpp"
 #include "ProcessManager.hpp"
+#include "../Resource/EventDeviceManager.hpp"
 #include "Scheduler.hpp"
 #include "SynchronizationManager.hpp"
 #include "VirtualFileSystem.hpp"
@@ -58,7 +59,8 @@ public:
     void               InitializeELFManager();
     void               InitializeVirtualFileSystem();
     bool               RegisterPartitionDevices();
-    bool               CreateEventDevice(void* DeviceDriver, const char* EventPathName);
+    bool               CreateEventDevice(void* DeviceDriver, const char* EventPathName, EventDeviceInterruptHandler InterruptHandler);
+    bool               AddWaitingProcessToEventDevice(const char* EventPathName, uint8_t ProcessId);
     bool               InitializeExtendedFileSystem(const char* DevicePath, const char* MountLocation);
     bool               InitializeProcFileSystem(const char* MountLocation);
     bool               InitializeSysFileSystem(const char* MountLocation);

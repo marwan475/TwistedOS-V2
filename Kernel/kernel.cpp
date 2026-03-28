@@ -152,7 +152,7 @@ extern "C"
 
         if (Input != nullptr)
         {
-            ActiveDispatcher->GetLogicLayer()->CreateEventDevice(Input, "/dev/input/event0");
+            ActiveDispatcher->GetLogicLayer()->CreateEventDevice(Input, "/dev/input/event0", &Keyboard::HandleEventInterrupt);
         }
 
         ActiveDispatcher->GetLogicLayer()->RegisterPartitionDevices();

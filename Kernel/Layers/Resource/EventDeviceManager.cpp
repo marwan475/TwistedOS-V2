@@ -204,7 +204,7 @@ void EventDeviceManager::Reset()
     EventDeviceCount = 0;
 }
 
-EventDevice* EventDeviceManager::CreateEventDevice(void* OriginalDevice, const char* Path)
+EventDevice* EventDeviceManager::CreateEventDevice(void* OriginalDevice, const char* Path, EventDeviceInterruptHandler InterruptHandler)
 {
     if (OriginalDevice == nullptr || Path == nullptr || Path[0] == '\0')
     {
@@ -236,6 +236,7 @@ EventDevice* EventDeviceManager::CreateEventDevice(void* OriginalDevice, const c
         Device.PendingEventHead    = 0;
         Device.PendingEventTail    = 0;
         Device.PendingEventCount   = 0;
+        Device.HandleIntrrupt      = InterruptHandler;
         Device.InUse             = true;
 
         if (!CopyPath(Device.Path, EventDevice::MAX_EVENT_DEVICE_PATH, Path))
@@ -277,6 +278,30 @@ EventDevice* EventDeviceManager::GetEventDevice(const char* Path)
     }
 
     return &EventDevices[Index];
+}
+
+EventDevice* EventDeviceManager::GetEventDeviceByOriginalDevice(void* OriginalDevice)
+{
+    if (OriginalDevice == nullptr)
+    {
+        return nullptr;
+    }
+
+    for (uint32_t Index = 0; Index < MAX_EVENT_DEVICES; ++Index)
+    {
+        EventDevice& Device = EventDevices[Index];
+        if (!Device.InUse)
+        {
+            continue;
+        }
+
+        if (Device.OriginalDevice == OriginalDevice)
+        {
+            return &Device;
+        }
+    }
+
+    return nullptr;
 }
 
 bool EventDeviceManager::AddWaitingProcess(EventDevice* Device, uint8_t ProcessId)
@@ -332,6 +357,11 @@ bool EventDeviceManager::RemoveWaitingProcess(EventDevice* Device, uint8_t Proce
 bool EventDeviceManager::QueueInputEvent(const char* Path, uint16_t Type, uint16_t Code, int32_t Value)
 {
     EventDevice* Device = GetEventDevice(Path);
+    return QueueInputEvent(Device, Type, Code, Value);
+}
+
+bool EventDeviceManager::QueueInputEvent(EventDevice* Device, uint16_t Type, uint16_t Code, int32_t Value)
+{
     if (Device == nullptr || Device->PendingEventCount >= EventDevice::MAX_PENDING_EVENTS)
     {
         return false;

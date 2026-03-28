@@ -22,6 +22,9 @@ struct LinuxInputEvent
     int32_t  Value;
 };
 
+struct EventDevice;
+typedef bool (*EventDeviceInterruptHandler)(EventDevice* Device, void* OriginalDevice);
+
 struct EventDevice
 {
     static constexpr uint32_t MAX_WAITING_PROCESS_IDS = 64;
@@ -36,6 +39,7 @@ struct EventDevice
     uint32_t        PendingEventHead;
     uint32_t        PendingEventTail;
     uint32_t        PendingEventCount;
+    EventDeviceInterruptHandler HandleIntrrupt;
     bool            InUse;
 
     FileOperations* GetFileOperations();
@@ -63,12 +67,14 @@ public:
     EventDeviceManager();
 
     void        Reset();
-    EventDevice* CreateEventDevice(void* OriginalDevice, const char* Path);
+    EventDevice* CreateEventDevice(void* OriginalDevice, const char* Path, EventDeviceInterruptHandler InterruptHandler);
     bool        RemoveEventDevice(const char* Path);
     EventDevice* GetEventDevice(const char* Path);
+    EventDevice* GetEventDeviceByOriginalDevice(void* OriginalDevice);
     bool        AddWaitingProcess(EventDevice* Device, uint8_t ProcessId);
     bool        RemoveWaitingProcess(EventDevice* Device, uint8_t ProcessId);
     bool        QueueInputEvent(const char* Path, uint16_t Type, uint16_t Code, int32_t Value);
+    bool        QueueInputEvent(EventDevice* Device, uint16_t Type, uint16_t Code, int32_t Value);
     uint32_t    GetEventDeviceCount() const;
     bool        GetEventDevice(uint32_t Index, EventDevice* Device) const;
 };
