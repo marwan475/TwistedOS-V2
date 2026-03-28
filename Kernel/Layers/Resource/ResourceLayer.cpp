@@ -25,7 +25,7 @@ extern "C" void ResourceLayerTaskSwitchUserAsm(CpuState* OldState, const CpuStat
  */
 ResourceLayer::ResourceLayer()
     : PMM(nullptr), VMM(nullptr), Console(nullptr), KernelHeapVirtualAddrStart(0), KernelHeapVirtualAddrEnd(0), KernelPageMapL4TableAddr(0), InitramfsAddress(0), InitramfsSize(0), KHM(0, 0),
-      RFS(0, 0), EFSManager(nullptr), Terminal(nullptr), InputKeyboard(nullptr), DevManager(nullptr)
+    RFS(0, 0), EFSManager(nullptr), Terminal(nullptr), InputKeyboard(nullptr), DevManager(nullptr), EventDevManager(nullptr)
 {
 }
 
@@ -239,6 +239,17 @@ void ResourceLayer::InitializeDeviceManager()
     DevManager->PrintPCI(Terminal);
 }
 
+void ResourceLayer::InitializeEventDeviceManager()
+{
+    if (EventDevManager != nullptr)
+    {
+        delete EventDevManager;
+        EventDevManager = nullptr;
+    }
+
+    EventDevManager = new EventDeviceManager();
+}
+
 void ResourceLayer::InitPartitionManager()
 {
     if (DevManager == nullptr)
@@ -345,6 +356,11 @@ PartitionManager* ResourceLayer::GetPartitionManager()
 DeviceManager* ResourceLayer::GetDeviceManager() const
 {
     return DevManager;
+}
+
+EventDeviceManager* ResourceLayer::GetEventDeviceManager() const
+{
+    return EventDevManager;
 }
 
 ExtendedFileSystemManager* ResourceLayer::GetExtendedFileSystemManager() const

@@ -7,6 +7,7 @@
 #pragma once
 
 #include "DeviceManager.hpp"
+#include "EventDeviceManager.hpp"
 #include "ExtendedFileSystemManager.hpp"
 #include "FrameBuffer.hpp"
 #include "KernelHeapManager.hpp"
@@ -42,6 +43,7 @@ private:
     TTY*                       Terminal;
     Keyboard*                  InputKeyboard;
     DeviceManager*             DevManager;
+    EventDeviceManager*        EventDevManager;
     PartitionManager           PartManager;
 
 public:
@@ -64,11 +66,13 @@ public:
     void                       InitializeTTY();
     void                       InitializeKeyboard();
     void                       InitializeDeviceManager();
+    void                       InitializeEventDeviceManager();
     void                       InitPartitionManager();
     bool                       InitializeExtendedFileSystemManager(const RootFileSystemPartitionInfo* PartitionInfo);
     bool                       LocateRootFileSystemPartition(RootFileSystemPartitionInfo* PartitionInfo);
     PartitionManager*          GetPartitionManager();
     DeviceManager*             GetDeviceManager() const;
+    EventDeviceManager*        GetEventDeviceManager() const;
     ExtendedFileSystemManager* GetExtendedFileSystemManager() const;
     void*                      kmalloc(size_t Size);
     void                       kfree(void* Ptr);

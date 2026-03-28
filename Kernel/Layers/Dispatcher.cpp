@@ -281,6 +281,7 @@ void Dispatcher::InitResourceLayer(const DispatcherParameters& Params)
     Resource.InitializeKeyboard();
     Resource.InitializeTTY();
     Resource.InitializeDeviceManager();
+    Resource.InitializeEventDeviceManager();
     Resource.InitPartitionManager();
 }
 

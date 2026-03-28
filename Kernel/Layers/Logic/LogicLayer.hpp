@@ -58,6 +58,7 @@ public:
     void               InitializeELFManager();
     void               InitializeVirtualFileSystem();
     bool               RegisterPartitionDevices();
+    bool               CreateEventDevice(void* DeviceDriver, const char* EventPathName);
     bool               InitializeExtendedFileSystem(const char* DevicePath, const char* MountLocation);
     bool               InitializeProcFileSystem(const char* MountLocation);
     bool               InitializeSysFileSystem(const char* MountLocation);

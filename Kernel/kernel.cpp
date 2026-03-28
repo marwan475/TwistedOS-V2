@@ -139,6 +139,7 @@ extern "C"
 
         TTY*         Terminal = ActiveDispatcher->GetResourceLayer()->GetTTY();
         FrameBuffer* FB       = ActiveDispatcher->GetResourceLayer()->GetFrameBuffer();
+        Keyboard*    Input    = ActiveDispatcher->GetResourceLayer()->GetKeyboard();
         if (Terminal != nullptr)
         {
             ActiveDispatcher->GetLogicLayer()->GetVirtualFileSystem()->RegisterDevice("/dev/tty", Terminal, Terminal->GetFileOperations());
@@ -147,6 +148,11 @@ extern "C"
         if (FB != nullptr)
         {
             ActiveDispatcher->GetLogicLayer()->GetVirtualFileSystem()->RegisterDevice("/dev/fb0", FB, FB->GetFileOperations());
+        }
+
+        if (Input != nullptr)
+        {
+            ActiveDispatcher->GetLogicLayer()->CreateEventDevice(Input, "/dev/input/event0");
         }
 
         ActiveDispatcher->GetLogicLayer()->RegisterPartitionDevices();

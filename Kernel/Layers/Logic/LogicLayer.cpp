@@ -7,6 +7,7 @@
 #include "LogicLayer.hpp"
 
 #include "Layers/Resource/ExtendedFileSystemManager.hpp"
+#include "Layers/Resource/EventDeviceManager.hpp"
 #include "Layers/Resource/PartitionManager.hpp"
 #include "Layers/Resource/ResourceLayer.hpp"
 #include "Layers/Resource/TTY.hpp"
@@ -2125,6 +2126,28 @@ bool LogicLayer::RegisterPartitionDevices()
     }
 
     return PartitionManagerInstance->RegisterPartitionDevices(DeviceManagerInstance, VFS);
+}
+
+bool LogicLayer::CreateEventDevice(void* DeviceDriver, const char* EventPathName)
+{
+    if (Resource == nullptr || VFS == nullptr || DeviceDriver == nullptr || EventPathName == nullptr || EventPathName[0] == '\0')
+    {
+        return false;
+    }
+
+    EventDeviceManager* EventManager = Resource->GetEventDeviceManager();
+    if (EventManager == nullptr)
+    {
+        return false;
+    }
+
+    EventDevice* Event = EventManager->CreateEventDevice(DeviceDriver, EventPathName);
+    if (Event == nullptr)
+    {
+        return false;
+    }
+
+    return VFS->RegisterDevice(EventPathName, Event, Event->GetFileOperations());
 }
 
 bool LogicLayer::InitializeExtendedFileSystem(const char* DevicePath, const char* MountLocation)
