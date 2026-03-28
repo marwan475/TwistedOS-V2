@@ -74,9 +74,10 @@ ISRCOMMON:
     mov rdi, rsp          ; arg1 = Registers*
 
     ; align stack for SysV ABI
+    ; SysV requires caller RSP to be 16-byte aligned *before* call,
+    ; so callee entry sees RSP % 16 == 8.
     mov rbx, rsp
     and rsp, -16
-    sub rsp, 8
 
     call ISRHANDLER
 

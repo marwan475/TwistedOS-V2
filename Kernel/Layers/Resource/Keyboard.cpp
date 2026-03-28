@@ -28,6 +28,8 @@ constexpr uint8_t KEYBOARD_SCANCODE_CAPS_LOCK           = 0x3A;
 
 constexpr uint16_t LINUX_EV_SYN = 0x00;
 constexpr uint16_t LINUX_EV_KEY = 0x01;
+constexpr uint16_t LINUX_EV_MSC = 0x04;
+constexpr uint16_t LINUX_MSC_SCAN = 0x04;
 constexpr uint16_t LINUX_SYN_REPORT = 0;
 
 int32_t TranslateScanCodeToLinuxKeyCode(uint8_t ScanCodeBase)
@@ -350,6 +352,11 @@ bool Keyboard::HandleEventInterrupt(EventDevice* Device, void* OriginalDevice)
     }
 
     int32_t KeyValue = ((ScanCode & 0x80) != 0) ? 0 : 1;
+
+    if (!EventManager->QueueInputEvent(Device, LINUX_EV_MSC, LINUX_MSC_SCAN, static_cast<int32_t>(ScanCodeBase)))
+    {
+        return false;
+    }
 
     if (!EventManager->QueueInputEvent(Device, LINUX_EV_KEY, static_cast<uint16_t>(LinuxKeyCode), KeyValue))
     {

@@ -37,6 +37,8 @@ constexpr uint16_t LINUX_BUS_VIRTUAL = 0x06;
 
 constexpr uint16_t LINUX_EV_SYN = 0x00;
 constexpr uint16_t LINUX_EV_KEY = 0x01;
+constexpr uint16_t LINUX_EV_MSC = 0x04;
+constexpr uint16_t LINUX_MSC_SCAN = 0x04;
 
 constexpr uint32_t LINUX_IOC_NRBITS   = 8;
 constexpr uint32_t LINUX_IOC_TYPEBITS = 8;
@@ -744,6 +746,18 @@ int64_t EventDevice::IoctlFileOperation(File* OpenFile, uint64_t Request, uint64
         {
             SetBit(Bitmap, LINUX_EV_SYN);
             SetBit(Bitmap, LINUX_EV_KEY);
+            SetBit(Bitmap, LINUX_EV_MSC);
+        }
+        else if (IoctlNumber(Request) == 0x20 + LINUX_EV_KEY)
+        {
+            for (uint32_t KeyCode = 1; KeyCode <= 58; ++KeyCode)
+            {
+                SetBit(Bitmap, KeyCode);
+            }
+        }
+        else if (IoctlNumber(Request) == 0x20 + LINUX_EV_MSC)
+        {
+            SetBit(Bitmap, LINUX_MSC_SCAN);
         }
 
         return Logic->CopyFromKernelToUser(Bitmap, reinterpret_cast<void*>(Argument), BitmapSize) ? 0 : LINUX_ERR_EFAULT;
