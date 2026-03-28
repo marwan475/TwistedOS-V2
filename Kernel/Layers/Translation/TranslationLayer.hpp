@@ -54,6 +54,7 @@ public:
     int64_t HandleNewFstatatSystemCall(int64_t DirectoryFileDescriptor, const char* Path, void* Buffer, int64_t Flags);
     int64_t HandleGetdents64SystemCall(uint64_t FileDescriptor, void* Buffer, uint64_t BufferSize);
     int64_t HandleFcntlSystemCall(uint64_t FileDescriptor, uint64_t Command, uint64_t Argument);
+    int64_t HandleFadvise64SystemCall(uint64_t FileDescriptor, int64_t Offset, uint64_t Length, int64_t Advice);
     int64_t HandleCloseSystemCall(uint64_t FileDescriptor);
     int64_t HandleGetcwdSystemCall(char* Buffer, uint64_t Size);
     int64_t HandleChdirSystemCall(const char* Path);

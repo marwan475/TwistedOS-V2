@@ -295,6 +295,9 @@ int64_t TranslationLayer::HandlePosixSystemCallNumber(uint64_t SystemCallNumber,
         case 218: // set_tid_address
             return HandleSetTidAddressSystemCall(reinterpret_cast<int*>(Arg1));
             break;
+        case 221: // fadvise64
+            return HandleFadvise64SystemCall(Arg1, static_cast<int64_t>(Arg2), Arg3, static_cast<int64_t>(Arg4));
+            break;
         case 228: // clock_gettime
             return HandleClockGettimeSystemCall(static_cast<int64_t>(Arg1), reinterpret_cast<void*>(Arg2));
             break;

@@ -246,6 +246,13 @@ constexpr uint64_t LINUX_FD_CLOEXEC      = 0x1;
 
 constexpr uint64_t LINUX_FCNTL_SETFL_ALLOWED = (LINUX_O_APPEND | LINUX_O_NONBLOCK | LINUX_O_ASYNC | LINUX_O_DIRECT | LINUX_O_NOATIME);
 
+constexpr int64_t LINUX_POSIX_FADV_NORMAL     = 0;
+constexpr int64_t LINUX_POSIX_FADV_RANDOM     = 1;
+constexpr int64_t LINUX_POSIX_FADV_SEQUENTIAL = 2;
+constexpr int64_t LINUX_POSIX_FADV_WILLNEED   = 3;
+constexpr int64_t LINUX_POSIX_FADV_DONTNEED   = 4;
+constexpr int64_t LINUX_POSIX_FADV_NOREUSE    = 5;
+
 constexpr int32_t LINUX_SEEK_SET = 0;
 constexpr int32_t LINUX_SEEK_CUR = 1;
 constexpr int32_t LINUX_SEEK_END = 2;
@@ -5101,6 +5108,64 @@ int64_t TranslationLayer::HandleFcntlSystemCall(uint64_t FileDescriptor, uint64_
         default:
             return LINUX_ERR_ENOSYS;
     }
+}
+
+int64_t TranslationLayer::HandleFadvise64SystemCall(uint64_t FileDescriptor, int64_t Offset, uint64_t Length, int64_t Advice)
+{
+    (void) Length;
+
+    if (Logic == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    if (Offset < 0)
+    {
+        return LINUX_ERR_EINVAL;
+    }
+
+    switch (Advice)
+    {
+        case LINUX_POSIX_FADV_NORMAL:
+        case LINUX_POSIX_FADV_RANDOM:
+        case LINUX_POSIX_FADV_SEQUENTIAL:
+        case LINUX_POSIX_FADV_WILLNEED:
+        case LINUX_POSIX_FADV_DONTNEED:
+        case LINUX_POSIX_FADV_NOREUSE:
+            break;
+        default:
+            return LINUX_ERR_EINVAL;
+    }
+
+    ProcessManager* PM = Logic->GetProcessManager();
+    if (PM == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    Process* CurrentProcess = PM->GetRunningProcess();
+    if (CurrentProcess == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    if (FileDescriptor >= MAX_OPEN_FILES_PER_PROCESS)
+    {
+        return LINUX_ERR_EBADF;
+    }
+
+    File* OpenFile = CurrentProcess->FileTable[FileDescriptor];
+    if (OpenFile == nullptr || OpenFile->Node == nullptr)
+    {
+        return LINUX_ERR_EBADF;
+    }
+
+    if (OpenFile->Node->NodeType == INODE_DEV)
+    {
+        return LINUX_ERR_ESPIPE;
+    }
+
+    return 0;
 }
 
 int64_t TranslationLayer::HandleFchmodSystemCall(uint64_t FileDescriptor, uint64_t Mode)
