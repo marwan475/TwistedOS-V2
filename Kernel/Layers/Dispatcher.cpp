@@ -17,6 +17,7 @@ namespace
 {
 constexpr uint64_t TIMER_INTERRUPT_VECTOR       = 32;
 constexpr uint64_t KEYBOARD_INTERRUPT_VECTOR    = 33;
+constexpr uint64_t MOUSE_INTERRUPT_VECTOR       = 44;
 constexpr uint64_t VIRTIO_RNG_INTERRUPT_VECTOR  = 43;
 constexpr uint64_t IDE_PRIMARY_INTERRUPT_VECTOR = 46;
 constexpr uint64_t SYSCALL_INTERRUPT_VECTOR     = 128;
@@ -281,6 +282,7 @@ void Dispatcher::InitResourceLayer(const DispatcherParameters& Params)
     KernelUseDispatcherAllocator();
     Resource.InitializeRamFileSystemManager();
     Resource.InitializeKeyboard();
+    Resource.InitializeMouse();
     Resource.InitializeTTY();
     Resource.InitializeDeviceManager();
     Resource.InitializeEventDeviceManager();
@@ -375,6 +377,15 @@ void Dispatcher::InterruptHandler(uint64_t InterruptNumber)
             if (ActiveKeyboard != nullptr)
             {
                 ActiveKeyboard->HandleInterrupt();
+            }
+        }
+        break;
+        case MOUSE_INTERRUPT_VECTOR:
+        {
+            Mouse* ActiveMouse = Resource.GetMouse();
+            if (ActiveMouse != nullptr)
+            {
+                ActiveMouse->HandleInterrupt();
             }
         }
         break;

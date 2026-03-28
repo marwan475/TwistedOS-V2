@@ -140,6 +140,7 @@ extern "C"
         TTY*         Terminal = ActiveDispatcher->GetResourceLayer()->GetTTY();
         FrameBuffer* FB       = ActiveDispatcher->GetResourceLayer()->GetFrameBuffer();
         Keyboard*    Input    = ActiveDispatcher->GetResourceLayer()->GetKeyboard();
+        Mouse*       MouseInput = ActiveDispatcher->GetResourceLayer()->GetMouse();
         if (Terminal != nullptr)
         {
             ActiveDispatcher->GetLogicLayer()->GetVirtualFileSystem()->RegisterDevice("/dev/tty", Terminal, Terminal->GetFileOperations());
@@ -157,7 +158,12 @@ extern "C"
 
         if (Input != nullptr)
         {
-            ActiveDispatcher->GetLogicLayer()->CreateEventDevice(Input, "/dev/input/event0", &Keyboard::HandleEventInterrupt);
+            ActiveDispatcher->GetLogicLayer()->CreateEventDevice(Input, "/dev/input/event0", &Keyboard::HandleEventInterrupt, EVENT_DEVICE_KIND_KEYBOARD);
+        }
+
+        if (MouseInput != nullptr)
+        {
+            ActiveDispatcher->GetLogicLayer()->CreateEventDevice(MouseInput, "/dev/input/event1", &Mouse::HandleEventInterrupt, EVENT_DEVICE_KIND_MOUSE);
         }
 
         ActiveDispatcher->GetLogicLayer()->RegisterPartitionDevices();

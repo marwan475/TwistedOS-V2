@@ -2192,7 +2192,7 @@ bool LogicLayer::RegisterPartitionDevices()
     return PartitionManagerInstance->RegisterPartitionDevices(DeviceManagerInstance, VFS);
 }
 
-bool LogicLayer::CreateEventDevice(void* DeviceDriver, const char* EventPathName, EventDeviceInterruptHandler InterruptHandler)
+bool LogicLayer::CreateEventDevice(void* DeviceDriver, const char* EventPathName, EventDeviceInterruptHandler InterruptHandler, EventDeviceKind Kind)
 {
     if (Resource == nullptr || VFS == nullptr || DeviceDriver == nullptr || EventPathName == nullptr || EventPathName[0] == '\0')
     {
@@ -2205,7 +2205,7 @@ bool LogicLayer::CreateEventDevice(void* DeviceDriver, const char* EventPathName
         return false;
     }
 
-    EventDevice* Event = EventManager->CreateEventDevice(DeviceDriver, EventPathName, InterruptHandler);
+    EventDevice* Event = EventManager->CreateEventDevice(DeviceDriver, EventPathName, InterruptHandler, Kind);
     if (Event == nullptr)
     {
         return false;

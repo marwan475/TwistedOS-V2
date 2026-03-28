@@ -12,6 +12,7 @@
 #include "FrameBuffer.hpp"
 #include "KernelHeapManager.hpp"
 #include "Keyboard.hpp"
+#include "Mouse.hpp"
 #include "PartitionManager.hpp"
 #include "RamFileSystemManager.hpp"
 #include "TTY.hpp"
@@ -42,6 +43,7 @@ private:
     ExtendedFileSystemManager* EFSManager;
     TTY*                       Terminal;
     Keyboard*                  InputKeyboard;
+    Mouse*                     InputMouse;
     DeviceManager*             DevManager;
     EventDeviceManager*        EventDevManager;
     PartitionManager           PartManager;
@@ -61,10 +63,12 @@ public:
     RamFileSystemManager*      GetRamFileSystemManager();
     TTY*                       GetTTY() const;
     Keyboard*                  GetKeyboard() const;
+    Mouse*                     GetMouse() const;
     void                       InitializeKernelHeapManager();
     void                       InitializeRamFileSystemManager();
     void                       InitializeTTY();
     void                       InitializeKeyboard();
+    void                       InitializeMouse();
     void                       InitializeDeviceManager();
     void                       InitializeEventDeviceManager();
     void                       InitPartitionManager();

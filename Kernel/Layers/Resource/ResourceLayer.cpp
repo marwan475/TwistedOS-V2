@@ -25,7 +25,7 @@ extern "C" void ResourceLayerTaskSwitchUserAsm(CpuState* OldState, const CpuStat
  */
 ResourceLayer::ResourceLayer()
     : PMM(nullptr), VMM(nullptr), Console(nullptr), KernelHeapVirtualAddrStart(0), KernelHeapVirtualAddrEnd(0), KernelPageMapL4TableAddr(0), InitramfsAddress(0), InitramfsSize(0), KHM(0, 0),
-    RFS(0, 0), EFSManager(nullptr), Terminal(nullptr), InputKeyboard(nullptr), DevManager(nullptr), EventDevManager(nullptr)
+    RFS(0, 0), EFSManager(nullptr), Terminal(nullptr), InputKeyboard(nullptr), InputMouse(nullptr), DevManager(nullptr), EventDevManager(nullptr)
 {
 }
 
@@ -154,6 +154,11 @@ Keyboard* ResourceLayer::GetKeyboard() const
     return InputKeyboard;
 }
 
+Mouse* ResourceLayer::GetMouse() const
+{
+    return InputMouse;
+}
+
 /**
  * Function: ResourceLayer::InitializeKernelHeapManager
  * Description: Initializes the kernel heap manager with the configured virtual heap range.
@@ -224,6 +229,19 @@ void ResourceLayer::InitializeKeyboard()
     InputKeyboard = new Keyboard();
     InputKeyboard->Initialize(Terminal);
     Console->printf_("Keyboard Initialized\n");
+}
+
+void ResourceLayer::InitializeMouse()
+{
+    if (InputMouse != nullptr)
+    {
+        delete InputMouse;
+        InputMouse = nullptr;
+    }
+
+    InputMouse = new Mouse();
+    InputMouse->Initialize();
+    Console->printf_("Mouse Initialized\n");
 }
 
 void ResourceLayer::InitializeDeviceManager()

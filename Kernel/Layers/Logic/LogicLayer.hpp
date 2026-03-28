@@ -61,7 +61,8 @@ public:
     void               InitializeVirtualFileSystem();
     bool               RegisterDevices();
     bool               RegisterPartitionDevices();
-    bool               CreateEventDevice(void* DeviceDriver, const char* EventPathName, EventDeviceInterruptHandler InterruptHandler);
+    bool               CreateEventDevice(void* DeviceDriver, const char* EventPathName, EventDeviceInterruptHandler InterruptHandler,
+                                         EventDeviceKind Kind = EVENT_DEVICE_KIND_GENERIC);
     bool               AddWaitingProcessToEventDevice(const char* EventPathName, uint8_t ProcessId);
     bool               InitializeExtendedFileSystem(const char* DevicePath, const char* MountLocation);
     bool               InitializeProcFileSystem(const char* MountLocation);

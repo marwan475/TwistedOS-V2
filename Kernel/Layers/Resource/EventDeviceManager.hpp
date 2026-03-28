@@ -25,6 +25,13 @@ struct LinuxInputEvent
 struct EventDevice;
 typedef bool (*EventDeviceInterruptHandler)(EventDevice* Device, void* OriginalDevice);
 
+enum EventDeviceKind
+{
+    EVENT_DEVICE_KIND_GENERIC  = 0,
+    EVENT_DEVICE_KIND_KEYBOARD = 1,
+    EVENT_DEVICE_KIND_MOUSE    = 2,
+};
+
 struct EventDevice
 {
     static constexpr uint32_t MAX_WAITING_PROCESS_IDS = 64;
@@ -40,6 +47,7 @@ struct EventDevice
     uint32_t        PendingEventTail;
     uint32_t        PendingEventCount;
     EventDeviceInterruptHandler HandleIntrrupt;
+    EventDeviceKind Kind;
     bool            InUse;
 
     FileOperations* GetFileOperations();
@@ -67,7 +75,7 @@ public:
     EventDeviceManager();
 
     void        Reset();
-    EventDevice* CreateEventDevice(void* OriginalDevice, const char* Path, EventDeviceInterruptHandler InterruptHandler);
+    EventDevice* CreateEventDevice(void* OriginalDevice, const char* Path, EventDeviceInterruptHandler InterruptHandler, EventDeviceKind Kind = EVENT_DEVICE_KIND_GENERIC);
     bool        RemoveEventDevice(const char* Path);
     EventDevice* GetEventDevice(const char* Path);
     EventDevice* GetEventDeviceByOriginalDevice(void* OriginalDevice);

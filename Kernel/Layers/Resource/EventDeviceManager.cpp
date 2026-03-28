@@ -37,8 +37,16 @@ constexpr uint16_t LINUX_BUS_VIRTUAL = 0x06;
 
 constexpr uint16_t LINUX_EV_SYN = 0x00;
 constexpr uint16_t LINUX_EV_KEY = 0x01;
+constexpr uint16_t LINUX_EV_REL = 0x02;
 constexpr uint16_t LINUX_EV_MSC = 0x04;
 constexpr uint16_t LINUX_MSC_SCAN = 0x04;
+
+constexpr uint16_t LINUX_REL_X = 0x00;
+constexpr uint16_t LINUX_REL_Y = 0x01;
+
+constexpr uint16_t LINUX_BTN_LEFT   = 0x110;
+constexpr uint16_t LINUX_BTN_RIGHT  = 0x111;
+constexpr uint16_t LINUX_BTN_MIDDLE = 0x112;
 
 constexpr uint32_t LINUX_IOC_NRBITS   = 8;
 constexpr uint32_t LINUX_IOC_TYPEBITS = 8;
@@ -139,6 +147,26 @@ bool CopyCStringBounded(char* Destination, uint32_t DestinationSize, const char*
     return true;
 }
 
+const char* ResolveEventDeviceDisplayName(const EventDevice* Device)
+{
+    if (Device == nullptr)
+    {
+        return "TwistedOS Event Device";
+    }
+
+    switch (Device->Kind)
+    {
+        case EVENT_DEVICE_KIND_KEYBOARD:
+            return "TwistedOS PS/2 Keyboard";
+        case EVENT_DEVICE_KIND_MOUSE:
+            return "TwistedOS PS/2 Mouse";
+        default:
+            break;
+    }
+
+    return "TwistedOS Event Device";
+}
+
 EventDeviceManager* GetGlobalEventDeviceManager()
 {
     Dispatcher* ActiveDispatcher = Dispatcher::GetActive();
@@ -206,7 +234,7 @@ void EventDeviceManager::Reset()
     EventDeviceCount = 0;
 }
 
-EventDevice* EventDeviceManager::CreateEventDevice(void* OriginalDevice, const char* Path, EventDeviceInterruptHandler InterruptHandler)
+EventDevice* EventDeviceManager::CreateEventDevice(void* OriginalDevice, const char* Path, EventDeviceInterruptHandler InterruptHandler, EventDeviceKind Kind)
 {
     if (OriginalDevice == nullptr || Path == nullptr || Path[0] == '\0')
     {
@@ -239,6 +267,7 @@ EventDevice* EventDeviceManager::CreateEventDevice(void* OriginalDevice, const c
         Device.PendingEventTail    = 0;
         Device.PendingEventCount   = 0;
         Device.HandleIntrrupt      = InterruptHandler;
+        Device.Kind                = Kind;
         Device.InUse             = true;
 
         if (!CopyPath(Device.Path, EventDevice::MAX_EVENT_DEVICE_PATH, Path))
@@ -692,24 +721,7 @@ int64_t EventDevice::IoctlFileOperation(File* OpenFile, uint64_t Request, uint64
         }
 
         char NameBuffer[EventDevice::MAX_EVENT_DEVICE_PATH] = {};
-        const char* DefaultName = "TwistedOS Event Device";
-
-        if (Device->Path[0] != '\0')
-        {
-            const char* LastSlash = Device->Path;
-            for (uint32_t Index = 0; Device->Path[Index] != '\0'; ++Index)
-            {
-                if (Device->Path[Index] == '/')
-                {
-                    LastSlash = &Device->Path[Index + 1];
-                }
-            }
-
-            if (LastSlash[0] != '\0')
-            {
-                DefaultName = LastSlash;
-            }
-        }
+        const char* DefaultName = ResolveEventDeviceDisplayName(Device);
 
         CopyCStringBounded(NameBuffer, sizeof(NameBuffer), DefaultName);
 
@@ -745,19 +757,52 @@ int64_t EventDevice::IoctlFileOperation(File* OpenFile, uint64_t Request, uint64
         if (IoctlNumber(Request) == 0x20)
         {
             SetBit(Bitmap, LINUX_EV_SYN);
-            SetBit(Bitmap, LINUX_EV_KEY);
-            SetBit(Bitmap, LINUX_EV_MSC);
+
+            if (Device->Kind == EVENT_DEVICE_KIND_KEYBOARD)
+            {
+                SetBit(Bitmap, LINUX_EV_KEY);
+                SetBit(Bitmap, LINUX_EV_MSC);
+            }
+            else if (Device->Kind == EVENT_DEVICE_KIND_MOUSE)
+            {
+                SetBit(Bitmap, LINUX_EV_KEY);
+                SetBit(Bitmap, LINUX_EV_REL);
+            }
+            else
+            {
+                SetBit(Bitmap, LINUX_EV_KEY);
+            }
         }
         else if (IoctlNumber(Request) == 0x20 + LINUX_EV_KEY)
         {
-            for (uint32_t KeyCode = 1; KeyCode <= 58; ++KeyCode)
+            if (Device->Kind == EVENT_DEVICE_KIND_MOUSE)
             {
-                SetBit(Bitmap, KeyCode);
+                SetBit(Bitmap, LINUX_BTN_LEFT);
+                SetBit(Bitmap, LINUX_BTN_RIGHT);
+                SetBit(Bitmap, LINUX_BTN_MIDDLE);
+            }
+            else
+            {
+                for (uint32_t KeyCode = 1; KeyCode <= 58; ++KeyCode)
+                {
+                    SetBit(Bitmap, KeyCode);
+                }
+            }
+        }
+        else if (IoctlNumber(Request) == 0x20 + LINUX_EV_REL)
+        {
+            if (Device->Kind == EVENT_DEVICE_KIND_MOUSE)
+            {
+                SetBit(Bitmap, LINUX_REL_X);
+                SetBit(Bitmap, LINUX_REL_Y);
             }
         }
         else if (IoctlNumber(Request) == 0x20 + LINUX_EV_MSC)
         {
-            SetBit(Bitmap, LINUX_MSC_SCAN);
+            if (Device->Kind == EVENT_DEVICE_KIND_KEYBOARD)
+            {
+                SetBit(Bitmap, LINUX_MSC_SCAN);
+            }
         }
 
         return Logic->CopyFromKernelToUser(Bitmap, reinterpret_cast<void*>(Argument), BitmapSize) ? 0 : LINUX_ERR_EFAULT;
