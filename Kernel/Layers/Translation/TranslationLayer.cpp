@@ -9679,6 +9679,50 @@ int64_t TranslationLayer::HandleRtSigprocmaskSystemCall(int64_t How, const void*
     return 0;
 }
 
+int64_t TranslationLayer::HandleRtSigreturnSystemCall()
+{
+    if (Logic == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    ProcessManager* PM = Logic->GetProcessManager();
+    if (PM == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    Process* CurrentProcess = PM->GetRunningProcess();
+    if (CurrentProcess == nullptr || CurrentProcess->Level != PROCESS_LEVEL_USER)
+    {
+        return LINUX_ERR_EINVAL;
+    }
+
+    if (!CurrentProcess->HasSavedSignalState)
+    {
+        return LINUX_ERR_EINVAL;
+    }
+
+    CurrentProcess->BlockedSignalMask  = CurrentProcess->SavedSignalMask;
+    CurrentProcess->HasSavedSignalState = false;
+
+    if (CurrentProcess->SavedSignalWasSyscall && CurrentProcess->HasSavedSystemCallFrame)
+    {
+        CurrentProcess->SavedSystemCallFrame = CurrentProcess->SavedSignalFrame;
+    }
+    else if (!CurrentProcess->SavedSignalWasSyscall)
+    {
+        CurrentProcess->State.rip = CurrentProcess->SavedSignalRIP;
+        CurrentProcess->State.rsp = CurrentProcess->SavedSignalRSP;
+    }
+
+    while (DispatchOnePendingUnblockedSignal(Logic, CurrentProcess))
+    {
+    }
+
+    return 0;
+}
+
 int64_t TranslationLayer::HandleRtSigsuspendSystemCall(const void* Set, uint64_t SigsetSize)
 {
     if (Logic == nullptr || Set == nullptr)

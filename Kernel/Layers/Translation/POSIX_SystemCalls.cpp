@@ -78,6 +78,9 @@ int64_t TranslationLayer::HandlePosixSystemCallNumber(uint64_t SystemCallNumber,
         case 14: // rt_sigprocmask
             return HandleRtSigprocmaskSystemCall(static_cast<int64_t>(Arg1), reinterpret_cast<const void*>(Arg2), reinterpret_cast<void*>(Arg3), Arg4);
             break;
+        case 15: // rt_sigreturn
+            return HandleRtSigreturnSystemCall();
+            break;
         case 16: // ioctl
             return HandleIoctlSystemCall(Arg1, Arg2, Arg3);
             break;

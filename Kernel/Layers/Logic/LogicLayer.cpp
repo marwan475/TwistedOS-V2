@@ -1658,8 +1658,6 @@ bool IsUserAddressRangeAccessible(ResourceLayer* Resource, const Process* Curren
 
 bool SetProcessSignalState(ResourceLayer* Resource, Process* TargetProcess, int64_t Signal, uint64_t HandlerAddress, uint64_t Restorer)
 {
-    (void) Restorer;
-
     if (Resource == nullptr || TargetProcess == nullptr || TargetProcess->AddressSpace == nullptr)
     {
         return false;
@@ -1668,7 +1666,9 @@ bool SetProcessSignalState(ResourceLayer* Resource, Process* TargetProcess, int6
     uint64_t OriginalRIP = 0;
     uint64_t OriginalRSP = 0;
 
-    if (TargetProcess->WaitingForSystemCallReturn && TargetProcess->HasSavedSystemCallFrame)
+    bool WasSyscall = (TargetProcess->WaitingForSystemCallReturn && TargetProcess->HasSavedSystemCallFrame);
+
+    if (WasSyscall)
     {
         OriginalRIP = TargetProcess->SavedSystemCallFrame.UserRIP;
         OriginalRSP = TargetProcess->SavedSystemCallFrame.UserRSP;
@@ -1700,7 +1700,17 @@ bool SetProcessSignalState(ResourceLayer* Resource, Process* TargetProcess, int6
         return false;
     }
 
-    uint64_t ReturnAddress     = OriginalRIP;
+    TargetProcess->SavedSignalRIP       = OriginalRIP;
+    TargetProcess->SavedSignalRSP       = OriginalRSP;
+    TargetProcess->SavedSignalWasSyscall = WasSyscall;
+    TargetProcess->HasSavedSignalState  = true;
+
+    if (WasSyscall)
+    {
+        TargetProcess->SavedSignalFrame = TargetProcess->SavedSystemCallFrame;
+    }
+
+    uint64_t ReturnAddress     = (Restorer != 0) ? Restorer : OriginalRIP;
     uint64_t PreviousPageTable = Resource->ReadCurrentPageTable();
     uint64_t TargetPageTable   = TargetProcess->AddressSpace->GetPageMapL4TableAddr();
     if (PreviousPageTable == 0 || TargetPageTable == 0)
@@ -1721,7 +1731,7 @@ bool SetProcessSignalState(ResourceLayer* Resource, Process* TargetProcess, int6
         Resource->LoadPageTable(PreviousPageTable);
     }
 
-    if (TargetProcess->WaitingForSystemCallReturn && TargetProcess->HasSavedSystemCallFrame)
+    if (WasSyscall)
     {
         TargetProcess->SavedSystemCallFrame.UserRIP = HandlerAddress;
         TargetProcess->SavedSystemCallFrame.UserRSP = NewUserRSP;
@@ -4723,6 +4733,8 @@ bool LogicLayer::SignalProcess(uint8_t Id, int64_t Signal)
         TerminateProcess(false);
         return true;
     }
+
+    TargetProcess->SavedSignalMask = TargetProcess->BlockedSignalMask;
 
     uint64_t UpdatedMask = (TargetProcess->BlockedSignalMask | SignalMaskBit | ActionMask);
     UpdatedMask &= ~LINUX_UNBLOCKABLE_SIGNAL_MASK;

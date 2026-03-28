@@ -117,6 +117,12 @@ struct Process
     uint64_t                    BlockedSignalMask         = 0;
     uint64_t                    PendingSignalMask         = 0;
     bool                        InterruptedBySignal       = false;
+    bool                        HasSavedSignalState       = false;
+    uint64_t                    SavedSignalMask           = 0;
+    ProcessSavedSystemCallFrame SavedSignalFrame          = {};
+    uint64_t                    SavedSignalRIP            = 0;
+    uint64_t                    SavedSignalRSP            = 0;
+    bool                        SavedSignalWasSyscall     = false;
     uint8_t                     DebugSyscallTraceRemaining = 0;
     bool                        DebugIsXorgProcess        = false;
     int*                        ClearChildTidAddress      = nullptr;
