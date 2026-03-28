@@ -2350,6 +2350,12 @@ int64_t TranslationLayer::HandlePollSystemCall(void* PollFdArray, uint64_t PollF
                 Logic->SleepProcess(CurrentProcess->Id, 1);
             }
 
+            if (CurrentProcess->InterruptedBySignal)
+            {
+                CurrentProcess->InterruptedBySignal = false;
+                return LINUX_ERR_EINTR;
+            }
+
             bool DummyTTYWaitFlag = false;
             ReadyCount            = EvaluatePollState(&DummyTTYWaitFlag);
             if (ReadyCount != 0)
@@ -2368,6 +2374,12 @@ int64_t TranslationLayer::HandlePollSystemCall(void* PollFdArray, uint64_t PollF
             {
                 Logic->SleepProcess(CurrentProcess->Id, 1);
 
+                if (CurrentProcess->InterruptedBySignal)
+                {
+                    CurrentProcess->InterruptedBySignal = false;
+                    return LINUX_ERR_EINTR;
+                }
+
                 bool DummyTTYWaitFlag = false;
                 ReadyCount            = EvaluatePollState(&DummyTTYWaitFlag);
                 if (ReadyCount != 0)
@@ -2385,6 +2397,12 @@ int64_t TranslationLayer::HandlePollSystemCall(void* PollFdArray, uint64_t PollF
     while (RemainingMilliseconds > 0)
     {
         Logic->SleepProcess(CurrentProcess->Id, 1);
+
+        if (CurrentProcess->InterruptedBySignal)
+        {
+            CurrentProcess->InterruptedBySignal = false;
+            return LINUX_ERR_EINTR;
+        }
 
         bool DummyTTYWaitFlag = false;
         ReadyCount            = EvaluatePollState(&DummyTTYWaitFlag);
@@ -2756,6 +2774,12 @@ int64_t TranslationLayer::HandleEpollWaitSystemCall(uint64_t EpollFileDescriptor
                 Logic->SleepProcess(CurrentProcess->Id, 1);
             }
 
+            if (CurrentProcess->InterruptedBySignal)
+            {
+                CurrentProcess->InterruptedBySignal = false;
+                return LINUX_ERR_EINTR;
+            }
+
             bool DummyTTYWaitFlag = false;
             ReadyCount            = EvaluateReadyEvents(&DummyTTYWaitFlag);
             if (ReadyCount != 0)
@@ -2774,6 +2798,12 @@ int64_t TranslationLayer::HandleEpollWaitSystemCall(uint64_t EpollFileDescriptor
             {
                 Logic->SleepProcess(CurrentProcess->Id, 1);
 
+                if (CurrentProcess->InterruptedBySignal)
+                {
+                    CurrentProcess->InterruptedBySignal = false;
+                    return LINUX_ERR_EINTR;
+                }
+
                 bool DummyTTYWaitFlag = false;
                 ReadyCount            = EvaluateReadyEvents(&DummyTTYWaitFlag);
                 if (ReadyCount != 0)
@@ -2791,6 +2821,12 @@ int64_t TranslationLayer::HandleEpollWaitSystemCall(uint64_t EpollFileDescriptor
     while (RemainingMilliseconds > 0)
     {
         Logic->SleepProcess(CurrentProcess->Id, 1);
+
+        if (CurrentProcess->InterruptedBySignal)
+        {
+            CurrentProcess->InterruptedBySignal = false;
+            return LINUX_ERR_EINTR;
+        }
 
         bool DummyTTYWaitFlag = false;
         ReadyCount            = EvaluateReadyEvents(&DummyTTYWaitFlag);
@@ -7862,6 +7898,22 @@ int64_t TranslationLayer::HandleNanosleepSystemCall(const void* RequestedTime, v
     if (SleepTicks != 0)
     {
         Logic->SleepProcess(CurrentProcess->Id, SleepTicks);
+    }
+
+    if (CurrentProcess->InterruptedBySignal)
+    {
+        CurrentProcess->InterruptedBySignal = false;
+
+        if (RemainingTime != nullptr)
+        {
+            LinuxTimeSpec RemainingKernelTime = {};
+            if (!Logic->CopyFromKernelToUser(&RemainingKernelTime, RemainingTime, sizeof(RemainingKernelTime)))
+            {
+                return LINUX_ERR_EFAULT;
+            }
+        }
+
+        return LINUX_ERR_EINTR;
     }
 
     if (RemainingTime != nullptr)

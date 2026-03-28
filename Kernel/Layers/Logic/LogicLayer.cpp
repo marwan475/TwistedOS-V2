@@ -4737,6 +4737,8 @@ bool LogicLayer::SignalProcess(uint8_t Id, int64_t Signal)
                                    (void*) TargetProcess->BlockedSignalMask, (void*) TargetProcess->PendingSignalMask);
         }
 #endif
+        TargetProcess->InterruptedBySignal = true;
+
         if (Sync != nullptr)
         {
             Sync->RemoveFromSleepQueue(Id);
