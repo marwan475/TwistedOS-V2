@@ -528,6 +528,11 @@ bool DispatchOnePendingUnblockedSignal(LogicLayer* Logic, Process* CurrentProces
         return false;
     }
 
+    if (CurrentProcess->HasSavedSignalState)
+    {
+        return false;
+    }
+
     uint64_t DeliverableMask = (CurrentProcess->PendingSignalMask & ~CurrentProcess->BlockedSignalMask);
     if (DeliverableMask == 0)
     {

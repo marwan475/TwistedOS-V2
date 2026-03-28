@@ -4837,6 +4837,12 @@ bool LogicLayer::SignalProcess(uint8_t Id, int64_t Signal)
         }
     }
 
+    if (TargetProcess->HasSavedSignalState)
+    {
+        TargetProcess->PendingSignalMask |= SignalMaskBit;
+        return true;
+    }
+
     if (!SetProcessSignalState(Resource, TargetProcess, Signal, HandlerAddress, Restorer))
     {
         TerminateProcess(false);
