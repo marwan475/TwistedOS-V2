@@ -161,6 +161,7 @@ int64_t TranslationLayer::HandlePosixSystemCallNumber(uint64_t SystemCallNumber,
             return HandleGetsockoptSystemCall(Arg1, static_cast<int64_t>(Arg2), static_cast<int64_t>(Arg3), reinterpret_cast<void*>(Arg4), reinterpret_cast<void*>(Arg5));
             break;
         case 56: // clone
+            // x86_64 clone syscall uses: flags, child_stack, parent_tidptr, child_tidptr, tls.
             return HandleCloneSystemCall(Arg1, reinterpret_cast<void*>(Arg2), reinterpret_cast<int*>(Arg3), reinterpret_cast<int*>(Arg4), Arg5);
             break;
         case 57: // fork

@@ -478,8 +478,12 @@ void* ResourceLayer::LoadFileFromInitramfs(const char* Path, uint64_t* Size)
         return nullptr;
     }
 
-    kmemset(AllocatedData, 0, Pages * PAGE_SIZE);
     memcpy(AllocatedData, Data, *Size);
+    UINTN TailBytes = (Pages * PAGE_SIZE) - *Size;
+    if (TailBytes != 0)
+    {
+        kmemset(reinterpret_cast<void*>(reinterpret_cast<UINTN>(AllocatedData) + *Size), 0, TailBytes);
+    }
 
     return AllocatedData;
 }

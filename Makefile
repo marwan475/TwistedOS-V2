@@ -31,13 +31,18 @@ KERNEL_CFLAGS = \
 	-fno-pie \
 	-mcmodel=kernel \
     -mno-red-zone \
+	-mgeneral-regs-only \
     -nostdlib \
     -fno-exceptions \
     -fno-rtti \
     -fno-stack-protector \
+	-fno-strict-aliasing \
+	-fno-delete-null-pointer-checks \
 	-fno-omit-frame-pointer \
+	-DPRINTF_DISABLE_SUPPORT_FLOAT \
+	-DPRINTF_DISABLE_SUPPORT_EXPONENTIAL \
 	-g \
-    -O0 \
+	-O2 \
     -Wall \
     -Wextra
 
@@ -56,6 +61,7 @@ POSIX_SYSCALLS_CFLAGS = -fno-jump-tables -fno-tree-switch-conversion
 ifeq ($(DEBUG),1)
 CFLAGS += -DDEBUG_BUILD
 KERNEL_CFLAGS += -DDEBUG_BUILD
+KERNEL_CFLAGS := $(filter-out -O2,$(KERNEL_CFLAGS)) -O0
 endif
 
 ifeq ($(STEST),1)

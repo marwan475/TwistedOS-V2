@@ -22,6 +22,17 @@ constexpr uint64_t VIRTIO_RNG_INTERRUPT_VECTOR  = 43;
 constexpr uint64_t IDE_PRIMARY_INTERRUPT_VECTOR = 46;
 constexpr uint64_t SYSCALL_INTERRUPT_VECTOR     = 128;
 constexpr uint64_t SCHEDULER_TICK_INTERVAL      = 1;
+constexpr bool     TRACE_ALL_SYSCALLS           = false;
+
+#ifdef DEBUG_BUILD
+constexpr bool TEMP_RELEASE_XORG_SYSCALL_TRACE = false;
+#else
+constexpr bool TEMP_RELEASE_XORG_SYSCALL_TRACE = true;
+#endif
+
+constexpr uint32_t TEMP_RELEASE_XORG_SYSCALL_TRACE_MAX = 20000;
+uint32_t           TempReleaseXorgSyscallTraceRemaining = TEMP_RELEASE_XORG_SYSCALL_TRACE_MAX;
+uint64_t           TempReleaseXorgSyscallTraceSequence  = 0;
 
 void DumpPageWalkForAddress(TTY* Terminal, uint64_t ActiveCR3, uint64_t Address, const char* Label)
 {
@@ -572,14 +583,38 @@ int64_t Dispatcher::HandleSystemCall(uint64_t SystemCallNumber, uint64_t Arg1, u
 {
     KernelSelfTestsOnSystemCall(SystemCallNumber);
 
+    TTY*            Terminal   = Resource.GetTTY();
+    ProcessManager* ProcessMgr = Logic.GetProcessManager();
+    Process*        Running    = (ProcessMgr == nullptr) ? nullptr : ProcessMgr->GetRunningProcess();
+
+    bool     TempReleaseTraceThis = false;
+    uint64_t TempTraceSequence    = 0;
+    uint64_t UserRIP              = 0;
+    uint64_t UserRSP              = 0;
+    uint64_t UserFSBase           = 0;
+
+    if (TEMP_RELEASE_XORG_SYSCALL_TRACE && Terminal != nullptr && Running != nullptr && Running->Level == PROCESS_LEVEL_USER && Running->DebugIsXorgProcess && TempReleaseXorgSyscallTraceRemaining > 0)
+    {
+        TempReleaseTraceThis = true;
+        TempTraceSequence    = ++TempReleaseXorgSyscallTraceSequence;
+        UserFSBase           = Running->UserFSBase;
+        if (Running->HasSavedSystemCallFrame)
+        {
+            UserRIP = Running->SavedSystemCallFrame.UserRIP;
+            UserRSP = Running->SavedSystemCallFrame.UserRSP;
+        }
+
+        Terminal->Serialprintf("rel_syscall_dbg: seq=%lu pid=%u left=%u n=%lu rip=%p rsp=%p fs=%p a1=%p a2=%p a3=%p a4=%p a5=%p a6=%p\n", TempTraceSequence, Running->Id,
+                               TempReleaseXorgSyscallTraceRemaining, SystemCallNumber, (void*) UserRIP, (void*) UserRSP, (void*) UserFSBase, (void*) Arg1, (void*) Arg2,
+                               (void*) Arg3, (void*) Arg4, (void*) Arg5, (void*) Arg6);
+    }
+
 #ifdef DEBUG_BUILD
-    TTY* Terminal = Resource.GetTTY();
-    if (Terminal != nullptr && SystemCallNumber != 20 && SystemCallNumber != 281 && SystemCallNumber != 1)
+    bool            TraceThis  = TRACE_ALL_SYSCALLS || (Running != nullptr && Running->DebugSyscallTraceRemaining > 0);
+
+    if (Terminal != nullptr && TraceThis && SystemCallNumber != 20 && SystemCallNumber != 281 && SystemCallNumber != 1)
     {
         Terminal->Serialprintf("syscall: n=%lu a1=%p a2=%p a3=%p a4=%p a5=%p a6=%p\n", SystemCallNumber, (void*) Arg1, (void*) Arg2, (void*) Arg3, (void*) Arg4, (void*) Arg5, (void*) Arg6);
-
-        ProcessManager* ProcessMgr = Logic.GetProcessManager();
-        Process*        Running    = (ProcessMgr == nullptr) ? nullptr : ProcessMgr->GetRunningProcess();
         if (Running != nullptr && Running->DebugSyscallTraceRemaining > 0)
         {
             Terminal->Serialprintf("xorg_syscall_dbg: pid=%u left=%u n=%lu a1=%p a2=%p a3=%p\n", Running->Id, static_cast<uint32_t>(Running->DebugSyscallTraceRemaining),
@@ -590,13 +625,18 @@ int64_t Dispatcher::HandleSystemCall(uint64_t SystemCallNumber, uint64_t Arg1, u
 
     int64_t Result = Translation.HandlePosixSystemCallNumber(SystemCallNumber, Arg1, Arg2, Arg3, Arg4, Arg5, Arg6);
 
+    if (TempReleaseTraceThis && Terminal != nullptr && Running != nullptr)
+    {
+        Terminal->Serialprintf("rel_syscall_dbg_ret: seq=%lu pid=%u left=%u n=%lu r=%lld wait_sysret=%u saved_syscall=%u\n", TempTraceSequence, Running->Id,
+                               TempReleaseXorgSyscallTraceRemaining, SystemCallNumber, static_cast<long long>(Result), Running->WaitingForSystemCallReturn ? 1U : 0U,
+                               Running->HasSavedSystemCallFrame ? 1U : 0U);
+        --TempReleaseXorgSyscallTraceRemaining;
+    }
+
 #ifdef DEBUG_BUILD
-    if (Terminal != nullptr && SystemCallNumber != 20 && SystemCallNumber != 281 && SystemCallNumber != 1)
+    if (Terminal != nullptr && TraceThis && SystemCallNumber != 20 && SystemCallNumber != 281 && SystemCallNumber != 1)
     {
         Terminal->Serialprintf("syscall_ret: n=%lu r=%lld\n", SystemCallNumber, static_cast<long long>(Result));
-
-        ProcessManager* ProcessMgr = Logic.GetProcessManager();
-        Process*        Running    = (ProcessMgr == nullptr) ? nullptr : ProcessMgr->GetRunningProcess();
         if (Running != nullptr && Running->DebugSyscallTraceRemaining > 0)
         {
             Terminal->Serialprintf("xorg_syscall_dbg_ret: pid=%u left=%u n=%lu r=%lld\n", Running->Id, static_cast<uint32_t>(Running->DebugSyscallTraceRemaining),

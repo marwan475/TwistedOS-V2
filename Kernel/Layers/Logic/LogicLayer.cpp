@@ -38,6 +38,7 @@ constexpr uint64_t ELF_INTERPRETER_PATH_MAX  = 256;
 constexpr uint64_t ELF_ET_DYN_MAIN_LOAD_BIAS = USER_PROCESS_VIRTUAL_BASE;
 constexpr uint64_t ELF_INTERPRETER_LOAD_BIAS = 0x0000000100000000ULL;
 constexpr uint8_t  MAX_SCRIPT_INTERPRETER_DEPTH = 4;
+constexpr bool     TRACE_COPY_PML4_SANITIZE      = false;
 
 constexpr int64_t LINUX_SIGNAL_MIN     = 1;
 constexpr int64_t LINUX_SIGNAL_MAX     = static_cast<int64_t>(MAX_POSIX_SIGNALS_PER_PROCESS);
@@ -478,7 +479,9 @@ bool EnsureLazyLoadedINodeData(ResourceLayer* Resource, INode* Node)
 
     Resource->LoadKernelPageTable();
 
+#ifdef DEBUG_BUILD
     uint64_t PageCount = (Node->NodeSize + PAGE_SIZE - 1) / PAGE_SIZE;
+#endif
     void*    FileData  = Resource->kmalloc(Node->NodeSize);
     if (FileData == nullptr)
     {
@@ -2886,7 +2889,7 @@ uint8_t LogicLayer::ChangeProcessExecution(uint8_t Id, const char* FilePath, con
 #endif
 
 #ifdef DEBUG_BUILD
-    TTY* ExecTraceTTY = (Resource != nullptr) ? Resource->GetTTY() : nullptr;
+    TTY* ExecTraceTTY = (IsXorgExecPath && Resource != nullptr) ? Resource->GetTTY() : nullptr;
     if (ExecTraceTTY != nullptr)
     {
         ExecTraceTTY->Serialprintf("exec_trace: pid=%u path='%s' stage=before_lookup cr3=%p\n", Id, FilePath, (void*)Resource->ReadCurrentPageTable());
@@ -3078,29 +3081,8 @@ uint8_t LogicLayer::ChangeProcessExecution(uint8_t Id, const char* FilePath, con
     }
 #endif
 
-    if (!ZeroPhysicalBackedBuffer(Resource, CopiedImage, static_cast<uint64_t>(Pages * PAGE_SIZE)))
-    {
-        PMM->FreePagesFromDescriptor(CopiedImage, Pages);
-        Resource->LoadPageTable(ExecPreviousPageTable);
-        return PROCESS_ID_INVALID;
-    }
-
-#ifdef DEBUG_BUILD
-    if (ExecTraceTTY != nullptr)
-    {
-        ExecTraceTTY->Serialprintf("exec_trace: pid=%u path='%s' stage=after_kmemset_copiedimage\n", Id, FilePath);
-    }
-#endif
-
-#ifdef DEBUG_BUILD
-    if (ExecTraceTTY != nullptr)
-    {
-        ExecTraceTTY->Serialprintf("exec_trace: pid=%u path='%s' stage=before_copy_buffer src=%p dst=%p size=%llu\n",
-            Id, FilePath, Entry->inode->NodeData, CopiedImage, static_cast<unsigned long long>(CodeSize));
-    }
-#endif
-
-    if (!CopyPhysicalBackedBuffer(Resource, CopiedImage, Entry->inode->NodeData, CodeSize))
+    if (!ZeroPhysicalBackedBuffer(Resource, CopiedImage, static_cast<uint64_t>(Pages * PAGE_SIZE))
+        || !CopyPhysicalBackedBuffer(Resource, CopiedImage, Entry->inode->NodeData, CodeSize))
     {
         PMM->FreePagesFromDescriptor(CopiedImage, Pages);
         Resource->LoadPageTable(ExecPreviousPageTable);
@@ -3388,13 +3370,8 @@ uint8_t LogicLayer::CopyProcess(uint8_t Id)
         return PROCESS_ID_INVALID;
     }
 
-    if (!ZeroPhysicalBackedBuffer(Resource, CopiedImage, static_cast<uint64_t>(SourceCodePages * PAGE_SIZE)))
-    {
-        PMM->FreePagesFromDescriptor(CopiedImage, SourceCodePages);
-        Resource->LoadPageTable(ForkPreviousPageTable);
-        return PROCESS_ID_INVALID;
-    }
-    if (!CopyPhysicalBackedBuffer(Resource, CopiedImage, reinterpret_cast<void*>(SourceCodePhysAddr), SourceCodeSize))
+    if (!ZeroPhysicalBackedBuffer(Resource, CopiedImage, static_cast<uint64_t>(SourceCodePages * PAGE_SIZE))
+        || !CopyPhysicalBackedBuffer(Resource, CopiedImage, reinterpret_cast<void*>(SourceCodePhysAddr), SourceCodeSize))
     {
         PMM->FreePagesFromDescriptor(CopiedImage, SourceCodePages);
         Resource->LoadPageTable(ForkPreviousPageTable);
@@ -3667,12 +3644,8 @@ uint8_t LogicLayer::CreateUserProcessFromVFS(const char* FilePath)
         return PROCESS_ID_INVALID;
     }
 
-    if (!ZeroPhysicalBackedBuffer(Resource, CopiedImage, static_cast<uint64_t>(Pages * PAGE_SIZE)))
-    {
-        Resource->GetPMM()->FreePagesFromDescriptor(CopiedImage, Pages);
-        return PROCESS_ID_INVALID;
-    }
-    if (!CopyPhysicalBackedBuffer(Resource, CopiedImage, Entry->inode->NodeData, CodeSize))
+    if (!ZeroPhysicalBackedBuffer(Resource, CopiedImage, static_cast<uint64_t>(Pages * PAGE_SIZE))
+        || !CopyPhysicalBackedBuffer(Resource, CopiedImage, Entry->inode->NodeData, CodeSize))
     {
         Resource->GetPMM()->FreePagesFromDescriptor(CopiedImage, Pages);
         return PROCESS_ID_INVALID;
@@ -3729,12 +3702,8 @@ uint8_t LogicLayer::CreateInitProcess()
         return PROCESS_ID_INVALID;
     }
 
-    if (!ZeroPhysicalBackedBuffer(Resource, CopiedImage, static_cast<uint64_t>(Pages * PAGE_SIZE)))
-    {
-        Resource->GetPMM()->FreePagesFromDescriptor(CopiedImage, Pages);
-        return PROCESS_ID_INVALID;
-    }
-    if (!CopyPhysicalBackedBuffer(Resource, CopiedImage, Entry->inode->NodeData, CodeSize))
+    if (!ZeroPhysicalBackedBuffer(Resource, CopiedImage, static_cast<uint64_t>(Pages * PAGE_SIZE))
+        || !CopyPhysicalBackedBuffer(Resource, CopiedImage, Entry->inode->NodeData, CodeSize))
     {
         Resource->GetPMM()->FreePagesFromDescriptor(CopiedImage, Pages);
         return PROCESS_ID_INVALID;
@@ -3933,7 +3902,7 @@ VirtualAddressSpace* LogicLayer::MapRawBinary(uint64_t CodeAddr, uint64_t CodeSi
 #ifdef DEBUG_BUILD
     {
         const CopyPageMapL4DebugInfo& CopyDebugInfo = Resource->GetVMM()->GetLastCopyPageMapL4DebugInfo();
-        if (CopyDebugInfo.SanitizedEntryCount > 0)
+        if (TRACE_COPY_PML4_SANITIZE && CopyDebugInfo.SanitizedEntryCount > 0)
         {
             TTY* DebugTTY = Resource->GetTTY();
             if (DebugTTY != nullptr)
@@ -4209,12 +4178,8 @@ VirtualAddressSpace* LogicLayer::MapELF(uint64_t CodeAddr, uint64_t CodeSize, co
             return FailMapELFAddressSpace(0);
         }
 
-        if (!ZeroPhysicalBackedBuffer(Resource, InterpreterImage, static_cast<uint64_t>(InterpreterPages * PAGE_SIZE)))
-        {
-            Resource->GetPMM()->FreePagesFromDescriptor(InterpreterImage, InterpreterPages);
-            return nullptr;
-        }
-        if (!CopyPhysicalBackedBuffer(Resource, InterpreterImage, InterpreterDentry->inode->NodeData, InterpreterSize))
+        if (!ZeroPhysicalBackedBuffer(Resource, InterpreterImage, static_cast<uint64_t>(InterpreterPages * PAGE_SIZE))
+            || !CopyPhysicalBackedBuffer(Resource, InterpreterImage, InterpreterDentry->inode->NodeData, InterpreterSize))
         {
             Resource->GetPMM()->FreePagesFromDescriptor(InterpreterImage, InterpreterPages);
             return FailMapELFAddressSpace(0);
@@ -4298,7 +4263,7 @@ VirtualAddressSpace* LogicLayer::MapELF(uint64_t CodeAddr, uint64_t CodeSize, co
     if (MapELFDebugTTY != nullptr)
     {
         const CopyPageMapL4DebugInfo& CopyDebugInfo = Resource->GetVMM()->GetLastCopyPageMapL4DebugInfo();
-        if (CopyDebugInfo.SanitizedEntryCount > 0)
+        if (TRACE_COPY_PML4_SANITIZE && CopyDebugInfo.SanitizedEntryCount > 0)
         {
             MapELFDebugTTY->Serialprintf("copy_pml4_sanitize_dbg: path=elf sanitized=%llu alloc_attempts=%llu\n",
                                          static_cast<unsigned long long>(CopyDebugInfo.SanitizedEntryCount),

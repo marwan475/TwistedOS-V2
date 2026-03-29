@@ -767,6 +767,11 @@ PageTableEntry* VirtualMemoryManager::CopyPageMapL4Table()
                     PageTableEntry OldPTEntry = OldPT[PTIndex];
                     if (!OldPTEntry.fields.present)
                     {
+                        if (OldPTEntry.value == 0)
+                        {
+                            continue;
+                        }
+
                         uint64_t SanitizedValue = SanitizeNonPresentCopiedEntry(OldPTEntry.value);
                         NewPT[PTIndex].value = SanitizedValue;
                         RecordSanitizedValue(OldPTEntry.value, SanitizedValue);
