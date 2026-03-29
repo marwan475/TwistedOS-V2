@@ -46,6 +46,13 @@ struct EventQueueEventTag
     EventQueueEventTag* Next;
 };
 
+struct FutexWaitTag
+{
+    uint8_t      ProcessId;
+    uint64_t     UserAddress;
+    FutexWaitTag* Next;
+};
+
 struct EventQueueKernelObject
 {
     EventQueueTag                                              Queue;
@@ -61,6 +68,7 @@ private:
     IntrusiveQueue<SleepTag, &SleepTag::Next>                     SleepQueue;
     IntrusiveQueue<WaitForTTYInputTag, &WaitForTTYInputTag::Next> TTYInputWaitQueue;
     IntrusiveQueue<EventQueueKernelObject, &EventQueueKernelObject::Next> EventQueueStore;
+    IntrusiveQueue<FutexWaitTag, &FutexWaitTag::Next>             FutexWaitQueue;
 
     EventQueueKernelObject* FindEventQueue(uint8_t ProcessId, uint64_t FileDescriptor) const;
     EpollWatchTag*          FindWatch(EventQueueKernelObject* Queue, uint64_t WatchedFileDescriptor) const;
@@ -81,6 +89,11 @@ public:
     EventQueueKernelObject* GetEventQueue(uint8_t ProcessId, uint64_t FileDescriptor);
     int64_t ControlEventQueue(uint8_t ProcessId, uint64_t EpollFileDescriptor, int32_t Operation, uint64_t TargetFileDescriptor, uint32_t Events, uint64_t UserData);
     bool    DuplicateEventQueuesForProcess(uint8_t SourceProcessId, uint8_t DestProcessId);
+    bool    AddFutexWaiter(uint8_t ProcessId, uint64_t UserAddress);
+    void    RemoveFutexWaiter(uint8_t ProcessId, uint64_t UserAddress);
+    void    RemoveFutexWaitersForProcess(uint8_t ProcessId);
+    bool    IsProcessWaitingOnFutex(uint8_t ProcessId, uint64_t UserAddress) const;
+    uint8_t WakeSingleFutexWaiter(uint64_t UserAddress);
     void    Tick();
     uint8_t GetNextProcessToWake();
     uint8_t GetNextTTYInputWaiter();

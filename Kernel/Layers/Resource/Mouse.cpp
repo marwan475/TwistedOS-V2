@@ -492,47 +492,52 @@ void Mouse::HandleInterrupt()
 {
     ++InterruptCount;
 
-    uint8_t Status = X86InB(PS2_STATUS_PORT);
-
-    if ((Status & PS2_STATUS_OUTPUT_BUFFER_FULL) == 0)
+    // Drain all pending controller bytes in one IRQ to avoid leaving partial
+    // packets queued until a future interrupt edge arrives.
+    while (true)
     {
-        return;
-    }
+        uint8_t Status = X86InB(PS2_STATUS_PORT);
 
-    uint8_t DataByte = X86InB(PS2_DATA_PORT);
-
-    if ((Status & PS2_STATUS_MOUSE_DATA) == 0)
-    {
-        ++IgnoredIrqCount;
-        if ((IgnoredIrqCount % MOUSE_LOG_IRQ_INTERVAL) == 1)
+        if ((Status & PS2_STATUS_OUTPUT_BUFFER_FULL) == 0)
         {
-            MouseLogf("mouse_dbg: irq_without_mouse_data status=0x%x byte=0x%x count=%lu\n", Status, DataByte, static_cast<unsigned long>(IgnoredIrqCount));
+            return;
         }
-        return;
-    }
 
-    if (PacketIndex == 0 && (DataByte & PS2_PACKET_ALWAYS_ONE) == 0)
-    {
-        ++DecodeFailureCount;
-        if ((DecodeFailureCount % MOUSE_LOG_PACKET_INTERVAL) == 1)
+        uint8_t DataByte = X86InB(PS2_DATA_PORT);
+
+        if ((Status & PS2_STATUS_MOUSE_DATA) == 0)
         {
-            MouseLogf("mouse_dbg: dropped_desync_byte=0x%x drops=%lu\n", DataByte, static_cast<unsigned long>(DecodeFailureCount));
+            ++IgnoredIrqCount;
+            if ((IgnoredIrqCount % MOUSE_LOG_IRQ_INTERVAL) == 1)
+            {
+                MouseLogf("mouse_dbg: irq_without_mouse_data status=0x%x byte=0x%x count=%lu\n", Status, DataByte, static_cast<unsigned long>(IgnoredIrqCount));
+            }
+            continue;
         }
-        return;
+
+        if (PacketIndex == 0 && (DataByte & PS2_PACKET_ALWAYS_ONE) == 0)
+        {
+            ++DecodeFailureCount;
+            if ((DecodeFailureCount % MOUSE_LOG_PACKET_INTERVAL) == 1)
+            {
+                MouseLogf("mouse_dbg: dropped_desync_byte=0x%x drops=%lu\n", DataByte, static_cast<unsigned long>(DecodeFailureCount));
+            }
+            continue;
+        }
+
+        PendingPacket[PacketIndex++] = DataByte;
+
+        if (PacketIndex < 3)
+        {
+            continue;
+        }
+
+        ++PacketCount;
+        PacketIndex      = 0;
+        HasPendingPacket = true;
+        DispatchEventInterrupt();
+        HasPendingPacket = false;
     }
-
-    PendingPacket[PacketIndex++] = DataByte;
-
-    if (PacketIndex < 3)
-    {
-        return;
-    }
-
-    ++PacketCount;
-    PacketIndex      = 0;
-    HasPendingPacket = true;
-    DispatchEventInterrupt();
-    HasPendingPacket = false;
 }
 
 bool Mouse::DispatchEventInterrupt()

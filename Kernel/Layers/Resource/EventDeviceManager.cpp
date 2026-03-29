@@ -438,20 +438,30 @@ bool EventDeviceManager::QueueInputEvent(EventDevice* Device, uint16_t Type, uin
     Device->PendingEventTail                         = (Device->PendingEventTail + 1) % EventDevice::MAX_PENDING_EVENTS;
     ++Device->PendingEventCount;
 
-    Dispatcher* ActiveDispatcher = Dispatcher::GetActive();
-    if (ActiveDispatcher != nullptr)
+    bool DeferWakeUntilSync = false;
+    if (Device->Kind == EVENT_DEVICE_KIND_MOUSE || Device->Kind == EVENT_DEVICE_KIND_KEYBOARD)
     {
-        LogicLayer* ActiveLogicLayer = ActiveDispatcher->GetLogicLayer();
-        if (ActiveLogicLayer != nullptr)
-        {
-            for (uint32_t Index = 0; Index < Device->WaitingProcessCount; ++Index)
-            {
-                ActiveLogicLayer->UnblockProcess(Device->WaitingProcessIds[Index]);
-            }
-        }
+        DeferWakeUntilSync = !(Type == LINUX_EV_SYN && Code == 0);
     }
 
-    Device->WaitingProcessCount = 0;
+    if (!DeferWakeUntilSync)
+    {
+        Dispatcher* ActiveDispatcher = Dispatcher::GetActive();
+        if (ActiveDispatcher != nullptr)
+        {
+            LogicLayer* ActiveLogicLayer = ActiveDispatcher->GetLogicLayer();
+            if (ActiveLogicLayer != nullptr)
+            {
+                for (uint32_t Index = 0; Index < Device->WaitingProcessCount; ++Index)
+                {
+                    ActiveLogicLayer->UnblockProcess(Device->WaitingProcessIds[Index]);
+                }
+            }
+        }
+
+        Device->WaitingProcessCount = 0;
+    }
+
     return true;
 }
 

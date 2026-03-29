@@ -131,6 +131,7 @@ SynchronizationManager::~SynchronizationManager()
 {
     SleepQueue.ClearAndDelete();
     TTYInputWaitQueue.ClearAndDelete();
+    FutexWaitQueue.ClearAndDelete();
 
     while (!EventQueueStore.IsEmpty())
     {
@@ -502,6 +503,92 @@ bool SynchronizationManager::DuplicateEventQueuesForProcess(uint8_t SourceProces
     }
 
     return true;
+}
+
+bool SynchronizationManager::AddFutexWaiter(uint8_t ProcessId, uint64_t UserAddress)
+{
+    RemoveFutexWaitersForProcess(ProcessId);
+
+    FutexWaitTag* NewTag = new FutexWaitTag;
+    if (NewTag == nullptr)
+    {
+        return false;
+    }
+
+    NewTag->ProcessId   = ProcessId;
+    NewTag->UserAddress = UserAddress;
+    NewTag->Next        = nullptr;
+    FutexWaitQueue.PushBack(NewTag);
+    return true;
+}
+
+void SynchronizationManager::RemoveFutexWaiter(uint8_t ProcessId, uint64_t UserAddress)
+{
+    FutexWaitTag* Node = FutexWaitQueue.Head();
+    while (Node != nullptr)
+    {
+        FutexWaitTag* NextNode = FutexWaitQueue.Next(Node);
+        if (Node->ProcessId == ProcessId && Node->UserAddress == UserAddress)
+        {
+            FutexWaitQueue.Remove(Node);
+            delete Node;
+            return;
+        }
+
+        Node = NextNode;
+    }
+}
+
+void SynchronizationManager::RemoveFutexWaitersForProcess(uint8_t ProcessId)
+{
+    FutexWaitTag* Node = FutexWaitQueue.Head();
+    while (Node != nullptr)
+    {
+        FutexWaitTag* NextNode = FutexWaitQueue.Next(Node);
+        if (Node->ProcessId == ProcessId)
+        {
+            FutexWaitQueue.Remove(Node);
+            delete Node;
+        }
+
+        Node = NextNode;
+    }
+}
+
+bool SynchronizationManager::IsProcessWaitingOnFutex(uint8_t ProcessId, uint64_t UserAddress) const
+{
+    FutexWaitTag* Node = FutexWaitQueue.Head();
+    while (Node != nullptr)
+    {
+        if (Node->ProcessId == ProcessId && Node->UserAddress == UserAddress)
+        {
+            return true;
+        }
+
+        Node = FutexWaitQueue.Next(Node);
+    }
+
+    return false;
+}
+
+uint8_t SynchronizationManager::WakeSingleFutexWaiter(uint64_t UserAddress)
+{
+    FutexWaitTag* Node = FutexWaitQueue.Head();
+    while (Node != nullptr)
+    {
+        FutexWaitTag* NextNode = FutexWaitQueue.Next(Node);
+        if (Node->UserAddress == UserAddress)
+        {
+            uint8_t ProcessId = Node->ProcessId;
+            FutexWaitQueue.Remove(Node);
+            delete Node;
+            return ProcessId;
+        }
+
+        Node = NextNode;
+    }
+
+    return INVALID_PROCESS_ID;
 }
 
 /**

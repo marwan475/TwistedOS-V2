@@ -28,6 +28,7 @@ constexpr int64_t LINUX_ERR_EMFILE    = -24;
 constexpr int64_t LINUX_ERR_EINVAL    = -22;
 constexpr int64_t LINUX_ERR_EBADF     = -9;
 constexpr int64_t LINUX_ERR_EINTR     = -4;
+constexpr int64_t LINUX_ERR_ETIMEDOUT = -110;
 constexpr int64_t LINUX_ERR_ESRCH     = -3;
 constexpr int64_t LINUX_ERR_ENOSYS    = -38;
 constexpr int64_t LINUX_ERR_ENOTTY    = -25;
@@ -397,6 +398,11 @@ constexpr uint64_t LINUX_RLIMIT_RTTIME_DEFAULT    = LINUX_RLIM_INFINITY;
 constexpr uint64_t LINUX_TIMER_NANOSECONDS_PER_TICK = 10000000;
 constexpr uint64_t LINUX_TIMER_MICROSECONDS_PER_TICK = (LINUX_TIMER_NANOSECONDS_PER_TICK / 1000);
 constexpr uint64_t LINUX_TIMER_TICKS_PER_SECOND = (1000000000ULL / LINUX_TIMER_NANOSECONDS_PER_TICK);
+
+constexpr int64_t LINUX_FUTEX_WAIT         = 0;
+constexpr int64_t LINUX_FUTEX_WAKE         = 1;
+constexpr int64_t LINUX_FUTEX_PRIVATE_FLAG = 128;
+constexpr int64_t LINUX_FUTEX_CMD_MASK     = 0x7F;
 
 constexpr int64_t LINUX_MEMBARRIER_CMD_QUERY                                = 0;
 constexpr int64_t LINUX_MEMBARRIER_CMD_GLOBAL                               = (1 << 0);
@@ -8178,6 +8184,187 @@ int64_t TranslationLayer::HandleNanosleepSystemCall(const void* RequestedTime, v
     return 0;
 }
 
+int64_t TranslationLayer::HandleFutexSystemCall(int* UserAddress, int64_t Operation, int64_t Value, const void* Timeout, int* UserAddress2, int64_t Value3)
+{
+    (void) UserAddress2;
+    (void) Value3;
+
+    if (Logic == nullptr || UserAddress == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    ProcessManager* PM = Logic->GetProcessManager();
+    if (PM == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    SynchronizationManager* Sync = Logic->GetSynchronizationManager();
+    if (Sync == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    Process* CurrentProcess = PM->GetRunningProcess();
+    if (CurrentProcess == nullptr || CurrentProcess->Level != PROCESS_LEVEL_USER)
+    {
+        return LINUX_ERR_EINVAL;
+    }
+
+    if ((reinterpret_cast<uint64_t>(UserAddress) & 0x3ULL) != 0)
+    {
+        return LINUX_ERR_EINVAL;
+    }
+
+    int64_t Command = (Operation & LINUX_FUTEX_CMD_MASK);
+    int64_t Flags   = (Operation & ~LINUX_FUTEX_CMD_MASK);
+    if ((Flags & ~LINUX_FUTEX_PRIVATE_FLAG) != 0)
+    {
+        return LINUX_ERR_ENOSYS;
+    }
+
+    uint64_t FutexKey = reinterpret_cast<uint64_t>(UserAddress);
+    if ((Flags & LINUX_FUTEX_PRIVATE_FLAG) != 0)
+    {
+        // Private futexes are process-local: include address-space identity to avoid cross-process key collisions.
+        uint64_t AddressSpaceIdentity = reinterpret_cast<uint64_t>(CurrentProcess->AddressSpace);
+        FutexKey ^= (AddressSpaceIdentity << 1);
+    }
+
+    if (Command == LINUX_FUTEX_WAKE)
+    {
+        if (Value <= 0)
+        {
+            return 0;
+        }
+
+        uint32_t WakeCount = static_cast<uint32_t>(Value);
+        uint32_t Woken     = 0;
+
+        for (; Woken < WakeCount; ++Woken)
+        {
+            uint8_t WokenProcessId = Sync->WakeSingleFutexWaiter(FutexKey);
+            if (WokenProcessId == PROCESS_ID_INVALID)
+            {
+                break;
+            }
+
+            Logic->WakeProcess(WokenProcessId);
+        }
+
+        return static_cast<int64_t>(Woken);
+    }
+
+    if (Command != LINUX_FUTEX_WAIT)
+    {
+        return LINUX_ERR_ENOSYS;
+    }
+
+    int32_t CurrentValue = 0;
+    if (!Logic->CopyFromUserToKernel(UserAddress, &CurrentValue, sizeof(CurrentValue)))
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    if (CurrentValue != static_cast<int32_t>(Value))
+    {
+        return LINUX_ERR_EAGAIN;
+    }
+
+    bool     HasTimeout    = (Timeout != nullptr);
+    uint64_t RemainingTicks = 0;
+    if (HasTimeout)
+    {
+        LinuxTimeSpec TimeoutSpec = {};
+        if (!Logic->CopyFromUserToKernel(Timeout, &TimeoutSpec, sizeof(TimeoutSpec)))
+        {
+            return LINUX_ERR_EFAULT;
+        }
+
+        if (TimeoutSpec.Seconds < 0)
+        {
+            return LINUX_ERR_EINVAL;
+        }
+
+        if (TimeoutSpec.Nanoseconds < 0 || TimeoutSpec.Nanoseconds > 999999999)
+        {
+            return LINUX_ERR_EINVAL;
+        }
+
+        uint64_t SecondsTicks = static_cast<uint64_t>(TimeoutSpec.Seconds) * LINUX_TIMER_TICKS_PER_SECOND;
+        if (TimeoutSpec.Seconds > 0 && (SecondsTicks / LINUX_TIMER_TICKS_PER_SECOND) != static_cast<uint64_t>(TimeoutSpec.Seconds))
+        {
+            return LINUX_ERR_EINVAL;
+        }
+
+        uint64_t Nanoseconds = static_cast<uint64_t>(TimeoutSpec.Nanoseconds);
+        uint64_t NanoTicks   = (Nanoseconds + (LINUX_TIMER_NANOSECONDS_PER_TICK - 1)) / LINUX_TIMER_NANOSECONDS_PER_TICK;
+
+        RemainingTicks = SecondsTicks + NanoTicks;
+        if (RemainingTicks < SecondsTicks)
+        {
+            return LINUX_ERR_EINVAL;
+        }
+
+        if (RemainingTicks == 0)
+        {
+            return LINUX_ERR_ETIMEDOUT;
+        }
+    }
+
+    if (!Sync->AddFutexWaiter(CurrentProcess->Id, FutexKey))
+    {
+        return LINUX_ERR_ENOMEM;
+    }
+
+    while (true)
+    {
+        if (!Sync->IsProcessWaitingOnFutex(CurrentProcess->Id, FutexKey))
+        {
+            return 0;
+        }
+
+        if (HasTimeout)
+        {
+            Logic->SleepProcess(CurrentProcess->Id, 1);
+        }
+        else
+        {
+            Logic->BlockProcess(CurrentProcess->Id);
+        }
+
+        if (CurrentProcess->InterruptedBySignal)
+        {
+            CurrentProcess->InterruptedBySignal = false;
+            Sync->RemoveFutexWaiter(CurrentProcess->Id, FutexKey);
+            return LINUX_ERR_EINTR;
+        }
+
+        if (!Sync->IsProcessWaitingOnFutex(CurrentProcess->Id, FutexKey))
+        {
+            return 0;
+        }
+
+        if (HasTimeout)
+        {
+            if (RemainingTicks == 0)
+            {
+                break;
+            }
+
+            --RemainingTicks;
+            if (RemainingTicks == 0)
+            {
+                break;
+            }
+        }
+    }
+
+    Sync->RemoveFutexWaiter(CurrentProcess->Id, FutexKey);
+    return LINUX_ERR_ETIMEDOUT;
+}
+
 int64_t TranslationLayer::HandleSetitimerSystemCall(int64_t Which, const void* NewValue, void* OldValue)
 {
     if (Logic == nullptr)
@@ -9956,18 +10143,48 @@ int64_t TranslationLayer::HandleRtSigreturnSystemCall()
     CurrentProcess->BlockedSignalMask  = CurrentProcess->SavedSignalMask;
     CurrentProcess->HasSavedSignalState = false;
 
+    bool ReturningFromInterruptedSyscall = CurrentProcess->SavedSignalWasSyscall;
+
+    const ProcessSavedSystemCallFrame SavedSignalFrame = CurrentProcess->SavedSignalFrame;
+
     if (CurrentProcess->SavedSignalWasSyscall && CurrentProcess->HasSavedSystemCallFrame)
     {
-        CurrentProcess->SavedSystemCallFrame = CurrentProcess->SavedSignalFrame;
+        CurrentProcess->SavedSystemCallFrame = SavedSignalFrame;
     }
     else if (!CurrentProcess->SavedSignalWasSyscall)
     {
-        CurrentProcess->State.rip = CurrentProcess->SavedSignalRIP;
-        CurrentProcess->State.rsp = CurrentProcess->SavedSignalRSP;
+        CurrentProcess->SavedSystemCallFrame = SavedSignalFrame;
+
+        const ProcessSavedSystemCallFrame& SavedFrame = SavedSignalFrame;
+        CurrentProcess->State.rax    = SavedFrame.UserRAX;
+        CurrentProcess->State.rcx    = 0;
+        CurrentProcess->State.rdx    = SavedFrame.UserRDX;
+        CurrentProcess->State.rbx    = SavedFrame.UserRBX;
+        CurrentProcess->State.rbp    = SavedFrame.UserRBP;
+        CurrentProcess->State.rsi    = SavedFrame.UserRSI;
+        CurrentProcess->State.rdi    = SavedFrame.UserRDI;
+        CurrentProcess->State.r8     = SavedFrame.UserR8;
+        CurrentProcess->State.r9     = SavedFrame.UserR9;
+        CurrentProcess->State.r10    = SavedFrame.UserR10;
+        CurrentProcess->State.r11    = 0;
+        CurrentProcess->State.r12    = SavedFrame.UserR12;
+        CurrentProcess->State.r13    = SavedFrame.UserR13;
+        CurrentProcess->State.r14    = SavedFrame.UserR14;
+        CurrentProcess->State.r15    = SavedFrame.UserR15;
+        CurrentProcess->State.rip    = SavedFrame.UserRIP;
+        CurrentProcess->State.rflags = SavedFrame.UserRFLAGS;
+        CurrentProcess->State.rsp    = SavedFrame.UserRSP;
+
+        return static_cast<int64_t>(SavedFrame.UserRAX);
     }
 
     while (DispatchOnePendingUnblockedSignal(Logic, CurrentProcess))
     {
+    }
+
+    if (ReturningFromInterruptedSyscall)
+    {
+        return LINUX_ERR_EINTR;
     }
 
     return 0;

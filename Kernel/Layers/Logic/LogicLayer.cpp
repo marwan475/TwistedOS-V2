@@ -1703,14 +1703,33 @@ bool SetProcessSignalState(ResourceLayer* Resource, Process* TargetProcess, int6
         return false;
     }
 
-    TargetProcess->SavedSignalRIP       = OriginalRIP;
-    TargetProcess->SavedSignalRSP       = OriginalRSP;
+    TargetProcess->SavedSignalRIP        = OriginalRIP;
+    TargetProcess->SavedSignalRSP        = OriginalRSP;
     TargetProcess->SavedSignalWasSyscall = WasSyscall;
-    TargetProcess->HasSavedSignalState  = true;
+    TargetProcess->HasSavedSignalState   = true;
 
     if (WasSyscall)
     {
         TargetProcess->SavedSignalFrame = TargetProcess->SavedSystemCallFrame;
+    }
+    else
+    {
+        TargetProcess->SavedSignalFrame.UserRSP    = TargetProcess->State.rsp;
+        TargetProcess->SavedSignalFrame.UserRIP    = TargetProcess->State.rip;
+        TargetProcess->SavedSignalFrame.UserRFLAGS = TargetProcess->State.rflags;
+        TargetProcess->SavedSignalFrame.UserRAX    = TargetProcess->State.rax;
+        TargetProcess->SavedSignalFrame.UserRDX    = TargetProcess->State.rdx;
+        TargetProcess->SavedSignalFrame.UserRBX    = TargetProcess->State.rbx;
+        TargetProcess->SavedSignalFrame.UserRBP    = TargetProcess->State.rbp;
+        TargetProcess->SavedSignalFrame.UserRSI    = TargetProcess->State.rsi;
+        TargetProcess->SavedSignalFrame.UserRDI    = TargetProcess->State.rdi;
+        TargetProcess->SavedSignalFrame.UserR8     = TargetProcess->State.r8;
+        TargetProcess->SavedSignalFrame.UserR9     = TargetProcess->State.r9;
+        TargetProcess->SavedSignalFrame.UserR10    = TargetProcess->State.r10;
+        TargetProcess->SavedSignalFrame.UserR12    = TargetProcess->State.r12;
+        TargetProcess->SavedSignalFrame.UserR13    = TargetProcess->State.r13;
+        TargetProcess->SavedSignalFrame.UserR14    = TargetProcess->State.r14;
+        TargetProcess->SavedSignalFrame.UserR15    = TargetProcess->State.r15;
     }
 
     uint64_t ReturnAddress     = (Restorer != 0) ? Restorer : OriginalRIP;

@@ -21,7 +21,7 @@ constexpr uint64_t MOUSE_INTERRUPT_VECTOR       = 44;
 constexpr uint64_t VIRTIO_RNG_INTERRUPT_VECTOR  = 43;
 constexpr uint64_t IDE_PRIMARY_INTERRUPT_VECTOR = 46;
 constexpr uint64_t SYSCALL_INTERRUPT_VECTOR     = 128;
-constexpr uint64_t SCHEDULER_TICK_INTERVAL      = 5;
+constexpr uint64_t SCHEDULER_TICK_INTERVAL      = 1;
 
 void DumpPageWalkForAddress(TTY* Terminal, uint64_t ActiveCR3, uint64_t Address, const char* Label)
 {
@@ -363,7 +363,7 @@ void Dispatcher::InterruptHandler(uint64_t InterruptNumber)
             if (Logic.isScheduling())
             {
                 Logic.Tick();
-                if (Ticks % SCHEDULER_TICK_INTERVAL == 0) // Schedule every 100 ticks (1 second if timer is set to 10ms)
+                if (Ticks % SCHEDULER_TICK_INTERVAL == 0) // Schedule every tick for lower interactive latency.
                 {
                     Ticks = 0;
                     Logic.Schedule();
