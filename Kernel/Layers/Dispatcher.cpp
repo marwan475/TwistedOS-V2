@@ -388,7 +388,7 @@ void Dispatcher::InterruptHandler(uint64_t InterruptNumber)
             ++MouseInterruptCount;
             if ((MouseInterruptCount % MOUSE_IRQ_LOG_INTERVAL) == 1)
             {
-                Resource.GetTTY()->printf_("mouse_dbg: irq12 vector=%lu count=%lu\n", InterruptNumber, MouseInterruptCount);
+                Resource.GetTTY()->Serialprintf("mouse_dbg: irq12 vector=%lu count=%lu\n", InterruptNumber, MouseInterruptCount);
             }
 
             Mouse* ActiveMouse = Resource.GetMouse();

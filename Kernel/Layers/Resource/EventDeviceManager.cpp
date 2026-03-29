@@ -423,12 +423,8 @@ bool EventDeviceManager::QueueInputEvent(EventDevice* Device, uint16_t Type, uin
 
     if (Device->PendingEventCount >= EventDevice::MAX_PENDING_EVENTS)
     {
-        TTY* Terminal = GetEventDeviceLogTTY();
-        if (Terminal != nullptr)
-        {
-            Terminal->printf_("event_dbg: queue_full path=%s type=%u code=%u value=%d\n", Device->Path, static_cast<unsigned int>(Type), static_cast<unsigned int>(Code), static_cast<int>(Value));
-        }
-        return false;
+        Device->PendingEventHead = (Device->PendingEventHead + 1) % EventDevice::MAX_PENDING_EVENTS;
+        --Device->PendingEventCount;
     }
 
     LinuxInputEvent Event = {};
@@ -707,13 +703,16 @@ int64_t EventDevice::IoctlFileOperation(File* OpenFile, uint64_t Request, uint64
         return LINUX_ERR_EFAULT;
     }
 
+    // Normalize sign-extended 32-bit ioctl request values from userspace.
+    uint32_t Request32 = static_cast<uint32_t>(Request);
+
     EventDevice* Device = reinterpret_cast<EventDevice*>(OpenFile->Node->NodeData);
     if (Device == nullptr)
     {
         return LINUX_ERR_EINVAL;
     }
 
-    if (Request == LINUX_IOCTL_EVIOCGVERSION)
+    if (Request32 == LINUX_IOCTL_EVIOCGVERSION)
     {
         if (Argument == 0)
         {
@@ -724,7 +723,7 @@ int64_t EventDevice::IoctlFileOperation(File* OpenFile, uint64_t Request, uint64
         return Logic->CopyFromKernelToUser(&Version, reinterpret_cast<void*>(Argument), sizeof(Version)) ? 0 : LINUX_ERR_EFAULT;
     }
 
-    if (Request == LINUX_IOCTL_EVIOCGID)
+    if (Request32 == LINUX_IOCTL_EVIOCGID)
     {
         if (Argument == 0)
         {
@@ -735,7 +734,7 @@ int64_t EventDevice::IoctlFileOperation(File* OpenFile, uint64_t Request, uint64
         return Logic->CopyFromKernelToUser(&InputId, reinterpret_cast<void*>(Argument), sizeof(InputId)) ? 0 : LINUX_ERR_EFAULT;
     }
 
-    if (Request == LINUX_IOCTL_EVIOCGRAB)
+    if (Request32 == LINUX_IOCTL_EVIOCGRAB)
     {
         if (Argument == 0)
         {
@@ -746,7 +745,7 @@ int64_t EventDevice::IoctlFileOperation(File* OpenFile, uint64_t Request, uint64
         return Logic->CopyFromUserToKernel(reinterpret_cast<const void*>(Argument), &GrabValue, sizeof(GrabValue)) ? 0 : LINUX_ERR_EFAULT;
     }
 
-    if (Request == LINUX_IOCTL_FIONREAD)
+    if (Request32 == LINUX_IOCTL_FIONREAD)
     {
         if (Argument == 0)
         {
@@ -757,14 +756,14 @@ int64_t EventDevice::IoctlFileOperation(File* OpenFile, uint64_t Request, uint64
         return Logic->CopyFromKernelToUser(&BytesAvailable, reinterpret_cast<void*>(Argument), sizeof(BytesAvailable)) ? 0 : LINUX_ERR_EFAULT;
     }
 
-    if (IsEventIoctlReadRequest(Request, 0x06) || IsEventIoctlReadRequest(Request, 0x07) || IsEventIoctlReadRequest(Request, 0x08))
+    if (IsEventIoctlReadRequest(Request32, 0x06) || IsEventIoctlReadRequest(Request32, 0x07) || IsEventIoctlReadRequest(Request32, 0x08))
     {
         if (Argument == 0)
         {
             return LINUX_ERR_EFAULT;
         }
 
-        uint32_t NameBufferSize = IoctlSize(Request);
+        uint32_t NameBufferSize = IoctlSize(Request32);
         if (NameBufferSize == 0)
         {
             return LINUX_ERR_EINVAL;
@@ -773,11 +772,11 @@ int64_t EventDevice::IoctlFileOperation(File* OpenFile, uint64_t Request, uint64
         char NameBuffer[EventDevice::MAX_EVENT_DEVICE_PATH] = {};
         const char* DefaultName = "";
 
-        if (IsEventIoctlReadRequest(Request, 0x06))
+        if (IsEventIoctlReadRequest(Request32, 0x06))
         {
             DefaultName = ResolveEventDeviceDisplayName(Device);
         }
-        else if (IsEventIoctlReadRequest(Request, 0x07))
+        else if (IsEventIoctlReadRequest(Request32, 0x07))
         {
             if (Device->Kind == EVENT_DEVICE_KIND_MOUSE)
             {
@@ -805,14 +804,58 @@ int64_t EventDevice::IoctlFileOperation(File* OpenFile, uint64_t Request, uint64
         return Logic->CopyFromKernelToUser(NameBuffer, reinterpret_cast<void*>(Argument), NameLength + 1) ? 0 : LINUX_ERR_EFAULT;
     }
 
-    if (IoctlType(Request) == static_cast<uint32_t>('E') && IoctlNumber(Request) >= 0x20 && IoctlNumber(Request) < 0x40 && (IoctlDirection(Request) & LINUX_IOC_READ) != 0)
+    if (IsEventIoctlReadRequest(Request32, 0x09))
     {
         if (Argument == 0)
         {
             return LINUX_ERR_EFAULT;
         }
 
-        uint32_t BitmapSize = IoctlSize(Request);
+        uint32_t PropSize = IoctlSize(Request32);
+        if (PropSize == 0)
+        {
+            return LINUX_ERR_EINVAL;
+        }
+
+        if (PropSize > 8)
+        {
+            PropSize = 8;
+        }
+
+        uint8_t PropBitmap[8] = {};
+        return Logic->CopyFromKernelToUser(PropBitmap, reinterpret_cast<void*>(Argument), PropSize) ? 0 : LINUX_ERR_EFAULT;
+    }
+
+    if (IsEventIoctlReadRequest(Request32, 0x18) || IsEventIoctlReadRequest(Request32, 0x19) || IsEventIoctlReadRequest(Request32, 0x1a) || IsEventIoctlReadRequest(Request32, 0x1b))
+    {
+        if (Argument == 0)
+        {
+            return LINUX_ERR_EFAULT;
+        }
+
+        uint32_t StateSize = IoctlSize(Request32);
+        if (StateSize == 0)
+        {
+            return LINUX_ERR_EINVAL;
+        }
+
+        if (StateSize > 128)
+        {
+            StateSize = 128;
+        }
+
+        uint8_t StateBitmap[128] = {};
+        return Logic->CopyFromKernelToUser(StateBitmap, reinterpret_cast<void*>(Argument), StateSize) ? 0 : LINUX_ERR_EFAULT;
+    }
+
+    if (IoctlType(Request32) == static_cast<uint32_t>('E') && IoctlNumber(Request32) >= 0x20 && IoctlNumber(Request32) < 0x40 && (IoctlDirection(Request32) & LINUX_IOC_READ) != 0)
+    {
+        if (Argument == 0)
+        {
+            return LINUX_ERR_EFAULT;
+        }
+
+        uint32_t BitmapSize = IoctlSize(Request32);
         if (BitmapSize == 0)
         {
             return LINUX_ERR_EINVAL;
@@ -824,7 +867,7 @@ int64_t EventDevice::IoctlFileOperation(File* OpenFile, uint64_t Request, uint64
         }
 
         uint8_t Bitmap[64] = {};
-        if (IoctlNumber(Request) == 0x20)
+        if (IoctlNumber(Request32) == 0x20)
         {
             SetBit(Bitmap, LINUX_EV_SYN);
 
@@ -843,7 +886,7 @@ int64_t EventDevice::IoctlFileOperation(File* OpenFile, uint64_t Request, uint64
                 SetBit(Bitmap, LINUX_EV_KEY);
             }
         }
-        else if (IoctlNumber(Request) == 0x20 + LINUX_EV_KEY)
+        else if (IoctlNumber(Request32) == 0x20 + LINUX_EV_KEY)
         {
             if (Device->Kind == EVENT_DEVICE_KIND_MOUSE)
             {
@@ -859,7 +902,7 @@ int64_t EventDevice::IoctlFileOperation(File* OpenFile, uint64_t Request, uint64
                 }
             }
         }
-        else if (IoctlNumber(Request) == 0x20 + LINUX_EV_REL)
+        else if (IoctlNumber(Request32) == 0x20 + LINUX_EV_REL)
         {
             if (Device->Kind == EVENT_DEVICE_KIND_MOUSE)
             {
@@ -867,7 +910,7 @@ int64_t EventDevice::IoctlFileOperation(File* OpenFile, uint64_t Request, uint64
                 SetBit(Bitmap, LINUX_REL_Y);
             }
         }
-        else if (IoctlNumber(Request) == 0x20 + LINUX_EV_MSC)
+        else if (IoctlNumber(Request32) == 0x20 + LINUX_EV_MSC)
         {
             if (Device->Kind == EVENT_DEVICE_KIND_KEYBOARD)
             {
@@ -889,7 +932,7 @@ int64_t EventDevice::IoctlFileOperation(File* OpenFile, uint64_t Request, uint64
             if (Terminal != nullptr)
             {
                 Terminal->printf_("event_dbg: mouse_ioctl_unsupported req=0x%llx size=%u nr=%u dir=%u\n", static_cast<unsigned long long>(Request),
-                                  static_cast<unsigned int>(IoctlSize(Request)), static_cast<unsigned int>(IoctlNumber(Request)), static_cast<unsigned int>(IoctlDirection(Request)));
+                                  static_cast<unsigned int>(IoctlSize(Request32)), static_cast<unsigned int>(IoctlNumber(Request32)), static_cast<unsigned int>(IoctlDirection(Request32)));
             }
         }
     }

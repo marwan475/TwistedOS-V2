@@ -21,6 +21,7 @@ private:
     bool    HasPendingPacket;
     uint8_t PendingPacket[3];
     uint8_t PacketIndex;
+    uint8_t PreviousButtonState;
     uint64_t InterruptCount;
     uint64_t PacketCount;
     uint64_t IgnoredIrqCount;

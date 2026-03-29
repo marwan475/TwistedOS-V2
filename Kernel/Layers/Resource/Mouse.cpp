@@ -118,7 +118,7 @@ void MouseLogf(const char* Format, Args... Arguments)
     TTY* Terminal = ResolveMouseLogTTY();
     if (Terminal != nullptr)
     {
-        Terminal->printf_(Format, Arguments...);
+        Terminal->Serialprintf(Format, Arguments...);
         return;
     }
 
@@ -132,7 +132,7 @@ void MouseLogf(const char* Format, Args... Arguments)
 
 Mouse::Mouse()
         : InitFailureCode(MOUSE_INIT_OK), ControllerInitialized(false), DefaultsCommandResult(MOUSE_CMD_RESULT_NONE), DefaultsCommandResponse(0),
-            StreamingCommandResult(MOUSE_CMD_RESULT_NONE), StreamingCommandResponse(0), HasPendingPacket(false), PendingPacket{}, PacketIndex(0), InterruptCount(0), PacketCount(0), IgnoredIrqCount(0),
+            StreamingCommandResult(MOUSE_CMD_RESULT_NONE), StreamingCommandResponse(0), HasPendingPacket(false), PendingPacket{}, PacketIndex(0), PreviousButtonState(0), InterruptCount(0), PacketCount(0), IgnoredIrqCount(0),
             DecodeFailureCount(0)
 {
 }
@@ -145,9 +145,10 @@ void Mouse::Initialize()
     DefaultsCommandResponse = 0;
     StreamingCommandResult = MOUSE_CMD_RESULT_NONE;
     StreamingCommandResponse = 0;
-    HasPendingPacket = false;
-    PacketIndex      = 0;
-    InterruptCount   = 0;
+    HasPendingPacket    = false;
+    PacketIndex          = 0;
+    PreviousButtonState  = 0;
+    InterruptCount       = 0;
     PacketCount      = 0;
     IgnoredIrqCount  = 0;
     DecodeFailureCount = 0;
@@ -491,23 +492,26 @@ void Mouse::HandleInterrupt()
 {
     ++InterruptCount;
 
-    if ((X86InB(PS2_STATUS_PORT) & PS2_STATUS_OUTPUT_BUFFER_FULL) == 0)
+    uint8_t Status = X86InB(PS2_STATUS_PORT);
+
+    MouseLogf("mouse_dbg: irq count=%lu status=0x%x\n", static_cast<unsigned long>(InterruptCount), Status);
+
+    if ((Status & PS2_STATUS_OUTPUT_BUFFER_FULL) == 0)
     {
         return;
     }
 
-    uint8_t Status = X86InB(PS2_STATUS_PORT);
+    uint8_t DataByte = X86InB(PS2_DATA_PORT);
+
     if ((Status & PS2_STATUS_MOUSE_DATA) == 0)
     {
         ++IgnoredIrqCount;
         if ((IgnoredIrqCount % MOUSE_LOG_IRQ_INTERVAL) == 1)
         {
-            MouseLogf("mouse_dbg: irq_without_mouse_data status=0x%x count=%lu\n", Status, static_cast<unsigned long>(IgnoredIrqCount));
+            MouseLogf("mouse_dbg: irq_without_mouse_data status=0x%x byte=0x%x count=%lu\n", Status, DataByte, static_cast<unsigned long>(IgnoredIrqCount));
         }
         return;
     }
-
-    uint8_t DataByte = X86InB(PS2_DATA_PORT);
 
     if (PacketIndex == 0 && (DataByte & PS2_PACKET_ALWAYS_ONE) == 0)
     {
@@ -531,12 +535,11 @@ void Mouse::HandleInterrupt()
     HasPendingPacket = true;
     bool DispatchOk  = DispatchEventInterrupt();
 
-    if (!DispatchOk || (PacketCount % MOUSE_LOG_PACKET_INTERVAL) == 1)
     {
         int32_t DeltaX = static_cast<int32_t>(static_cast<int8_t>(PendingPacket[1]));
         int32_t DeltaY = -static_cast<int32_t>(static_cast<int8_t>(PendingPacket[2]));
-        MouseLogf("mouse_dbg: pkt=%lu p0=0x%x dx=%d dy=%d dispatch=%u\n", static_cast<unsigned long>(PacketCount), PendingPacket[0], static_cast<int>(DeltaX), static_cast<int>(DeltaY),
-                  DispatchOk ? 1U : 0U);
+        MouseLogf("mouse_dbg: pkt=%lu p0=0x%x p1=0x%x p2=0x%x dx=%d dy=%d dispatch=%u irq=%lu\n", static_cast<unsigned long>(PacketCount), PendingPacket[0], PendingPacket[1], PendingPacket[2],
+                  static_cast<int>(DeltaX), static_cast<int>(DeltaY), DispatchOk ? 1U : 0U, static_cast<unsigned long>(InterruptCount));
     }
 
     HasPendingPacket = false;
@@ -619,6 +622,15 @@ bool Mouse::HandleEventInterrupt(EventDevice* Device, void* OriginalDevice)
     int32_t DeltaX = static_cast<int32_t>(static_cast<int8_t>(Packet1));
     int32_t DeltaY = -static_cast<int32_t>(static_cast<int8_t>(Packet2));
 
+    uint8_t CurrentButtonState = Packet0 & (PS2_PACKET_LEFT_BUTTON | PS2_PACKET_RIGHT_BUTTON | PS2_PACKET_MIDDLE_BUTTON);
+    uint8_t ButtonChanges      = CurrentButtonState ^ MouseDevice->PreviousButtonState;
+    MouseDevice->PreviousButtonState = CurrentButtonState;
+
+    if (DeltaX == 0 && DeltaY == 0 && ButtonChanges == 0)
+    {
+        return true;
+    }
+
     bool EventQueued = true;
 
     if (DeltaX != 0)
@@ -631,19 +643,29 @@ bool Mouse::HandleEventInterrupt(EventDevice* Device, void* OriginalDevice)
         EventQueued = EventManager->QueueInputEvent(Device, LINUX_EV_REL, LINUX_REL_Y, DeltaY) && EventQueued;
     }
 
-    int32_t LeftButtonValue   = ((Packet0 & PS2_PACKET_LEFT_BUTTON) != 0) ? 1 : 0;
-    int32_t RightButtonValue  = ((Packet0 & PS2_PACKET_RIGHT_BUTTON) != 0) ? 1 : 0;
-    int32_t MiddleButtonValue = ((Packet0 & PS2_PACKET_MIDDLE_BUTTON) != 0) ? 1 : 0;
+    if ((ButtonChanges & PS2_PACKET_LEFT_BUTTON) != 0)
+    {
+        int32_t LeftButtonValue = ((CurrentButtonState & PS2_PACKET_LEFT_BUTTON) != 0) ? 1 : 0;
+        EventQueued = EventManager->QueueInputEvent(Device, LINUX_EV_KEY, LINUX_BTN_LEFT, LeftButtonValue) && EventQueued;
+    }
 
-    EventQueued = EventManager->QueueInputEvent(Device, LINUX_EV_KEY, LINUX_BTN_LEFT, LeftButtonValue) && EventQueued;
-    EventQueued = EventManager->QueueInputEvent(Device, LINUX_EV_KEY, LINUX_BTN_RIGHT, RightButtonValue) && EventQueued;
-    EventQueued = EventManager->QueueInputEvent(Device, LINUX_EV_KEY, LINUX_BTN_MIDDLE, MiddleButtonValue) && EventQueued;
+    if ((ButtonChanges & PS2_PACKET_RIGHT_BUTTON) != 0)
+    {
+        int32_t RightButtonValue = ((CurrentButtonState & PS2_PACKET_RIGHT_BUTTON) != 0) ? 1 : 0;
+        EventQueued = EventManager->QueueInputEvent(Device, LINUX_EV_KEY, LINUX_BTN_RIGHT, RightButtonValue) && EventQueued;
+    }
+
+    if ((ButtonChanges & PS2_PACKET_MIDDLE_BUTTON) != 0)
+    {
+        int32_t MiddleButtonValue = ((CurrentButtonState & PS2_PACKET_MIDDLE_BUTTON) != 0) ? 1 : 0;
+        EventQueued = EventManager->QueueInputEvent(Device, LINUX_EV_KEY, LINUX_BTN_MIDDLE, MiddleButtonValue) && EventQueued;
+    }
 
     bool SynQueued = EventManager->QueueInputEvent(Device, LINUX_EV_SYN, LINUX_SYN_REPORT, 0);
     if (!SynQueued || !EventQueued)
     {
-        MouseLogf("mouse_dbg: queue_failed dx=%d dy=%d left=%d right=%d middle=%d syn=%u\n", static_cast<int>(DeltaX), static_cast<int>(DeltaY), static_cast<int>(LeftButtonValue),
-                  static_cast<int>(RightButtonValue), static_cast<int>(MiddleButtonValue), SynQueued ? 1U : 0U);
+        MouseLogf("mouse_dbg: queue_failed dx=%d dy=%d buttons=0x%x changes=0x%x syn=%u\n", static_cast<int>(DeltaX), static_cast<int>(DeltaY),
+                  static_cast<unsigned int>(CurrentButtonState), static_cast<unsigned int>(ButtonChanges), SynQueued ? 1U : 0U);
     }
 
     return SynQueued && EventQueued;

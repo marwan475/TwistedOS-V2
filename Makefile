@@ -256,7 +256,7 @@ qemu-debug: all
 		-S -no-reboot -no-shutdown
 
 qemu-basic: 
-	$(QEMU) $(QEMU_COMMON) -drive file=$(IMG),format=raw
+	GDK_BACKEND=x11 $(QEMU) $(QEMU_COMMON) -display gtk,grab-on-hover=on -drive file=$(IMG),format=raw
 
 qemu-basic-debug: all
 	@mkdir -p $(BUILD)
