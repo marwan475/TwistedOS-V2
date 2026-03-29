@@ -663,5 +663,14 @@ bool Mouse::HandleEventInterrupt(EventDevice* Device, void* OriginalDevice)
                   static_cast<unsigned int>(CurrentButtonState), static_cast<unsigned int>(ButtonChanges), SynQueued ? 1U : 0U);
     }
 
+    if ((MouseDevice->PacketCount % MOUSE_LOG_PACKET_INTERVAL) == 1)
+    {
+        MouseLogf("mouse_dbg: pkt=%lu dx=%d dy=%d pending=%u woke=%u\n",
+                  static_cast<unsigned long>(MouseDevice->PacketCount),
+                  static_cast<int>(DeltaX), static_cast<int>(DeltaY),
+                  Device->PendingEventCount,
+                  static_cast<unsigned int>(Device->LastWokenProcessId));
+    }
+
     return SynQueued && EventQueued;
 }

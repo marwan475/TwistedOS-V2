@@ -292,6 +292,7 @@ EventDevice* EventDeviceManager::CreateEventDevice(void* OriginalDevice, const c
         Device.HandleIntrrupt      = InterruptHandler;
         Device.Kind                = Kind;
         Device.InUse             = true;
+        Device.LastWokenProcessId  = 0xFF;
 
         if (!CopyPath(Device.Path, EventDevice::MAX_EVENT_DEVICE_PATH, Path))
         {
@@ -446,6 +447,8 @@ bool EventDeviceManager::QueueInputEvent(EventDevice* Device, uint16_t Type, uin
 
     if (!DeferWakeUntilSync)
     {
+        Device->LastWokenProcessId = 0xFF;
+
         Dispatcher* ActiveDispatcher = Dispatcher::GetActive();
         if (ActiveDispatcher != nullptr)
         {
@@ -454,7 +457,9 @@ bool EventDeviceManager::QueueInputEvent(EventDevice* Device, uint16_t Type, uin
             {
                 for (uint32_t Index = 0; Index < Device->WaitingProcessCount; ++Index)
                 {
-                    ActiveLogicLayer->UnblockProcess(Device->WaitingProcessIds[Index]);
+                    uint8_t WaiterId = Device->WaitingProcessIds[Index];
+                    ActiveLogicLayer->UnblockProcess(WaiterId);
+                    Device->LastWokenProcessId = WaiterId;
                 }
             }
         }
@@ -614,6 +619,23 @@ int64_t EventDevice::ReadFileOperation(File* OpenFile, void* Buffer, uint64_t Co
 
     uint64_t BytesRead = EventsRead * sizeof(LinuxInputEvent);
     OpenFile->CurrentOffset += BytesRead;
+
+    if (IsMouseEventDevice(Device))
+    {
+        static uint64_t MouseReadCount = 0;
+        ++MouseReadCount;
+        if ((MouseReadCount % 64) == 1)
+        {
+            TTY* Terminal = GetEventDeviceLogTTY();
+            if (Terminal != nullptr)
+            {
+                Terminal->Serialprintf("mouse_read_dbg: read=%lu events=%lu remaining=%u\n",
+                                       static_cast<unsigned long>(MouseReadCount),
+                                       static_cast<unsigned long>(EventsRead),
+                                       Device->PendingEventCount);
+            }
+        }
+    }
 
     return static_cast<int64_t>(BytesRead);
 }

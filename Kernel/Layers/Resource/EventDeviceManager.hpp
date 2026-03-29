@@ -49,6 +49,7 @@ struct EventDevice
     EventDeviceInterruptHandler HandleIntrrupt;
     EventDeviceKind Kind;
     bool            InUse;
+    uint8_t         LastWokenProcessId;
 
     FileOperations* GetFileOperations();
 

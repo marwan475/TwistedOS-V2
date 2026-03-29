@@ -5294,6 +5294,10 @@ void LogicLayer::UnblockProcess(uint8_t Id)
     }
 
     TargetProcess->Status = PROCESS_READY;
+    if (Sync != nullptr)
+    {
+        Sync->RemoveFromSleepQueue(Id);
+    }
     Sched->AddToReadyQueue(Id);
 }
 
