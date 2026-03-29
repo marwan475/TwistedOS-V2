@@ -22,9 +22,6 @@ constexpr uint64_t VIRTIO_RNG_INTERRUPT_VECTOR  = 43;
 constexpr uint64_t IDE_PRIMARY_INTERRUPT_VECTOR = 46;
 constexpr uint64_t SYSCALL_INTERRUPT_VECTOR     = 128;
 constexpr uint64_t SCHEDULER_TICK_INTERVAL      = 5;
-constexpr uint64_t MOUSE_IRQ_LOG_INTERVAL        = 64;
-
-uint64_t MouseInterruptCount = 0;
 
 void DumpPageWalkForAddress(TTY* Terminal, uint64_t ActiveCR3, uint64_t Address, const char* Label)
 {
@@ -385,12 +382,6 @@ void Dispatcher::InterruptHandler(uint64_t InterruptNumber)
         break;
         case MOUSE_INTERRUPT_VECTOR:
         {
-            ++MouseInterruptCount;
-            if ((MouseInterruptCount % MOUSE_IRQ_LOG_INTERVAL) == 1)
-            {
-                Resource.GetTTY()->Serialprintf("mouse_dbg: irq12 vector=%lu count=%lu\n", InterruptNumber, MouseInterruptCount);
-            }
-
             Mouse* ActiveMouse = Resource.GetMouse();
             if (ActiveMouse != nullptr)
             {

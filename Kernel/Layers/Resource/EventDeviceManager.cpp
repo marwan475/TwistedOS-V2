@@ -605,22 +605,6 @@ int64_t EventDevice::ReadFileOperation(File* OpenFile, void* Buffer, uint64_t Co
     uint64_t BytesRead = EventsRead * sizeof(LinuxInputEvent);
     OpenFile->CurrentOffset += BytesRead;
 
-    if (IsMouseEventDevice(Device) && BytesRead > 0)
-    {
-        static uint32_t MouseReadLogCount = 0;
-        ++MouseReadLogCount;
-
-        if ((MouseReadLogCount % EVENT_DEVICE_DEBUG_LOG_INTERVAL) == 1)
-        {
-            TTY* Terminal = GetEventDeviceLogTTY();
-            if (Terminal != nullptr)
-            {
-                Terminal->printf_("event_dbg: mouse_read bytes=%lu events=%lu remaining=%u\n", static_cast<unsigned long>(BytesRead), static_cast<unsigned long>(EventsRead),
-                                  static_cast<unsigned int>(Device->PendingEventCount));
-            }
-        }
-    }
-
     return static_cast<int64_t>(BytesRead);
 }
 
@@ -931,7 +915,7 @@ int64_t EventDevice::IoctlFileOperation(File* OpenFile, uint64_t Request, uint64
             TTY* Terminal = GetEventDeviceLogTTY();
             if (Terminal != nullptr)
             {
-                Terminal->printf_("event_dbg: mouse_ioctl_unsupported req=0x%llx size=%u nr=%u dir=%u\n", static_cast<unsigned long long>(Request),
+                Terminal->Serialprintf("event_dbg: mouse_ioctl_unsupported req=0x%llx size=%u nr=%u dir=%u\n", static_cast<unsigned long long>(Request),
                                   static_cast<unsigned int>(IoctlSize(Request32)), static_cast<unsigned int>(IoctlNumber(Request32)), static_cast<unsigned int>(IoctlDirection(Request32)));
             }
         }

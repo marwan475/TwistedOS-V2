@@ -494,8 +494,6 @@ void Mouse::HandleInterrupt()
 
     uint8_t Status = X86InB(PS2_STATUS_PORT);
 
-    MouseLogf("mouse_dbg: irq count=%lu status=0x%x\n", static_cast<unsigned long>(InterruptCount), Status);
-
     if ((Status & PS2_STATUS_OUTPUT_BUFFER_FULL) == 0)
     {
         return;
@@ -533,15 +531,7 @@ void Mouse::HandleInterrupt()
     ++PacketCount;
     PacketIndex      = 0;
     HasPendingPacket = true;
-    bool DispatchOk  = DispatchEventInterrupt();
-
-    {
-        int32_t DeltaX = static_cast<int32_t>(static_cast<int8_t>(PendingPacket[1]));
-        int32_t DeltaY = -static_cast<int32_t>(static_cast<int8_t>(PendingPacket[2]));
-        MouseLogf("mouse_dbg: pkt=%lu p0=0x%x p1=0x%x p2=0x%x dx=%d dy=%d dispatch=%u irq=%lu\n", static_cast<unsigned long>(PacketCount), PendingPacket[0], PendingPacket[1], PendingPacket[2],
-                  static_cast<int>(DeltaX), static_cast<int>(DeltaY), DispatchOk ? 1U : 0U, static_cast<unsigned long>(InterruptCount));
-    }
-
+    DispatchEventInterrupt();
     HasPendingPacket = false;
 }
 
