@@ -40,6 +40,8 @@ constexpr uint16_t LINUX_EV_SYN = 0x00;
 constexpr uint16_t LINUX_EV_KEY = 0x01;
 constexpr uint16_t LINUX_EV_REL = 0x02;
 constexpr uint16_t LINUX_EV_MSC = 0x04;
+constexpr uint16_t LINUX_SYN_REPORT  = 0x00;
+constexpr uint16_t LINUX_SYN_DROPPED = 0x03;
 constexpr uint16_t LINUX_MSC_SCAN = 0x04;
 
 constexpr uint16_t LINUX_REL_X = 0x00;
@@ -422,10 +424,45 @@ bool EventDeviceManager::QueueInputEvent(EventDevice* Device, uint16_t Type, uin
         return false;
     }
 
+    const bool WasQueueEmpty = (Device->PendingEventCount == 0);
+    const bool IsInputDevice = (Device->Kind == EVENT_DEVICE_KIND_MOUSE || Device->Kind == EVENT_DEVICE_KIND_KEYBOARD);
+
+    if (IsInputDevice && Device->OverflowedSinceLastSync)
+    {
+        if (!(Type == LINUX_EV_SYN && Code == LINUX_SYN_REPORT))
+        {
+            return true;
+        }
+
+        Type  = LINUX_EV_SYN;
+        Code  = LINUX_SYN_DROPPED;
+        Value = 0;
+        Device->OverflowedSinceLastSync = false;
+    }
+
     if (Device->PendingEventCount >= EventDevice::MAX_PENDING_EVENTS)
     {
         Device->PendingEventHead = (Device->PendingEventHead + 1) % EventDevice::MAX_PENDING_EVENTS;
         --Device->PendingEventCount;
+
+        if (IsInputDevice)
+        {
+            Device->OverflowedSinceLastSync = true;
+
+            static uint32_t InputOverflowLogCount = 0;
+            ++InputOverflowLogCount;
+            if ((InputOverflowLogCount % EVENT_DEVICE_DEBUG_LOG_INTERVAL) == 1)
+            {
+                TTY* Terminal = GetEventDeviceLogTTY();
+                if (Terminal != nullptr)
+                {
+                    Terminal->Serialprintf("event_dbg: input_queue_overflow kind=%u pending=%u path=%s\n",
+                                           static_cast<unsigned int>(Device->Kind),
+                                           static_cast<unsigned int>(Device->PendingEventCount),
+                                           Device->Path);
+                }
+            }
+        }
     }
 
     LinuxInputEvent Event = {};
@@ -439,13 +476,7 @@ bool EventDeviceManager::QueueInputEvent(EventDevice* Device, uint16_t Type, uin
     Device->PendingEventTail                         = (Device->PendingEventTail + 1) % EventDevice::MAX_PENDING_EVENTS;
     ++Device->PendingEventCount;
 
-    bool DeferWakeUntilSync = false;
-    if (Device->Kind == EVENT_DEVICE_KIND_MOUSE || Device->Kind == EVENT_DEVICE_KIND_KEYBOARD)
-    {
-        DeferWakeUntilSync = !(Type == LINUX_EV_SYN && Code == 0);
-    }
-
-    if (!DeferWakeUntilSync)
+    if (WasQueueEmpty)
     {
         Device->LastWokenProcessId = 0xFF;
 

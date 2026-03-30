@@ -36,7 +36,7 @@ struct EventDevice
 {
     static constexpr uint32_t MAX_WAITING_PROCESS_IDS = 64;
     static constexpr uint32_t MAX_EVENT_DEVICE_PATH   = 64;
-    static constexpr uint32_t MAX_PENDING_EVENTS      = 128;
+    static constexpr uint32_t MAX_PENDING_EVENTS      = 1024;
 
     void*           OriginalDevice;
     char            Path[MAX_EVENT_DEVICE_PATH];
@@ -50,6 +50,7 @@ struct EventDevice
     EventDeviceKind Kind;
     bool            InUse;
     uint8_t         LastWokenProcessId;
+    bool            OverflowedSinceLastSync;
 
     FileOperations* GetFileOperations();
 
