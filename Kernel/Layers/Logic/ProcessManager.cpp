@@ -124,8 +124,15 @@ bool InitializeProcessEntry(Process& ProcessEntry, ProcessState Status, ProcessL
         ProcessEntry.ProcessGroupId = static_cast<int32_t>(ProcessEntry.Id);
         ProcessEntry.SessionId      = static_cast<int32_t>(ProcessEntry.Id);
     }
-    ProcessEntry.BlockedSignalMask         = 0;
-    ProcessEntry.PendingSignalMask         = 0;
+    ProcessEntry.BlockedSignalMask          = 0;
+    ProcessEntry.PendingSignalMask          = 0;
+    ProcessEntry.InterruptedBySignal        = false;
+    ProcessEntry.HasSavedSignalState        = false;
+    ProcessEntry.SavedSignalMask            = 0;
+    ProcessEntry.SavedSignalFrame           = {};
+    ProcessEntry.SavedSignalRIP             = 0;
+    ProcessEntry.SavedSignalRSP             = 0;
+    ProcessEntry.SavedSignalWasSyscall      = false;
     ProcessEntry.DebugSyscallTraceRemaining = 0;
     ProcessEntry.DebugIsXorgProcess        = false;
     ProcessEntry.ClearChildTidAddress      = nullptr;

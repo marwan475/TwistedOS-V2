@@ -502,7 +502,7 @@ bool VirtualMemoryManager::UnmapPage(UINTN VirtualAddr)
 
     PageTable[PageTableIndex].value = 0;
 
-    __asm__("invlpg (%0)\n" : : "r"(VirtualAddr));
+    __asm__("invlpg (%0)\n" : : "r"(VirtualAddr) : "memory");
 
     return true;
 }

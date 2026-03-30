@@ -50,7 +50,7 @@ size_t strlen(const char* src)
     return length;
 }
 
-void* memcpy(void* dest, const void* src, size_t count)
+extern "C" void* memcpy(void* dest, const void* src, size_t count)
 {
     unsigned char*       d = (unsigned char*) dest;
     const unsigned char* s = (const unsigned char*) src;
