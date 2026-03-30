@@ -58,9 +58,10 @@ private:
     static constexpr uint8_t VIRTIO_STATUS_DRIVER_OK   = 0x04;
     static constexpr uint8_t VIRTQ_DESC_F_WRITE        = 0x02;
 
-    static constexpr uint32_t VIRTIO_QUEUE_INDEX_RNG   = 0;
-    static constexpr uint32_t VIRTIO_QUEUE_MEMORY_PAGES = 1;
-    static constexpr uint32_t VIRTIO_MAX_RANDOM_CHUNK  = 256;
+    static constexpr uint32_t VIRTIO_QUEUE_INDEX_RNG       = 0;
+    static constexpr uint32_t VIRTIO_LEGACY_VRING_ALIGN    = 4096;
+    static constexpr uint32_t VIRTIO_QUEUE_MEMORY_PAGES    = 2;
+    static constexpr uint32_t VIRTIO_MAX_RANDOM_CHUNK      = 256;
 
     uint16_t               IoBase;
     bool                   Initialized;

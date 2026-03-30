@@ -108,7 +108,7 @@ bool VirtioRandom::SetupQueue()
     uint32_t UsedBytes       = static_cast<uint32_t>(sizeof(uint16_t) * 2 + sizeof(VirtQueueUsedElement) * QueueSize + sizeof(uint16_t));
 
     uint32_t AvailableOffset = DescriptorBytes;
-    uint32_t UsedOffset      = AlignUpTo(AvailableOffset + AvailableBytes, 4);
+    uint32_t UsedOffset      = AlignUpTo(AvailableOffset + AvailableBytes, VIRTIO_LEGACY_VRING_ALIGN);
     DataOffset               = AlignUpTo(UsedOffset + UsedBytes, 16);
 
     if (DataOffset + VIRTIO_MAX_RANDOM_CHUNK > (PAGE_SIZE * VIRTIO_QUEUE_MEMORY_PAGES))
@@ -155,7 +155,7 @@ bool VirtioRandom::SubmitEntropyRequest(uint32_t RequestLength, uint8_t* Destina
     VirtQueueAvailable*  AvailableRing   = reinterpret_cast<VirtQueueAvailable*>(QueueBytes + (sizeof(VirtQueueDescriptor) * QueueSize));
 
     uint32_t AvailableBytes = static_cast<uint32_t>(sizeof(uint16_t) * 2 + sizeof(uint16_t) * QueueSize + sizeof(uint16_t));
-    uint32_t UsedOffset     = AlignUpTo(static_cast<uint32_t>(sizeof(VirtQueueDescriptor) * QueueSize) + AvailableBytes, 4);
+    uint32_t UsedOffset     = AlignUpTo(static_cast<uint32_t>(sizeof(VirtQueueDescriptor) * QueueSize) + AvailableBytes, VIRTIO_LEGACY_VRING_ALIGN);
     VirtQueueUsed* UsedRing = reinterpret_cast<VirtQueueUsed*>(QueueBytes + UsedOffset);
 
     uint8_t*  EntropyBuffer     = QueueBytes + DataOffset;
