@@ -3147,6 +3147,151 @@ int64_t TranslationLayer::HandleSocketSystemCall(int64_t Domain, int64_t Type, i
     return FileDescriptor;
 }
 
+int64_t TranslationLayer::HandleSocketpairSystemCall(int64_t Domain, int64_t Type, int64_t Protocol, void* SocketVector)
+{
+    if (Logic == nullptr || SocketVector == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    if (Domain != LINUX_AF_UNIX)
+    {
+        return LINUX_ERR_EAFNOSUPPORT;
+    }
+
+    ProcessManager* PM = Logic->GetProcessManager();
+    if (PM == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    InterProcessComunicationManager* IPC = Logic->GetInterProcessComunicationManager();
+    if (IPC == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    Process* CurrentProcess = PM->GetRunningProcess();
+    if (CurrentProcess == nullptr)
+    {
+        return LINUX_ERR_EFAULT;
+    }
+
+    int64_t SocketType  = (Type & LINUX_SOCKET_CALL_TYPE_MASK);
+    int64_t SocketFlags = (Type & ~LINUX_SOCKET_CALL_TYPE_MASK);
+    if ((SocketFlags & ~(LINUX_SOCKET_CALL_NONBLOCK | LINUX_SOCKET_CALL_CLOEXEC)) != 0)
+    {
+        return LINUX_ERR_EINVAL;
+    }
+
+    int64_t Fd0 = -1;
+    int64_t Fd1 = -1;
+    for (size_t FileIndex = 0; FileIndex < MAX_OPEN_FILES_PER_PROCESS; ++FileIndex)
+    {
+        if (CurrentProcess->FileTable[FileIndex] != nullptr)
+        {
+            continue;
+        }
+
+        if (Fd0 < 0)
+        {
+            Fd0 = static_cast<int64_t>(FileIndex);
+            continue;
+        }
+
+        Fd1 = static_cast<int64_t>(FileIndex);
+        break;
+    }
+
+    if (Fd0 < 0 || Fd1 < 0)
+    {
+        return LINUX_ERR_EMFILE;
+    }
+
+    int64_t Error0  = 0;
+    Socket* Socket0 = IPC->CreateSocket(Domain, SocketType, Protocol, CurrentProcess, Fd0, &Error0);
+    if (Socket0 == nullptr)
+    {
+        return (Error0 != 0) ? Error0 : LINUX_ERR_ENOMEM;
+    }
+
+    int64_t Error1  = 0;
+    Socket* Socket1 = IPC->CreateSocket(Domain, SocketType, Protocol, CurrentProcess, Fd1, &Error1);
+    if (Socket1 == nullptr)
+    {
+        IPC->CloseSocket(CurrentProcess, Fd0);
+        return (Error1 != 0) ? Error1 : LINUX_ERR_ENOMEM;
+    }
+
+    UnixSocket* Unix0 = reinterpret_cast<UnixSocket*>(Socket0->Implementation);
+    UnixSocket* Unix1 = reinterpret_cast<UnixSocket*>(Socket1->Implementation);
+    Unix0->ConnectedPeer = Socket1;
+    Unix1->ConnectedPeer = Socket0;
+
+    auto MakeSocketFile = [&](Socket* Sock, int64_t Fd) -> File*
+    {
+        INode* Node = new INode;
+        if (Node == nullptr)
+        {
+            return nullptr;
+        }
+
+        *Node           = {};
+        Node->NodeType  = INODE_DEV;
+        Node->NodeSize  = 0;
+        Node->NodeData  = Sock;
+        Node->INodeOps  = nullptr;
+        Node->FileOps   = &Sock->FileOps;
+
+        File* OpenFile = new File;
+        if (OpenFile == nullptr)
+        {
+            delete Node;
+            return nullptr;
+        }
+
+        OpenFile->FileDescriptor  = static_cast<uint64_t>(Fd);
+        OpenFile->Node            = Node;
+        OpenFile->CurrentOffset   = 0;
+        OpenFile->AccessFlags     = READ_WRITE;
+        OpenFile->OpenFlags       = static_cast<uint64_t>(LINUX_O_ACCMODE | ((SocketFlags & LINUX_SOCKET_CALL_NONBLOCK) != 0 ? LINUX_O_NONBLOCK : 0));
+        OpenFile->DescriptorFlags = ((SocketFlags & LINUX_SOCKET_CALL_CLOEXEC) != 0) ? LINUX_FD_CLOEXEC : 0;
+        OpenFile->DirectoryEntry  = nullptr;
+        return OpenFile;
+    };
+
+    File* File0 = MakeSocketFile(Socket0, Fd0);
+    if (File0 == nullptr)
+    {
+        IPC->CloseSocket(CurrentProcess, Fd1);
+        IPC->CloseSocket(CurrentProcess, Fd0);
+        return LINUX_ERR_ENOMEM;
+    }
+
+    File* File1 = MakeSocketFile(Socket1, Fd1);
+    if (File1 == nullptr)
+    {
+        delete File0->Node;
+        delete File0;
+        IPC->CloseSocket(CurrentProcess, Fd1);
+        IPC->CloseSocket(CurrentProcess, Fd0);
+        return LINUX_ERR_ENOMEM;
+    }
+
+    CurrentProcess->FileTable[Fd0] = File0;
+    CurrentProcess->FileTable[Fd1] = File1;
+
+    int32_t KernelFds[2] = {static_cast<int32_t>(Fd0), static_cast<int32_t>(Fd1)};
+    if (!Logic->CopyFromKernelToUser(KernelFds, SocketVector, sizeof(KernelFds)))
+    {
+        HandleCloseSystemCall(static_cast<uint64_t>(Fd1));
+        HandleCloseSystemCall(static_cast<uint64_t>(Fd0));
+        return LINUX_ERR_EFAULT;
+    }
+
+    return 0;
+}
+
 int64_t TranslationLayer::HandleConnectSystemCall(uint64_t FileDescriptor, const void* SocketAddress, uint64_t SocketAddressLength)
 {
     if (Logic == nullptr || SocketAddress == nullptr)

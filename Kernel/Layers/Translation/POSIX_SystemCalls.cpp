@@ -447,8 +447,9 @@ int64_t TranslationLayer::HandlePosixSystemCallNumber(uint64_t SystemCallNumber,
                         break;
                     case 52: // getpeername
                         break;
-                    case 53: // socketpair
-                        break;
+        case 53: // socketpair
+            return HandleSocketpairSystemCall(static_cast<int64_t>(Arg1), static_cast<int64_t>(Arg2), static_cast<int64_t>(Arg3), reinterpret_cast<void*>(Arg4));
+            break;
                     case 54: // setsockopt
                         break;
                     case 55: // getsockopt

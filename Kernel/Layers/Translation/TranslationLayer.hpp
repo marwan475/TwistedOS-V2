@@ -33,6 +33,7 @@ public:
     int64_t HandleLseekSystemCall(uint64_t FileDescriptor, int64_t Offset, int64_t Whence);
     int64_t HandleIoctlSystemCall(uint64_t FileDescriptor, uint64_t Request, uint64_t Argument);
     int64_t HandleSocketSystemCall(int64_t Domain, int64_t Type, int64_t Protocol);
+    int64_t HandleSocketpairSystemCall(int64_t Domain, int64_t Type, int64_t Protocol, void* SocketVector);
     int64_t HandleConnectSystemCall(uint64_t FileDescriptor, const void* SocketAddress, uint64_t SocketAddressLength);
     int64_t HandleAcceptSystemCall(uint64_t FileDescriptor, void* SocketAddress, void* SocketAddressLength);
     int64_t HandleShutdownSystemCall(uint64_t FileDescriptor, int64_t How);

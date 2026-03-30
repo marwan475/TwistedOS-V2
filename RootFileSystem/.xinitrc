@@ -4,27 +4,66 @@ export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/tmp/xdg-runtime-root}"
 mkdir -p "${XDG_RUNTIME_DIR}"
 chmod 700 "${XDG_RUNTIME_DIR}" 2>/dev/null || true
 
-if command -v xsetroot >/dev/null 2>&1; then
-	xsetroot -solid "#1f2430"
+# --- background & cursor ---
+xsetroot -solid "#1a1b26" 2>/dev/null || true
+xsetroot -cursor_name left_ptr 2>/dev/null || true
+
+# --- dbus session bus ---
+if command -v dbus-daemon >/dev/null 2>&1; then
+	eval "$(dbus-launch --sh-syntax 2>/dev/null)" || true
 fi
 
-if command -v startxfce4 >/dev/null 2>&1; then
-	if command -v dbus-run-session >/dev/null 2>&1; then
-		exec dbus-run-session startxfce4
-	fi
-	exec startxfce4
+# --- status bar (date, memory, uptime in dwm title) ---
+statusbar() {
+	while true; do
+		MEM=""
+		if [ -f /proc/meminfo ]; then
+			MEM_USED=$(awk '/MemTotal/{t=$2} /MemAvailable/{a=$2} END{printf "%.0f",(t-a)/1024}' /proc/meminfo 2>/dev/null)
+			MEM_TOTAL=$(awk '/MemTotal/{printf "%.0f",$2/1024}' /proc/meminfo 2>/dev/null)
+			if [ -n "${MEM_USED}" ] && [ -n "${MEM_TOTAL}" ]; then
+				MEM="mem ${MEM_USED}/${MEM_TOTAL}M"
+			fi
+		fi
+
+		UP=""
+		if [ -f /proc/uptime ]; then
+			SECS=$(awk '{printf "%.0f",$1}' /proc/uptime 2>/dev/null)
+			if [ -n "${SECS}" ]; then
+				HRS=$((SECS / 3600))
+				MINS=$(( (SECS % 3600) / 60 ))
+				UP="up ${HRS}h${MINS}m"
+			fi
+		fi
+
+		DATE=$(date '+%a %b %d  %H:%M' 2>/dev/null)
+
+		SEP=" | "
+		BAR=""
+		[ -n "${MEM}" ] && BAR="${MEM}"
+		[ -n "${UP}" ]  && BAR="${BAR:+${BAR}${SEP}}${UP}"
+		[ -n "${DATE}" ] && BAR="${BAR:+${BAR}${SEP}}${DATE}"
+
+		xsetroot -name " ${BAR} " 2>/dev/null
+		sleep 5
+	done
+}
+statusbar &
+
+# --- launch a terminal on startup ---
+if command -v st >/dev/null 2>&1; then
+	st &
+elif command -v xterm >/dev/null 2>&1; then
+	xterm -fa "DejaVu Sans Mono" -fs 11 &
 fi
 
+# --- run dwm (loop restarts it on clean exit / reload) ---
 if command -v dwm >/dev/null 2>&1; then
-	if command -v xfce4-terminal >/dev/null 2>&1; then
-		xfce4-terminal &
-	elif command -v xterm >/dev/null 2>&1; then
-		xterm -fa "monospace" -fs 11 &
-	fi
-	exec dwm
+	while true; do
+		dwm 2>/tmp/dwm.log
+	done
 fi
 
-echo "xinitrc: no supported desktop session found"
+echo "xinitrc: dwm not found"
 while :; do
 	sleep 60
 done
