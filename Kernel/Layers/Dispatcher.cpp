@@ -568,6 +568,24 @@ void Dispatcher::HandleException(const Registers* Regs)
                                (void*) (HeapStart + HeapSize), (void*) StackStart, (void*) (StackStart + StackSize));
     }
 
+    bool IsUserModeException = ((Regs->cs & 0x3ULL) != 0);
+
+    if (IsUserModeException && CurrentProcess != nullptr && CurrentProcess->Level == PROCESS_LEVEL_USER)
+    {
+        Terminal->Serialprintf("Exception: delivering fatal signal to user process %u\n", CurrentProcess->Id);
+
+        int32_t WaitStatus = static_cast<int32_t>(11 & 0x7F);
+        WaitStatus |= 0x80;
+        Logic.KillProcess(CurrentProcess->Id, WaitStatus);
+        Logic.Schedule();
+
+        while (1)
+        {
+            asm volatile("sti");
+            X86Halt();
+        }
+    }
+
     while (1)
     {
         X86Halt();

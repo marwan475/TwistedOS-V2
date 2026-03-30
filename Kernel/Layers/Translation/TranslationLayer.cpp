@@ -10147,13 +10147,19 @@ int64_t TranslationLayer::HandleRtSigreturnSystemCall()
 
     const ProcessSavedSystemCallFrame SavedSignalFrame = CurrentProcess->SavedSignalFrame;
 
-    if (CurrentProcess->SavedSignalWasSyscall && CurrentProcess->HasSavedSystemCallFrame)
+    if (CurrentProcess->SavedSignalWasSyscall)
     {
-        CurrentProcess->SavedSystemCallFrame = SavedSignalFrame;
+        // Restore the pre-signal syscall frame and force syscall-return mode so
+        // the assembly return path iretqs back to the interrupted user context.
+        CurrentProcess->SavedSystemCallFrame       = SavedSignalFrame;
+        CurrentProcess->HasSavedSystemCallFrame    = true;
+        CurrentProcess->WaitingForSystemCallReturn = true;
     }
-    else if (!CurrentProcess->SavedSignalWasSyscall)
+    else
     {
         CurrentProcess->SavedSystemCallFrame = SavedSignalFrame;
+        CurrentProcess->HasSavedSystemCallFrame    = true;
+        CurrentProcess->WaitingForSystemCallReturn = true;
 
         const ProcessSavedSystemCallFrame& SavedFrame = SavedSignalFrame;
         CurrentProcess->State.rax    = SavedFrame.UserRAX;

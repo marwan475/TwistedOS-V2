@@ -8,17 +8,21 @@ mkdir -p /tmp /tmp/.X11-unix /var/lib/xkb
 chmod 1777 /tmp
 chmod 1777 /tmp/.X11-unix
 
-if [ -x /usr/bin/xinit ] && [ -x /usr/bin/dwm ] && [ -x /usr/libexec/Xorg ]; then
-	echo "init: starting xinit (dwm -- /usr/libexec/Xorg)"
-	exec /usr/bin/xinit /usr/bin/dwm -- /usr/libexec/Xorg :0 -wr -nolisten tcp
+if [ -x /usr/bin/xinit ] && [ -x /root/.xinitrc ]; then
+	XORG_BIN=""
+	if [ -x /usr/libexec/Xorg ]; then
+		XORG_BIN="/usr/libexec/Xorg"
+	elif [ -x /usr/bin/Xorg ]; then
+		XORG_BIN="/usr/bin/Xorg"
+	fi
+
+	if [ -n "${XORG_BIN}" ]; then
+		echo "init: starting xinit (/root/.xinitrc -- ${XORG_BIN})"
+		exec /usr/bin/xinit /root/.xinitrc -- "${XORG_BIN}" :0 -wr -nolisten tcp
+	fi
 fi
 
-if [ -x /usr/bin/xinit ] && [ -x /usr/bin/dwm ] && [ -x /usr/bin/Xorg ]; then
-	echo "init: starting xinit (dwm -- /usr/bin/Xorg)"
-	exec /usr/bin/xinit /usr/bin/dwm -- /usr/bin/Xorg :0 -wr -nolisten tcp
-fi
-
-echo "init: required binaries not found (xinit/dwm/Xorg); refusing to exec shell"
+echo "init: required binaries not found (xinit/.xinitrc/Xorg); refusing to exec shell"
 while true; do
 	sleep 60
 done

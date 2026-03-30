@@ -6,8 +6,13 @@
 
 #include "InterProcessComunicationManager.hpp"
 
+#include <Layers/Dispatcher.hpp>
+#include <Layers/Logic/LogicLayer.hpp>
+
 namespace
 {
+constexpr uint64_t LINUX_O_NONBLOCK  = 0x800;
+constexpr int64_t  LINUX_ERR_EINTR   = -4;
 constexpr uint64_t LINUX_SOCKADDR_FAMILY_SIZE = sizeof(uint16_t);
 constexpr int64_t  LINUX_LISTEN_SOMAXCONN     = 4096;
 constexpr uint16_t LINUX_INET_EPHEMERAL_START = 49152;
@@ -597,14 +602,50 @@ int64_t PipeRead(File* OpenFile, void* Buffer, uint64_t Count)
 	}
 
 	PipeKernelObject* Pipe = Endpoint->Pipe;
-	if (Pipe->BufferedBytes == 0)
+
+	while (Pipe->BufferedBytes == 0)
 	{
 		if (Pipe->WriterReferenceCount == 0)
 		{
 			return 0;
 		}
 
-		return LINUX_PIPE_ERR_EAGAIN;
+		if ((OpenFile->OpenFlags & LINUX_O_NONBLOCK) != 0)
+		{
+			return LINUX_PIPE_ERR_EAGAIN;
+		}
+
+		Dispatcher* ActiveDispatcher = Dispatcher::GetActive();
+		if (ActiveDispatcher == nullptr)
+		{
+			return LINUX_PIPE_ERR_EAGAIN;
+		}
+
+		LogicLayer* ActiveLogicLayer = ActiveDispatcher->GetLogicLayer();
+		if (ActiveLogicLayer == nullptr)
+		{
+			return LINUX_PIPE_ERR_EAGAIN;
+		}
+
+		ProcessManager* PM = ActiveLogicLayer->GetProcessManager();
+		if (PM == nullptr)
+		{
+			return LINUX_PIPE_ERR_EAGAIN;
+		}
+
+		Process* CurrentProcess = PM->GetRunningProcess();
+		if (CurrentProcess == nullptr)
+		{
+			return LINUX_PIPE_ERR_EAGAIN;
+		}
+
+		ActiveLogicLayer->SleepProcess(CurrentProcess->Id, 1);
+
+		if (CurrentProcess->InterruptedBySignal)
+		{
+			CurrentProcess->InterruptedBySignal = false;
+			return LINUX_ERR_EINTR;
+		}
 	}
 
 	uint64_t BytesToRead = (Count < Pipe->BufferedBytes) ? Count : Pipe->BufferedBytes;
@@ -648,9 +689,51 @@ int64_t PipeWrite(File* OpenFile, const void* Buffer, uint64_t Count)
 	}
 
 	uint64_t AvailableSpace = LINUX_PIPE_BUFFER_CAPACITY - Pipe->BufferedBytes;
-	if (AvailableSpace == 0)
+	while (AvailableSpace == 0)
 	{
-		return LINUX_PIPE_ERR_EAGAIN;
+		if (Pipe->ReaderReferenceCount == 0)
+		{
+			return LINUX_PIPE_ERR_EPIPE;
+		}
+
+		if ((OpenFile->OpenFlags & LINUX_O_NONBLOCK) != 0)
+		{
+			return LINUX_PIPE_ERR_EAGAIN;
+		}
+
+		Dispatcher* ActiveDispatcher = Dispatcher::GetActive();
+		if (ActiveDispatcher == nullptr)
+		{
+			return LINUX_PIPE_ERR_EAGAIN;
+		}
+
+		LogicLayer* ActiveLogicLayer = ActiveDispatcher->GetLogicLayer();
+		if (ActiveLogicLayer == nullptr)
+		{
+			return LINUX_PIPE_ERR_EAGAIN;
+		}
+
+		ProcessManager* PM = ActiveLogicLayer->GetProcessManager();
+		if (PM == nullptr)
+		{
+			return LINUX_PIPE_ERR_EAGAIN;
+		}
+
+		Process* CurrentProcess = PM->GetRunningProcess();
+		if (CurrentProcess == nullptr)
+		{
+			return LINUX_PIPE_ERR_EAGAIN;
+		}
+
+		ActiveLogicLayer->SleepProcess(CurrentProcess->Id, 1);
+
+		if (CurrentProcess->InterruptedBySignal)
+		{
+			CurrentProcess->InterruptedBySignal = false;
+			return LINUX_ERR_EINTR;
+		}
+
+		AvailableSpace = LINUX_PIPE_BUFFER_CAPACITY - Pipe->BufferedBytes;
 	}
 
 	uint64_t BytesToWrite = (Count < AvailableSpace) ? Count : AvailableSpace;

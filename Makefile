@@ -102,6 +102,7 @@ ROOTFS_EFFECTIVE_SIZE_MB := $(shell req=$(ROOTFS_REQUIRED_SIZE_MB); min=$(ROOTFS
 IMG_SECTORS = $(shell echo $$(( ($(ESP_SIZE) + $(ROOTFS_EFFECTIVE_SIZE_MB) + 2) * 2048 )))
 ESP_SECTORS = $(shell echo $$(( $(ESP_SIZE) * 2048 )))
 ROOTFS_SECTORS = $(shell echo $$(( $(ROOTFS_EFFECTIVE_SIZE_MB) * 2048 )))
+SECTOR_SIZE = 512
 GDB = gdb
 QEMU_GDB_PORT = 1234
 QEMU_DEBUG_SERIAL_LOG = $(BUILD)qemu-debug-serial.log
@@ -129,6 +130,8 @@ QEMU_FULL = \
 	-device usb-mouse,bus=xhci.0
 
 all: bin build $(EFI) $(KERNEL) $(INITRAMFS) $(IMG)
+
+kernel: update-kernel-img
 
 clean:
 	rm -rf $(BIN) $(BUILD) $(OUTPUT) *.pcap $(INIT_BIN) $(TEST1_BIN) $(TEST2_BIN) 
@@ -251,6 +254,44 @@ $(IMG): $(EFI) $(KERNEL) $(INITRAMFS)
 qemu: 
 	$(QEMU) $(QEMU_FULL)
 
+update-kernel-img: $(KERNEL) | build
+	@echo "Updating /kernel.bin in existing image $(IMG)"
+	@if [ ! -f "$(IMG)" ]; then \
+		echo "Error: $(IMG) not found. Run 'make' once to create the disk image." >&2; \
+		exit 1; \
+	fi
+	@START=$$(parted -s $(IMG) unit s print | awk '/^ 1/ {print $$2}' | sed 's/s//'); \
+	if [ -z "$$START" ]; then \
+		echo "Error: unable to locate ESP partition start sector in $(IMG)" >&2; \
+		exit 1; \
+	fi; \
+	ESP_TMP="$(BUILD)esp-update.fat"; \
+	dd if=$(IMG) of=$$ESP_TMP bs=$(SECTOR_SIZE) skip=$$START count=$(ESP_SECTORS) status=none; \
+	export MTOOLS_SKIP_CHECK=1; \
+	mcopy -o -i $$ESP_TMP $(BIN)$(KERNEL) ::/kernel.bin; \
+	dd if=$$ESP_TMP of=$(IMG) bs=$(SECTOR_SIZE) seek=$$START conv=notrunc status=none; \
+	rm -f $$ESP_TMP
+
+update-boot-img: $(EFI) $(KERNEL) $(INITRAMFS) | build
+	@echo "Updating EFI boot files in existing image $(IMG)"
+	@if [ ! -f "$(IMG)" ]; then \
+		echo "Error: $(IMG) not found. Run 'make' once to create the disk image." >&2; \
+		exit 1; \
+	fi
+	@START=$$(parted -s $(IMG) unit s print | awk '/^ 1/ {print $$2}' | sed 's/s//'); \
+	if [ -z "$$START" ]; then \
+		echo "Error: unable to locate ESP partition start sector in $(IMG)" >&2; \
+		exit 1; \
+	fi; \
+	ESP_TMP="$(BUILD)esp-update.fat"; \
+	dd if=$(IMG) of=$$ESP_TMP bs=$(SECTOR_SIZE) skip=$$START count=$(ESP_SECTORS) status=none; \
+	export MTOOLS_SKIP_CHECK=1; \
+	mcopy -o -i $$ESP_TMP $(BIN)$(EFI) ::/EFI/BOOT/BOOTX64.EFI; \
+	mcopy -o -i $$ESP_TMP $(BIN)$(KERNEL) ::/kernel.bin; \
+	mcopy -o -i $$ESP_TMP $(BIN)$(INITRAMFS) ::/initramfs.cpio; \
+	dd if=$$ESP_TMP of=$(IMG) bs=$(SECTOR_SIZE) seek=$$START conv=notrunc status=none; \
+	rm -f $$ESP_TMP
+
 qemu-debug qemu-basic-debug gdb-kernel debug: DEBUG=1
 
 qemu-debug: all
@@ -288,7 +329,7 @@ ALL_SOURCE_FILES := $(shell find . \
 	\( -path './busybox' -o -path './RootFileSystem/alpine-rootfs' -o -path './build' -o -path './bin' \) -prune -o \
 	-type f \( -name '*.c' -o -name '*.cpp' -o -name '*.h' -o -name '*.hpp' \) -print 2>/dev/null)
 
-.PHONY: format qemu qemu-basic qemu-debug qemu-basic-debug gdb-kernel debug busybox-rootfs
+.PHONY: format qemu qemu-basic qemu-debug qemu-basic-debug gdb-kernel debug busybox-rootfs kernel update-kernel-img update-boot-img
 
 format:
 	@echo "Formatting all C/C++ files in repository..."
