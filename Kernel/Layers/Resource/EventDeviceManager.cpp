@@ -294,6 +294,7 @@ EventDevice* EventDeviceManager::CreateEventDevice(void* OriginalDevice, const c
         Device.HandleIntrrupt      = InterruptHandler;
         Device.Kind                = Kind;
         Device.InUse             = true;
+        Device.Grabbed             = false;
         Device.LastWokenProcessId  = 0xFF;
 
         if (!CopyPath(Device.Path, EventDevice::MAX_EVENT_DEVICE_PATH, Path))
@@ -789,7 +790,23 @@ int64_t EventDevice::IoctlFileOperation(File* OpenFile, uint64_t Request, uint64
         }
 
         int32_t GrabValue = 0;
-        return Logic->CopyFromUserToKernel(reinterpret_cast<const void*>(Argument), &GrabValue, sizeof(GrabValue)) ? 0 : LINUX_ERR_EFAULT;
+        if (!Logic->CopyFromUserToKernel(reinterpret_cast<const void*>(Argument), &GrabValue, sizeof(GrabValue)))
+        {
+            return LINUX_ERR_EFAULT;
+        }
+
+        Device->Grabbed = (GrabValue != 0);
+
+        {
+            TTY* Terminal = GetEventDeviceLogTTY();
+            if (Terminal != nullptr)
+            {
+                Terminal->Serialprintf("kb_dbg: EVIOCGRAB value=%d grabbed=%d device_kind=%d\n",
+                    GrabValue, Device->Grabbed ? 1 : 0, static_cast<int>(Device->Kind));
+            }
+        }
+
+        return 0;
     }
 
     if (Request32 == LINUX_IOCTL_FIONREAD)

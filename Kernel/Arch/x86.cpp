@@ -45,6 +45,8 @@ extern "C"
     extern uint64_t SavedSystemCallUserR8;
     extern uint64_t SavedSystemCallUserR9;
     extern uint64_t SavedSystemCallUserR10;
+    extern uint64_t SavedSystemCallUserRCX;
+    extern uint64_t SavedSystemCallUserR11;
     extern uint64_t SavedSystemCallUserR12;
     extern uint64_t SavedSystemCallUserR13;
     extern uint64_t SavedSystemCallUserR14;
@@ -755,6 +757,8 @@ extern "C" bool PersistCurrentSavedSystemCallFrame()
     CurrentProcess->SavedSystemCallFrame.UserR8     = SavedSystemCallUserR8;
     CurrentProcess->SavedSystemCallFrame.UserR9     = SavedSystemCallUserR9;
     CurrentProcess->SavedSystemCallFrame.UserR10    = SavedSystemCallUserR10;
+    CurrentProcess->SavedSystemCallFrame.UserRCX    = SavedSystemCallUserRCX;
+    CurrentProcess->SavedSystemCallFrame.UserR11    = SavedSystemCallUserR11;
     CurrentProcess->SavedSystemCallFrame.UserR12    = SavedSystemCallUserR12;
     CurrentProcess->SavedSystemCallFrame.UserR13    = SavedSystemCallUserR13;
     CurrentProcess->SavedSystemCallFrame.UserR14    = SavedSystemCallUserR14;
@@ -784,6 +788,8 @@ extern "C" bool RestoreCurrentSavedSystemCallFrame()
     SavedSystemCallUserR8     = CurrentProcess->SavedSystemCallFrame.UserR8;
     SavedSystemCallUserR9     = CurrentProcess->SavedSystemCallFrame.UserR9;
     SavedSystemCallUserR10    = CurrentProcess->SavedSystemCallFrame.UserR10;
+    SavedSystemCallUserRCX    = CurrentProcess->SavedSystemCallFrame.UserRCX;
+    SavedSystemCallUserR11    = CurrentProcess->SavedSystemCallFrame.UserR11;
     SavedSystemCallUserR12    = CurrentProcess->SavedSystemCallFrame.UserR12;
     SavedSystemCallUserR13    = CurrentProcess->SavedSystemCallFrame.UserR13;
     SavedSystemCallUserR14    = CurrentProcess->SavedSystemCallFrame.UserR14;

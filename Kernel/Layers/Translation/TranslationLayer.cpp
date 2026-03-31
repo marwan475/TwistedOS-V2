@@ -10308,7 +10308,7 @@ int64_t TranslationLayer::HandleRtSigreturnSystemCall()
 
         const ProcessSavedSystemCallFrame& SavedFrame = SavedSignalFrame;
         CurrentProcess->State.rax    = SavedFrame.UserRAX;
-        CurrentProcess->State.rcx    = 0;
+        CurrentProcess->State.rcx    = SavedFrame.UserRCX;
         CurrentProcess->State.rdx    = SavedFrame.UserRDX;
         CurrentProcess->State.rbx    = SavedFrame.UserRBX;
         CurrentProcess->State.rbp    = SavedFrame.UserRBP;
@@ -10317,7 +10317,7 @@ int64_t TranslationLayer::HandleRtSigreturnSystemCall()
         CurrentProcess->State.r8     = SavedFrame.UserR8;
         CurrentProcess->State.r9     = SavedFrame.UserR9;
         CurrentProcess->State.r10    = SavedFrame.UserR10;
-        CurrentProcess->State.r11    = 0;
+        CurrentProcess->State.r11    = SavedFrame.UserR11;
         CurrentProcess->State.r12    = SavedFrame.UserR12;
         CurrentProcess->State.r13    = SavedFrame.UserR13;
         CurrentProcess->State.r14    = SavedFrame.UserR14;

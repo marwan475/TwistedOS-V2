@@ -1721,6 +1721,7 @@ bool SetProcessSignalState(ResourceLayer* Resource, Process* TargetProcess, int6
         TargetProcess->SavedSignalFrame.UserRIP    = TargetProcess->State.rip;
         TargetProcess->SavedSignalFrame.UserRFLAGS = TargetProcess->State.rflags;
         TargetProcess->SavedSignalFrame.UserRAX    = TargetProcess->State.rax;
+        TargetProcess->SavedSignalFrame.UserRCX    = TargetProcess->State.rcx;
         TargetProcess->SavedSignalFrame.UserRDX    = TargetProcess->State.rdx;
         TargetProcess->SavedSignalFrame.UserRBX    = TargetProcess->State.rbx;
         TargetProcess->SavedSignalFrame.UserRBP    = TargetProcess->State.rbp;
@@ -1729,6 +1730,7 @@ bool SetProcessSignalState(ResourceLayer* Resource, Process* TargetProcess, int6
         TargetProcess->SavedSignalFrame.UserR8     = TargetProcess->State.r8;
         TargetProcess->SavedSignalFrame.UserR9     = TargetProcess->State.r9;
         TargetProcess->SavedSignalFrame.UserR10    = TargetProcess->State.r10;
+        TargetProcess->SavedSignalFrame.UserR11    = TargetProcess->State.r11;
         TargetProcess->SavedSignalFrame.UserR12    = TargetProcess->State.r12;
         TargetProcess->SavedSignalFrame.UserR13    = TargetProcess->State.r13;
         TargetProcess->SavedSignalFrame.UserR14    = TargetProcess->State.r14;

@@ -49,6 +49,7 @@ struct EventDevice
     EventDeviceInterruptHandler HandleIntrrupt;
     EventDeviceKind Kind;
     bool            InUse;
+    bool            Grabbed;
     uint8_t         LastWokenProcessId;
     bool            OverflowedSinceLastSync;
 

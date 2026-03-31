@@ -20,6 +20,8 @@ global SavedSystemCallUserRDI
 global SavedSystemCallUserR8
 global SavedSystemCallUserR9
 global SavedSystemCallUserR10
+global SavedSystemCallUserRCX
+global SavedSystemCallUserR11
 global SavedSystemCallUserR12
 global SavedSystemCallUserR13
 global SavedSystemCallUserR14
@@ -80,6 +82,8 @@ SystemCallEntry:
     mov [SavedSystemCallUserR8],  r8
     mov [SavedSystemCallUserR9],  r9
     mov [SavedSystemCallUserR10], r10
+    mov [SavedSystemCallUserRCX], rcx
+    mov [SavedSystemCallUserR11], r11
     mov [SavedSystemCallUserR12], r12
     mov [SavedSystemCallUserR13], r13
     mov [SavedSystemCallUserR14], r14
@@ -168,6 +172,8 @@ SystemCallEntry:
     mov r13, [SavedSystemCallUserR13]
     mov r14, [SavedSystemCallUserR14]
     mov r15, [SavedSystemCallUserR15]
+    mov rcx, [SavedSystemCallUserRCX]
+    mov r11, [SavedSystemCallUserR11]
 
     push rax
     mov ax, USER_SS
@@ -196,6 +202,8 @@ SavedSystemCallUserRDI: resq 1
 SavedSystemCallUserR8:  resq 1
 SavedSystemCallUserR9:  resq 1
 SavedSystemCallUserR10: resq 1
+SavedSystemCallUserRCX: resq 1
+SavedSystemCallUserR11: resq 1
 SavedSystemCallUserR12: resq 1
 SavedSystemCallUserR13: resq 1
 SavedSystemCallUserR14: resq 1

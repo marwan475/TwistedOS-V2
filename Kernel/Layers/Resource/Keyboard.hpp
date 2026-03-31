@@ -18,10 +18,14 @@ private:
     bool LeftShiftPressed;
     bool RightShiftPressed;
     bool CapsLockEnabled;
+    bool CtrlPressed;
+    bool AltPressed;
+    bool ExtendedScanCodeE0;
     bool HasPendingInterruptScanCode;
     uint8_t PendingInterruptScanCode;
+    bool PendingIsExtended;
 
-    void DispatchEventInterrupt(uint8_t ScanCode);
+    void DispatchEventInterrupt(uint8_t ScanCode, bool IsExtended);
 
 public:
     Keyboard();

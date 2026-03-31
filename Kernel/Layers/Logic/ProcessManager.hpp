@@ -49,6 +49,7 @@ struct ProcessSavedSystemCallFrame
     uint64_t UserRIP;
     uint64_t UserRFLAGS;
     uint64_t UserRAX;
+    uint64_t UserRCX;
     uint64_t UserRDX;
     uint64_t UserRBX;
     uint64_t UserRBP;
@@ -57,6 +58,7 @@ struct ProcessSavedSystemCallFrame
     uint64_t UserR8;
     uint64_t UserR9;
     uint64_t UserR10;
+    uint64_t UserR11;
     uint64_t UserR12;
     uint64_t UserR13;
     uint64_t UserR14;
